@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@marimail/types": ["../../packages/types/dist/index.d.ts"]
+    }
+  }
+}

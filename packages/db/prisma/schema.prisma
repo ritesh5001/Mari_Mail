@@ -1,0 +1,1382 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum CompanyType {
+  MARINE_SERVICE_COMPANY
+  SHIP_AGENT
+  HOLD_CLEANING
+  HULL_CLEANING
+  BUNKER_TRADER
+  CHANDLER
+  OTHER
+}
+
+enum VesselType {
+  BULK_CARRIER
+  TANKER_CRUDE
+  TANKER_PRODUCT
+  TANKER_CHEMICAL
+  TANKER_LPG
+  TANKER_LNG
+  CONTAINER
+  GENERAL_CARGO
+  RORO
+  OFFSHORE_PSV
+  OFFSHORE_AHTS
+  OFFSHORE_DRILL
+  FERRY
+  CRUISE
+  DREDGER
+  HEAVY_LIFT
+  BARGE
+  SUPPLY_BOAT
+  RESEARCH
+  OTHER
+}
+
+enum VesselStatus {
+  ACTIVE
+  LAID_UP
+  SCRAPPED
+  UNDER_CONSTRUCTION
+  MISSING
+}
+
+enum DataSource {
+  INTERNAL
+  CSV_IMPORT
+  AIS_ENRICHED
+  MANUAL
+  MARIBIZ
+  APOLLO
+}
+
+enum OrgType {
+  SHIP_OWNER
+  TECHNICAL_MANAGER
+  SHIP_MANAGER
+  OPERATOR
+}
+
+enum PortRegion {
+  MIDDLE_EAST
+  INDIAN_SUBCONTINENT
+  SOUTHEAST_ASIA
+  EAST_ASIA
+  EUROPE
+  AMERICAS
+  AFRICA
+  OCEANIA
+}
+
+enum Seniority {
+  INTERN
+  ENTRY
+  MID
+  SENIOR
+  LEAD
+  MANAGER
+  DIRECTOR
+  VP
+  C_LEVEL
+  FOUNDER
+  OWNER
+}
+
+enum MarineRole {
+  FLEET_MANAGER
+  SHIP_SUPERINTENDENT
+  TECHNICAL_MANAGER
+  CREWING_MANAGER
+  CHARTERING_MANAGER
+  PORT_CAPTAIN
+  MARINE_SURVEYOR
+  CLASS_SURVEYOR
+  UNDERWRITER
+  BROKER
+  PORT_AGENT
+  CHANDLER
+  BUNKER_TRADER
+  OPA_PROVIDER
+  OTHER
+}
+
+enum EmailStatus {
+  VALID
+  RISKY
+  INVALID
+  UNKNOWN
+}
+
+enum CompanyKind {
+  SHIP_OWNER
+  ISM_MANAGER
+  COMMERCIAL_MANAGER
+  GENERIC
+}
+
+enum ContactListType {
+  STATIC
+  SMART
+}
+
+enum SavedFilterEntityType {
+  VESSEL
+  CONTACT
+  COMPANY
+  ETA
+}
+
+enum ETASourceType {
+  AIS_AUTO
+  MANUAL_ENTRY
+  CSV_IMPORT
+  API_FEED
+}
+
+enum ETAConfidence {
+  CONFIRMED
+  ESTIMATED
+  TENTATIVE
+}
+
+enum VoyageStatus {
+  AT_SEA
+  AT_ANCHOR
+  IN_PORT
+  DRIFTING
+  UNKNOWN
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum CampaignTriggerType {
+  MANUAL
+  ETA_BASED
+  PORT_BASED
+  VESSEL_TYPE_BASED
+  CARGO_CHANGE
+}
+
+enum SequenceDelayType {
+  DAYS_BEFORE_ETA
+  FIXED_DAYS
+}
+
+enum SequenceConditionType {
+  ALWAYS
+  IF_NOT_OPENED
+  IF_NOT_REPLIED
+}
+
+enum ETATriggerStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum EmailProvider {
+  GMAIL
+  OUTLOOK
+  SMTP
+  RESEND
+  SENDGRID
+  POSTMARK
+  SES
+  MAILGUN
+}
+
+enum EmailAccountStatus {
+  ACTIVE
+  PAUSED
+  WARMING
+  ERROR
+}
+
+enum SendingMode {
+  PERSONAL_OUTREACH
+  BULK_CAMPAIGN
+}
+
+enum SendingDomainStatus {
+  PENDING
+  VERIFIED
+  ERROR
+}
+
+enum RotationStrategy {
+  ROUND_ROBIN
+  WEIGHTED
+  LEAST_USED
+}
+
+enum CampaignContactStatus {
+  PENDING
+  SCHEDULED
+  SENT
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  UNSUBSCRIBED
+  FAILED
+  PAUSED
+  // Candidate brought in by a list change on an already-ACTIVE campaign.
+  // NOT a campaign member: every send path must refuse to act on this row
+  // until an explicit confirm from the Leads tab promotes it.
+  STAGED
+}
+
+enum EmailEventType {
+  SENT
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED_SOFT
+  BOUNCED_HARD
+  UNSUBSCRIBED
+  SPAM
+  FAILED
+}
+
+enum BillingPlan {
+  STARTER
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum BillingStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  PAUSED
+  TRIALING
+}
+
+enum CreditLedgerReason {
+  PLAN_REPLENISH
+  ADD_ON_PURCHASE
+  ADMIN_GRANT
+  VIEW_VESSEL
+  SAVE_VESSEL
+  EXPORT_VESSEL
+  REVEAL_EMAIL
+  REVEAL_PHONE
+  REFUND
+  ADJUSTMENT
+}
+
+enum AdminAuditAction {
+  USER_BANNED
+  USER_UNBANNED
+  USER_IMPERSONATED
+  CREDITS_GRANTED
+  PLAN_CHANGED
+  GLOBAL_VESSEL_VERIFIED
+  GLOBAL_COMPANY_VERIFIED
+  GLOBAL_CONTACT_VERIFIED
+  PORT_RULE_CHANGED
+  PORT_UPDATED
+  USER_DELETED
+  OTHER
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  name                String?
+  email               String               @unique
+  emailVerified       DateTime?
+  image               String?
+  passwordHash        String?
+  defaultWorkspaceId  String?
+  isSuperAdmin        Boolean              @default(false)
+  bannedAt            DateTime?
+  themePreference     String?
+  hiddenNavItems      String[]             @default([])
+  lastActiveAt        DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  accounts            Account[]
+  sessions            Session[]
+  memberships         WorkspaceMember[]
+  ownedWorkspaces     Workspace[]          @relation("WorkspaceOwner")
+  ownedContacts       Contact[]            @relation("ContactOwner")
+  ownedContactLists   ContactList[]        @relation("ContactListOwner")
+  savedContacts       SavedContact[]       @relation("UserSavedContacts")
+  savedFilters        SavedFilter[]        @relation("SavedFilterCreator")
+  serviceRecords      ServiceRecord[]      @relation("ServiceRecordCreator")
+  creditLedger        CreditLedger[]       @relation("CreditLedgerActor")
+  adminAuditLog       AdminAuditLog[]      @relation("AdminAuditActor")
+  verificationTokens  VerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Workspace {
+  id                   String                     @id @default(cuid())
+  name                 String
+  slug                 String                     @unique
+  companyType          CompanyType                @default(MARINE_SERVICE_COMPANY)
+  primaryService       String?
+  timezone             String                     @default("UTC")
+  targetPortCountry    String?
+  // Default random send-gap range (seconds) seeded onto every new campaign so
+  // outgoing mail is paced like a human by default. 300–1200 = 5–20 minutes.
+  defaultSendGapMinSeconds Int                    @default(300)
+  defaultSendGapMaxSeconds Int                    @default(1200)
+  onboardedAt          DateTime?
+  ownerId              String
+  plan                 BillingPlan                @default(STARTER)
+  billingStatus        BillingStatus              @default(TRIALING)
+  stripeCustomerId     String?                    @unique
+  stripeSubscriptionId String?                    @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  trialEndsAt          DateTime?
+  creditBalance        Int                        @default(500)
+  vesselLimit          Int                        @default(50)
+  emailLimit           Int                        @default(5000)
+  inboxLimit           Int                        @default(1)
+  teamLimit            Int                        @default(1)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  owner                User                       @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members              WorkspaceMember[]
+  sessions             Session[]
+  vessels              Vessel[]
+  shipOwners           ShipOwnerCompany[]
+  ismManagers          ISMManagerCompany[]
+  commercialManagers   CommercialManagerCompany[]
+  contacts             Contact[]
+  contactLists         ContactList[]
+  savedContacts        SavedContact[]
+  savedFilters         SavedFilter[]
+  vesselEtas           VesselETA[]
+  campaigns            Campaign[]
+  campaignContacts     CampaignContact[]
+  emailEvents          EmailEvent[]
+  etaTriggers          ETATrigger[]
+  portCampaignRules    PortCampaignRule[]
+  cargoChangeTriggers  CargoChangeTrigger[]
+  emailAccounts        EmailAccount[]
+  sendingDomains       SendingDomain[]
+  suppressions         GlobalSuppression[]
+  serviceRecords       ServiceRecord[]
+  creditLedger         CreditLedger[]
+  billingEvents        BillingEvent[]
+  marineDataRows       MarineDataRow[]
+
+  @@index([ownerId])
+  @@index([plan])
+  @@index([stripeCustomerId])
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  userId      String
+  workspaceId String
+  role        WorkspaceRole @default(MEMBER)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@index([workspaceId])
+}
+
+model Session {
+  id               String     @id @default(cuid())
+  sessionToken     String     @unique
+  userId           String
+  workspaceId      String?
+  refreshTokenHash String?
+  expires          DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace        Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([workspaceId])
+}
+
+model VerificationToken {
+  id         String   @id @default(cuid())
+  identifier String
+  token      String   @unique
+  userId     String?
+  expires    DateTime
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([identifier, token])
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expires   DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ShipOwnerCompany {
+  id                  String                   @id @default(cuid())
+  companyName         String
+  phone               String?
+  email               String?
+  website             String?
+  country             String?
+  city                String?
+  address             String?
+  linkedinUrl         String?
+  orgType             OrgType                  @default(SHIP_OWNER)
+  fleetSize           Int                      @default(0)
+  vesselTypesOwned    String[]                 @default([])
+  flagStatesUsed      String[]                 @default([])
+  portsFrequentlyUsed String[]                 @default([])
+  notes               String?
+  workspaceId         String?
+  verified            Boolean                  @default(false)
+  searchVector        Unsupported("tsvector")?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  workspace           Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownedVessels        Vessel[]                 @relation("VesselShipOwner")
+
+  @@index([companyName])
+}
+
+model ISMManagerCompany {
+  id                  String                   @id @default(cuid())
+  companyName         String
+  phone               String?
+  email               String?
+  website             String?
+  country             String?
+  city                String?
+  address             String?
+  linkedinUrl         String?
+  orgType             OrgType                  @default(TECHNICAL_MANAGER)
+  fleetSize           Int                      @default(0)
+  vesselTypesOwned    String[]                 @default([])
+  flagStatesUsed      String[]                 @default([])
+  portsFrequentlyUsed String[]                 @default([])
+  notes               String?
+  ismCertified        Boolean                  @default(false)
+  certificationExpiry DateTime?
+  specializations     String[]                 @default([])
+  fleetManagedCount   Int                      @default(0)
+  workspaceId         String?
+  verified            Boolean                  @default(false)
+  searchVector        Unsupported("tsvector")?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  workspace           Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  managedVessels      Vessel[]                 @relation("VesselISMManager")
+
+  @@index([companyName])
+}
+
+model CommercialManagerCompany {
+  id                    String                   @id @default(cuid())
+  companyName           String
+  phone                 String?
+  email                 String?
+  website               String?
+  country               String?
+  city                  String?
+  address               String?
+  linkedinUrl           String?
+  orgType               OrgType                  @default(OPERATOR)
+  fleetSize             Int                      @default(0)
+  vesselTypesOwned      String[]                 @default([])
+  flagStatesUsed        String[]                 @default([])
+  portsFrequentlyUsed   String[]                 @default([])
+  notes                 String?
+  tradeTypes            String[]                 @default([])
+  majorCharterersServed String[]                 @default([])
+  workspaceId           String?
+  verified              Boolean                  @default(false)
+  searchVector          Unsupported("tsvector")?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  workspace             Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  commercialVessels     Vessel[]                 @relation("VesselCommercialManager")
+
+  @@index([companyName])
+}
+
+model Vessel {
+  id                          String                    @id @default(cuid())
+  imoNumber                   String                    @unique
+  mmsi                        String?                   @unique
+  callsign                    String?
+  vesselName                  String
+  flag                        String?
+  vesselType                  VesselType                @default(OTHER)
+  globalArea                  String?
+  eni                         String?
+  speed                       Float?
+  course                      Float?
+  draught                     Float?
+  navigationalStatus          String?
+  destination                 String?
+  aisClass                    String?
+  dwt                         Int?
+  grossTonnage                Int?
+  netTonnage                  Int?
+  builtYear                   Int?
+  lengthOverall               Float?
+  breadth                     Float?
+  width                       Float?
+  draughtMax                  Float?
+  draughtMin                  Float?
+  yardNumber                  String?
+  vesselTypeDetailed          String?
+  capacityDwt                 Int?
+  capacityGt                  Int?
+  capacityTeu                 Int?
+  capacityLiquidGas           Int?
+  capacityPassengers          Int?
+  lengthBetweenPerpendiculars Float?
+  depth                       Float?
+  breadthExtreme              Float?
+  capacityLiquidOil           Int?
+  commercialMarket            String?
+  commercialSizeClass         String?
+  firstAisPositionDate        String?
+  currentPortUnlocode         String?
+  currentPortCountry          String?
+  commercialManagerName       String?
+  commercialManagerEmail      String?
+  commercialManagerCity       String?
+  commercialManagerCountry    String?
+  registeredOwnerName         String?
+  registeredOwnerEmail        String?
+  registeredOwnerCity         String?
+  registeredOwnerCountry      String?
+  beneficialOwnerName         String?
+  beneficialOwnerEmail        String?
+  beneficialOwnerCity         String?
+  beneficialOwnerCountry      String?
+  technicalManagerName        String?
+  technicalManagerEmail       String?
+  technicalManagerCity        String?
+  technicalManagerCountry     String?
+  pAndIClubName               String?
+  pAndIClubEmail              String?
+  pAndIClubCity               String?
+  pAndIClubCountry            String?
+  shipBuilderName             String?
+  shipBuilderEmail            String?
+  shipBuilderCity             String?
+  shipBuilderCountry          String?
+  classSocietyName            String?
+  classSocietyEmail           String?
+  classSocietyCity            String?
+  classSocietyCountry         String?
+  engineBuilderName           String?
+  engineBuilderEmail          String?
+  engineBuilderCity           String?
+  engineBuilderCountry        String?
+  ismManagerName              String?
+  ismManagerEmail             String?
+  ismManagerCity              String?
+  ismManagerCountry           String?
+  operatorName                String?
+  operatorEmail               String?
+  operatorCity                String?
+  operatorCountry             String?
+  draft                       Float?
+  classificationSociety       String?
+  shipOwnerCompanyId          String?
+  ismManagerCompanyId         String?
+  commercialManagerCompanyId  String?
+  status                      VesselStatus              @default(ACTIVE)
+  workspaceId                 String?
+  source                      DataSource                @default(MANUAL)
+  verified                    Boolean                   @default(false)
+  searchVector                Unsupported("tsvector")?
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  workspace                   Workspace?                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  shipOwnerCompany            ShipOwnerCompany?         @relation("VesselShipOwner", fields: [shipOwnerCompanyId], references: [id], onDelete: SetNull)
+  ismManagerCompany           ISMManagerCompany?        @relation("VesselISMManager", fields: [ismManagerCompanyId], references: [id], onDelete: SetNull)
+  commercialManagerCompany    CommercialManagerCompany? @relation("VesselCommercialManager", fields: [commercialManagerCompanyId], references: [id], onDelete: SetNull)
+  etas                        VesselETA[]
+  etaTriggers                 ETATrigger[]
+  campaignContacts            CampaignContact[]
+  serviceRecords              ServiceRecord[]
+  listMemberships             ListVessel[]
+
+  @@index([vesselName])
+  @@index([flag])
+  @@index([vesselType])
+  @@index([shipOwnerCompanyId])
+  @@index([ismManagerCompanyId])
+  @@index([commercialManagerCompanyId])
+  @@index([workspaceId, vesselName])
+  @@index([workspaceId, flag])
+}
+
+model MarineDataRow {
+  id          String     @id @default(cuid())
+  workspaceId String?
+  values      Json
+  vesselName  String?
+  imoNumber   String?
+  mmsi        String?
+  companyName String?
+  email       String?
+  firstName   String?
+  lastName    String?
+  title       String?
+  country     String?
+  source      DataSource @default(CSV_IMPORT)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([imoNumber])
+  @@index([email])
+  @@index([companyName])
+  @@index([vesselName])
+}
+
+model Port {
+  id                 String             @id @default(cuid())
+  portCode           String             @unique
+  portName           String
+  country            String
+  countryName        String
+  region             PortRegion
+  latitude           Float?
+  longitude          Float?
+  portType           String[]           @default([])
+  defaultServices    String[]           @default([])
+  avgTurnaroundHours Int?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  vesselEtas         VesselETA[]        @relation("VesselETADestinationPort")
+  campaignRules      PortCampaignRule[] @relation("PortCampaignRulePort")
+
+  @@index([region])
+  @@index([country])
+}
+
+model Contact {
+  id                 String                   @id @default(cuid())
+  firstName          String
+  lastName           String
+  title              String?
+  companyId          String?
+  companyKind        CompanyKind              @default(GENERIC)
+  companyName        String
+  email              String
+  secondaryEmail     String?
+  department         String[]                 @default([])
+  contactOwnerId     String?
+  contactOwnerName   String?
+  homePhone          String?
+  mobilePhone        String?
+  corporatePhone     String?
+  otherPhone         String?
+  personLinkedinUrl  String?
+  website            String?
+  companyLinkedinUrl String?
+  country            String?
+  subsidiaryOf       String?
+  salesforceId       String?                  @unique
+  seniority          Seniority                @default(MID)
+  marineRole         MarineRole               @default(OTHER)
+  emailStatus        EmailStatus              @default(UNKNOWN)
+  engagementScore    Int                      @default(0)
+  tags               String[]                 @default([])
+  customFields       Json?
+  workspaceId        String?
+  source             DataSource               @default(MANUAL)
+  verified           Boolean                  @default(false)
+  searchVector       Unsupported("tsvector")?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  workspace          Workspace?               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contactOwner       User?                    @relation("ContactOwner", fields: [contactOwnerId], references: [id], onDelete: SetNull)
+  listMemberships    ListContact[]
+  savedBy            SavedContact[]
+  campaignContacts   CampaignContact[]
+  emailEvents        EmailEvent[]
+
+  @@unique([email, workspaceId])
+  @@index([workspaceId])
+  @@index([contactOwnerId])
+  @@index([marineRole])
+  @@index([emailStatus])
+  @@index([companyName])
+  @@index([engagementScore])
+  @@index([workspaceId, engagementScore])
+  @@index([workspaceId, emailStatus, engagementScore])
+  @@index([workspaceId, companyName])
+}
+
+model ContactList {
+  id           String          @id @default(cuid())
+  workspaceId  String?
+  ownerId      String?
+  name         String
+  type         ContactListType @default(STATIC)
+  filterConfig Json?
+  contactCount Int             @default(0)
+  companyCount Int             @default(0)
+  color        String          @default("#0077B6")
+  icon         String          @default("users")
+  isArchived   Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  workspace    Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner        User?           @relation("ContactListOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  contacts     ListContact[]
+  vessels      ListVessel[]
+  companies    ListCompany[]
+
+  @@index([workspaceId])
+  @@index([ownerId])
+}
+
+model ListContact {
+  id        String      @id @default(cuid())
+  listId    String
+  contactId String
+  createdAt DateTime    @default(now())
+  list      ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact   Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@index([contactId])
+}
+
+// Per-user bookmark/"keep" of a contact. Private to the saving user.
+model SavedContact {
+  id          String    @id @default(cuid())
+  userId      String
+  workspaceId String
+  contactId   String
+  createdAt   DateTime  @default(now())
+  user        User      @relation("UserSavedContacts", fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([contactId])
+}
+
+model ListVessel {
+  id        String      @id @default(cuid())
+  listId    String
+  vesselId  String
+  createdAt DateTime    @default(now())
+  list      ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  vessel    Vessel      @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, vesselId])
+  @@index([vesselId])
+}
+
+model ListCompany {
+  id          String      @id @default(cuid())
+  listId      String
+  companyId   String
+  companyKind CompanyKind
+  createdAt   DateTime    @default(now())
+  list        ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, companyId, companyKind])
+  @@index([listId])
+  @@index([companyId, companyKind])
+}
+
+model SavedFilter {
+  id           String                @id @default(cuid())
+  workspaceId  String?
+  name         String
+  entityType   SavedFilterEntityType
+  filterConfig Json
+  createdById  String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  workspace    Workspace?            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy    User?                 @relation("SavedFilterCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([createdById])
+  @@index([entityType])
+}
+
+model VesselETA {
+  id                  String        @id @default(cuid())
+  vesselId            String
+  destinationPort     String
+  destinationPortName String
+  eta                 DateTime
+  etaSource           ETASourceType @default(MANUAL_ENTRY)
+  etaConfidence       ETAConfidence @default(ESTIMATED)
+  currentLat          Float?
+  currentLon          Float?
+  currentPort         String?
+  speedOverGround     Float?
+  lastAISUpdate       DateTime?
+  previousPort        String?
+  previousCargo       String?
+  nextCargo           String?
+  voyageStatus        VoyageStatus  @default(AT_SEA)
+  campaignsTriggered  Boolean       @default(false)
+  triggeredAt         DateTime?
+  // Nullable so super-admin edits can promote an ETA to "global" (visible to
+  // every workspace's Port Radar). Regular users still create ETAs scoped to
+  // their own workspaceId; only super-admin actions land with null.
+  workspaceId         String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  vessel              Vessel        @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+  port                Port?         @relation("VesselETADestinationPort", fields: [destinationPort], references: [portCode], onDelete: NoAction, onUpdate: NoAction)
+  workspace           Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  triggers            ETATrigger[]
+
+  @@index([vesselId])
+  @@index([destinationPort])
+  @@index([eta])
+  @@index([workspaceId])
+  @@index([vesselId, eta])
+  @@index([vesselId, destinationPort, eta])
+  @@index([workspaceId, eta])
+}
+
+model Campaign {
+  id                String               @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?
+  status            CampaignStatus       @default(DRAFT)
+  triggerType       CampaignTriggerType  @default(MANUAL)
+  sendingMode       SendingMode          @default(PERSONAL_OUTREACH)
+  fromName          String?
+  fromAccountIds    String[]             @default([])
+  rotationStrategy  RotationStrategy     @default(ROUND_ROBIN)
+  dailyLimit        Int                  @default(500)
+  // Gap (seconds) between two consecutive Step-1 sends from this campaign.
+  // sendGapSeconds is the minimum; when sendGapMaxSeconds > sendGapSeconds the
+  // scheduler picks a fresh random value in [min, max] for each send (natural
+  // human-like pacing). Both zero disables spacing. Applied at enrol/launch
+  // time by pushing each new fire time to max(baseSlot, latestScheduled + gap).
+  sendGapSeconds    Int                  @default(0)
+  sendGapMaxSeconds Int                  @default(0)
+  timezone          String               @default("UTC")
+  scheduleDays      Int[]                @default([1, 2, 3, 4, 5])
+  scheduleHourStart Int                  @default(9)
+  scheduleHourEnd   Int                  @default(17)
+  trackOpens        Boolean              @default(true)
+  trackClicks       Boolean              @default(true)
+  stopOnReply       Boolean              @default(true)
+  stopOnBounce      Boolean              @default(true)
+  stopOnUnsubscribe Boolean              @default(true)
+  tags              String[]             @default([])
+  targetConfig      Json                 @default("{}")
+  triggerConfig     Json                 @default("{}")
+  defaultDaysBefore Int[]                @default([])
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequences         CampaignSequence[]
+  contacts          CampaignContact[]
+  emailEvents       EmailEvent[]
+  etaTriggers       ETATrigger[]
+  portRules         PortCampaignRule[]
+  cargoTriggers     CargoChangeTrigger[]
+
+  @@index([workspaceId])
+  @@index([triggerType])
+  @@index([sendingMode])
+  @@index([status])
+}
+
+model CampaignSequence {
+  id               String                @id @default(cuid())
+  campaignId       String
+  stepOrder        Int
+  subject          String
+  bodyHtml         String                @default("")
+  bodyText         String?
+  delayType        SequenceDelayType     @default(DAYS_BEFORE_ETA)
+  delayValue       Int                   @default(0)
+  conditionType    SequenceConditionType @default(ALWAYS)
+  abTestEnabled    Boolean               @default(false)
+  abSubjectB       String?
+  abBodyHtmlB      String?
+  abSplit          Int                   @default(50)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  campaign         Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignContacts CampaignContact[]
+  emailEvents      EmailEvent[]
+
+  @@unique([campaignId, stepOrder])
+  @@index([campaignId])
+}
+
+model ETATrigger {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  campaignId        String
+  vesselId          String
+  vesselEtaId       String
+  portCode          String
+  triggerDaysBefore Int[]             @default([])
+  stepFireTimes     Json              @default("[]")
+  status            ETATriggerStatus  @default(PENDING)
+  lastFiredStep     Int?
+  nextFireAt        DateTime?
+  reason            String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign          Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  vessel            Vessel            @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+  vesselEta         VesselETA         @relation(fields: [vesselEtaId], references: [id], onDelete: Cascade)
+  campaignContacts  CampaignContact[]
+
+  @@unique([campaignId, vesselEtaId])
+  @@index([workspaceId])
+  @@index([nextFireAt])
+  @@index([status])
+}
+
+model CampaignContact {
+  id           String                @id @default(cuid())
+  workspaceId  String
+  campaignId   String
+  contactId    String
+  vesselId     String?
+  etaTriggerId String?
+  sequenceId   String?
+  status       CampaignContactStatus @default(PENDING)
+  currentStep  Int                   @default(0)
+  nextSendAt   DateTime?
+  lastEventAt  DateTime?
+  // Set only while status is STAGED. vesselId above records which newly-added
+  // vessel surfaced this candidate — it's the grouping key for the review UI.
+  stagedAt     DateTime?
+  stagedReason String?
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+  workspace    Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign     Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact      Contact               @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  vessel       Vessel?               @relation(fields: [vesselId], references: [id], onDelete: SetNull)
+  etaTrigger   ETATrigger?           @relation(fields: [etaTriggerId], references: [id], onDelete: SetNull)
+  sequence     CampaignSequence?     @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
+  events       EmailEvent[]
+
+  @@unique([campaignId, contactId])
+  @@index([workspaceId])
+  @@index([contactId])
+  @@index([status])
+  @@index([campaignId, status])
+  @@index([nextSendAt])
+  @@index([etaTriggerId])
+}
+
+model EmailEvent {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  campaignId        String
+  contactId         String
+  sequenceId        String?
+  campaignContactId String?
+  messageId         String?
+  trackingId        String?
+  eventType         EmailEventType
+  occurredAt        DateTime          @default(now())
+  metadata          Json              @default("{}")
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign          Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact           Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sequence          CampaignSequence? @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
+  campaignContact   CampaignContact?  @relation(fields: [campaignContactId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([sequenceId])
+  @@index([eventType])
+  @@index([occurredAt])
+  @@index([trackingId])
+  @@index([workspaceId, occurredAt])
+  @@index([workspaceId, eventType, occurredAt])
+}
+
+model PortCampaignRule {
+  id          String       @id @default(cuid())
+  workspaceId String?
+  portCode    String
+  vesselTypes VesselType[] @default([])
+  campaignId  String
+  autoEnroll  Boolean      @default(true)
+  priority    Int          @default(100)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  workspace   Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign    Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  port        Port?        @relation("PortCampaignRulePort", fields: [portCode], references: [portCode], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([workspaceId])
+  @@index([portCode])
+  @@index([priority])
+}
+
+model CargoChangeTrigger {
+  id            String       @id @default(cuid())
+  workspaceId   String?
+  campaignId    String
+  previousCargo String[]     @default([])
+  nextCargo     String[]     @default([])
+  vesselTypes   VesselType[] @default([])
+  autoEnroll    Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  workspace     Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign      Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([campaignId])
+}
+
+model EmailAccount {
+  id                String             @id @default(cuid())
+  workspaceId       String
+  email             String
+  displayName       String?
+  provider          EmailProvider
+  mode              SendingMode        @default(PERSONAL_OUTREACH)
+  status            EmailAccountStatus @default(ACTIVE)
+  encryptedPassword Json?
+  oauthTokens       Json?
+  apiKey            Json?
+  providerMeta      Json?
+  smtpHost          String?
+  smtpPort          Int?
+  smtpUser          String?
+  smtpSecure        Boolean            @default(true)
+  fromEmail         String?
+  fromName          String?
+  sendingDomainId   String?
+  senderVerified    Boolean            @default(false)
+  dailyLimit        Int                @default(50)
+  todaySent         Int                @default(0)
+  warmupEnabled     Boolean            @default(true)
+  warmupDay         Int                @default(1)
+  spfOk             Boolean            @default(false)
+  dkimOk            Boolean            @default(false)
+  dmarcOk           Boolean            @default(false)
+  healthScore       Int                @default(0)
+  rotationWeight    Int                @default(1)
+  isPlatformDefault Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sendingDomain     SendingDomain?     @relation(fields: [sendingDomainId], references: [id], onDelete: SetNull)
+  warmupLogs        WarmupLog[]
+
+  @@unique([email, workspaceId])
+  @@index([workspaceId])
+  @@index([status])
+  @@index([provider])
+  @@index([mode])
+  @@index([sendingDomainId])
+  @@index([workspaceId, isPlatformDefault])
+}
+
+model SendingDomain {
+  id             String              @id @default(cuid())
+  workspaceId    String
+  domain         String
+  provider       EmailProvider
+  status         SendingDomainStatus @default(PENDING)
+  spfOk          Boolean             @default(false)
+  dkimOk         Boolean             @default(false)
+  dmarcOk        Boolean             @default(false)
+  trackingDomain String?
+  bounceDomain   String?
+  verifiedAt     DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  emailAccounts  EmailAccount[]
+
+  @@unique([workspaceId, domain, provider])
+  @@index([workspaceId])
+  @@index([provider])
+  @@index([status])
+}
+
+model WarmupLog {
+  id            String       @id @default(cuid())
+  accountId     String
+  date          DateTime
+  sentCount     Int          @default(0)
+  receivedCount Int          @default(0)
+  repliedCount  Int          @default(0)
+  healthScore   Int          @default(0)
+  createdAt     DateTime     @default(now())
+  account       EmailAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, date])
+  @@index([accountId])
+  @@index([date])
+}
+
+model GlobalSuppression {
+  id          String     @id @default(cuid())
+  workspaceId String?
+  email       String
+  reason      String     @default("unsubscribe")
+  token       String     @unique
+  createdAt   DateTime   @default(now())
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([email, workspaceId])
+  @@index([workspaceId])
+  @@index([email])
+}
+
+model ServiceRecord {
+  id          String    @id @default(cuid())
+  workspaceId String
+  vesselId    String
+  serviceName String
+  portCode    String?
+  serviceDate DateTime
+  notes       String?
+  amount      Float?
+  currency    String?   @default("USD")
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  vessel      Vessel    @relation(fields: [vesselId], references: [id], onDelete: Cascade)
+  createdBy   User?     @relation("ServiceRecordCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([vesselId])
+  @@index([serviceDate])
+}
+
+model BillingEvent {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  stripeEventId String    @unique
+  eventType     String
+  payload       Json
+  processedAt   DateTime  @default(now())
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+  @@index([eventType])
+}
+
+model CreditLedger {
+  id          String             @id @default(cuid())
+  workspaceId String
+  delta       Int
+  balance     Int
+  reason      CreditLedgerReason
+  detail      String?
+  actorId     String?
+  createdAt   DateTime           @default(now())
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actor       User?              @relation("CreditLedgerActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([createdAt])
+  @@index([reason])
+}
+
+model AdminAuditLog {
+  id         String           @id @default(cuid())
+  actorId    String
+  action     AdminAuditAction
+  targetType String
+  targetId   String?
+  detail     Json?
+  createdAt  DateTime         @default(now())
+  actor      User             @relation("AdminAuditActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([actorId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+enum DemoBookingStatus {
+  PENDING
+  CONTACTED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model DemoBooking {
+  id          String            @id @default(cuid())
+  name        String
+  email       String
+  company     String?
+  phone       String?
+  role        String?
+  fleetSize   String?
+  message     String?
+  preferredAt DateTime?
+  timezone    String?
+  status      DemoBookingStatus @default(PENDING)
+  notes       String?
+  source      String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([email])
+}
+
+model DemoSettings {
+  id                  String   @id @default("singleton")
+  enabled             Boolean  @default(true)
+  registrationEnabled Boolean  @default(true)
+  adminEmail          String?
+  successMessage      String   @default("Thanks! We'll be in touch within one business day.")
+  updatedAt           DateTime @updatedAt
+  updatedById         String?
+}
+
+model MaribizSettings {
+  id                  String   @id @default("singleton")
+  enabled             Boolean  @default(false)
+  cacheTtlSeconds     Int      @default(1800)
+  maxResultsPerQuery  Int      @default(25)
+  lastTestAt          DateTime?
+  lastTestStatus      String?
+  lastTestError       String?
+  lastTestTotalRows   Int?
+  lastTestLatencyMs   Int?
+  updatedAt           DateTime @updatedAt
+  updatedById         String?
+}
+
+model DataSourceSettings {
+  id                       String   @id @default("singleton")
+  internalEnabled          Boolean  @default(true)
+  persistApolloSearchRows  Boolean  @default(true)
+  updatedAt                DateTime @updatedAt
+  updatedById              String?
+}
+
+model ApolloSettings {
+  id                      String   @id @default("singleton")
+  enabled                 Boolean  @default(false)
+  apiKey                  Json?
+  apiBaseUrl              String   @default("https://api.apollo.io/api/v1")
+  cacheTtlSeconds         Int      @default(1800)
+  maxResultsPerQuery      Int      @default(25)
+  creditsPerEmailReveal   Int      @default(1)
+  creditsPerPhoneReveal   Int      @default(1)
+  lastTestAt              DateTime?
+  lastTestStatus          String?
+  lastTestError           String?
+  lastTestLatencyMs       Int?
+  updatedAt               DateTime @updatedAt
+  updatedById             String?
+}
+
+// Platform-wide cache of Apollo persons we've paid to reveal. Keyed by the
+// Apollo person id (`apolloId`) so any workspace that later asks for the
+// same person is served from this table — Apollo is billed only for the
+// first reveal, users are still charged 1 platform credit per reveal.
+model ApolloRevealCache {
+  id                       String    @id @default(cuid())
+  apolloId                 String    @unique
+  firstName                String
+  lastName                 String
+  fullName                 String?
+  title                    String?
+  companyName              String
+  companyDomain            String?
+  companyLinkedinUrl       String?
+  companyWebsite           String?
+  email                    String?
+  emailStatus              String?
+  mobilePhone              String?
+  personLinkedinUrl        String?
+  country                  String?
+  seniority                Seniority @default(MID)
+  rawApolloData            Json?
+  emailRevealedAt          DateTime?
+  phoneRevealedAt          DateTime?
+  firstRevealedWorkspaceId String?
+  firstRevealedUserId      String?
+  reuseCount               Int       @default(0)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([email])
+  @@index([companyName])
+  @@index([emailRevealedAt])
+}

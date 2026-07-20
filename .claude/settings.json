@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Bash(*)",
+      "Read",
+      "Read(*)",
+      "Write",
+      "Write(*)",
+      "Edit",
+      "Edit(*)",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "TodoWrite",
+      "Task",
+      "Agent",
+      "NotebookEdit",
+      "ScheduleWakeup",
+      "ToolSearch",
+      "Skill",
+      "Monitor",
+      "SendMessage",
+      "TaskOutput",
+      "TaskStop",
+      "PushNotification",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "RemoteTrigger",
+      "DesignSync",
+      "ListMcpResourcesTool",
+      "ReadMcpResourceTool",
+      "ReadMcpResourceDirTool",
+      "AskUserQuestion",
+      "mcp__claude_ai_Canva__*",
+      "mcp__claude_ai_Gamma__*",
+      "mcp__claude_ai_Indeed__*",
+      "mcp__claude_ai_Shopify__*"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(sudo rm*)"
+    ]
+  },
+  "env": {
+    "PROJECT_NAME": "MariMail",
+    "PROJECT_TYPE": "marine-email-intelligence-platform",
+    "AUTOPILOT_MODE": "true"
+  },
+  "model": "claude-opus-4-7"
+}

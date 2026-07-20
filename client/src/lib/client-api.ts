@@ -1,0 +1,4 @@
+const browserDefault = "/backend";
+const serverDefault = process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+export const apiUrl = typeof window === "undefined" ? serverDefault : browserDefault;

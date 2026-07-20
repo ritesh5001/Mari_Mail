@@ -1,0 +1,504 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* MariBiz brand palette. Legacy names kept; values now match the marketing
+     site's royal-blue so MariMail matches MariBiz visually. */
+  --navy: #0A0A0C;      /* near-black background */
+  --ocean: #4F6DFF;     /* MariBiz brand blue */
+  --gold: #3B4FE6;      /* darker variant for hover / deep accents */
+  --theme-bg: #050507;
+  --theme-surface: #101013;
+  --theme-panel: #0F0F11;
+  --theme-border: rgba(255, 255, 255, 0.08);
+  --theme-text: #EDEDF0;
+  --theme-muted: #A3A3AE;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: #050507;
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  color: #EDEDF0;
+  background: #050507;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Light mode overrides (when html.light is set) */
+html.light {
+  color-scheme: light;
+  background: #F8FAFC;
+  --navy: #1E2A5E;
+  --ocean: #4F6DFF;
+  --gold: #3B4FE6;
+  --theme-bg: #F8FAFC;
+  --theme-surface: #FFFFFF;
+  --theme-panel: #F1F5F9;
+  --theme-border: #E2E8F0;
+  --theme-text: #0F172A;
+  --theme-muted: #64748B;
+}
+html.light body {
+  background: #F8FAFC;
+  color: #0F172A;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* Starfield background (subtle dots like Reachinbox hero) */
+.starfield {
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.4), transparent 50%),
+    radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.35), transparent 50%),
+    radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,0.3), transparent 50%),
+    radial-gradient(1px 1px at 65% 85%, rgba(255,255,255,0.45), transparent 50%),
+    radial-gradient(1px 1px at 15% 90%, rgba(255,255,255,0.25), transparent 50%),
+    radial-gradient(1.5px 1.5px at 90% 60%, rgba(255,255,255,0.5), transparent 50%),
+    radial-gradient(1px 1px at 35% 15%, rgba(255,255,255,0.3), transparent 50%),
+    radial-gradient(1px 1px at 55% 45%, rgba(255,255,255,0.25), transparent 50%),
+    radial-gradient(1px 1px at 75% 75%, rgba(255,255,255,0.4), transparent 50%);
+  background-size: 100% 100%;
+}
+
+.hero-aurora {
+  background:
+    radial-gradient(60% 50% at 50% 100%, rgba(7, 89, 133, 0.28) 0%, transparent 70%),
+    radial-gradient(42% 32% at 18% 22%, rgba(3, 105, 161, 0.16) 0%, transparent 72%),
+    radial-gradient(42% 32% at 86% 28%, rgba(12, 74, 110, 0.16) 0%, transparent 72%);
+}
+
+.premium-aurora {
+  background:
+    radial-gradient(70% 48% at 50% 12%, rgba(7, 89, 133, 0.24), transparent 68%),
+    linear-gradient(115deg, transparent 0%, rgba(3, 105, 161, 0.08) 38%, rgba(15, 23, 42, 0.08) 55%, transparent 78%);
+  background-size: 130% 130%, 180% 180%;
+}
+
+.glass-shell {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035)),
+    rgba(5, 5, 7, 0.54);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.035),
+    0 18px 60px rgba(0, 0, 0, 0.42);
+}
+
+.premium-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.premium-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.065) 42%, transparent 58%);
+  transform: translateX(-130%);
+  transition: transform 850ms ease;
+}
+
+.premium-card:hover::before {
+  transform: translateX(130%);
+}
+
+.theme-page {
+  background: var(--theme-bg);
+  color: var(--theme-text);
+}
+
+.theme-surface {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+.theme-panel {
+  background: var(--theme-panel);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+.theme-muted {
+  color: var(--theme-muted);
+}
+
+.theme-input {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+.marketing-root {
+  background: #000;
+  color: #fff;
+}
+
+.marketing-section {
+  background: #000;
+  color: #fff;
+}
+
+.marketing-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.auth-shell {
+  background: #050507;
+  color: #fff;
+}
+
+.violet-accent {
+  font-family: 'Instrument Serif', ui-serif, Georgia, serif;
+  font-style: italic;
+  background-image: linear-gradient(180deg, #B4C5FF 0%, #4F6DFF 62%, #2A38B8 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 400;
+  filter: drop-shadow(0 0 18px rgba(7, 89, 133, 0.28));
+}
+
+.broken-accent {
+  font-family: 'Instrument Serif', ui-serif, Georgia, serif;
+  font-style: italic;
+  background-image: linear-gradient(180deg, #FCA5A5 0%, #EF4444 60%, #B91C1C 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 400;
+}
+
+html.light .starfield {
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(2,132,199,0.22), transparent 50%),
+    radial-gradient(1px 1px at 80% 20%, rgba(14,165,233,0.18), transparent 50%),
+    radial-gradient(1px 1px at 40% 70%, rgba(14,165,233,0.16), transparent 50%),
+    radial-gradient(1px 1px at 65% 85%, rgba(15,23,42,0.16), transparent 50%),
+    radial-gradient(1px 1px at 15% 90%, rgba(2,132,199,0.12), transparent 50%),
+    radial-gradient(1.5px 1.5px at 90% 60%, rgba(14,165,233,0.18), transparent 50%),
+    radial-gradient(1px 1px at 35% 15%, rgba(14,165,233,0.14), transparent 50%),
+    radial-gradient(1px 1px at 55% 45%, rgba(15,23,42,0.1), transparent 50%),
+    radial-gradient(1px 1px at 75% 75%, rgba(2,132,199,0.16), transparent 50%);
+}
+
+html.light .hero-aurora {
+  background:
+    radial-gradient(58% 44% at 50% 92%, rgba(14, 165, 233, 0.16) 0%, transparent 70%),
+    radial-gradient(42% 32% at 18% 22%, rgba(56, 189, 248, 0.12) 0%, transparent 72%),
+    radial-gradient(42% 32% at 86% 28%, rgba(2, 132, 199, 0.12) 0%, transparent 72%);
+}
+
+html.light .premium-aurora {
+  background:
+    radial-gradient(70% 48% at 50% 12%, rgba(14, 165, 233, 0.14), transparent 68%),
+    linear-gradient(115deg, transparent 0%, rgba(2, 132, 199, 0.08) 38%, rgba(56, 189, 248, 0.06) 55%, transparent 78%);
+}
+
+html.light .glass-shell {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.64)),
+    rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 60px rgba(15, 23, 42, 0.12);
+}
+
+html.light .premium-card::before {
+  background: linear-gradient(110deg, transparent 0%, rgba(2, 132, 199, 0.08) 42%, transparent 58%);
+}
+
+html.light .violet-accent {
+  background-image: linear-gradient(180deg, #7B90FF 0%, #3B4FE6 58%, #2A38B8 100%);
+  filter: drop-shadow(0 8px 22px rgba(2, 132, 199, 0.18));
+}
+
+html.light .broken-accent {
+  background-image: linear-gradient(180deg, #FB7185 0%, #E11D48 60%, #9F1239 100%);
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes float-y-deep {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-12px) scale(1.01); }
+}
+
+@keyframes aurora-drift {
+  0%, 100% { background-position: 50% 50%, 0% 50%; opacity: 0.88; }
+  50% { background-position: 47% 56%, 100% 50%; opacity: 1; }
+}
+
+@keyframes star-pulse {
+  0%, 100% { opacity: 0.42; filter: brightness(0.8); }
+  50% { opacity: 0.82; filter: brightness(1.25); }
+}
+
+@keyframes grid-drift {
+  to { background-position: 80px 80px; }
+}
+
+@keyframes slow-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes word-cycle {
+  0%, 18% { opacity: 0; transform: translateY(8px); }
+  22%, 30% { opacity: 1; transform: translateY(0); }
+  34%, 100% { opacity: 0; transform: translateY(-8px); }
+}
+
+.animate-float-y { animation: float-y 6s ease-in-out infinite; }
+.animate-float-y-1 { animation: float-y 6s ease-in-out infinite; animation-delay: 0s; }
+.animate-float-y-2 { animation: float-y 7s ease-in-out infinite; animation-delay: 0.8s; }
+.animate-float-y-3 { animation: float-y 8s ease-in-out infinite; animation-delay: 1.6s; }
+.animate-float-y-deep { animation: float-y-deep 9s ease-in-out infinite; }
+.animate-aurora-drift { animation: aurora-drift 14s ease-in-out infinite; }
+.animate-star-pulse { animation: star-pulse 5s ease-in-out infinite; }
+.animate-grid-drift { animation: grid-drift 18s linear infinite; }
+.animate-slow-spin { animation: slow-spin 28s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float-y,
+  .animate-float-y-1,
+  .animate-float-y-2,
+  .animate-float-y-3,
+  .animate-float-y-deep,
+  .animate-aurora-drift,
+  .animate-star-pulse,
+  .animate-grid-drift,
+  .animate-slow-spin {
+    animation: none;
+  }
+
+  .premium-card::before {
+    display: none;
+  }
+}
+
+.marketing-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+/* Map legacy slate utilities to the active app theme. */
+html.dark .bg-white { background-color: #101013; }
+html.dark .text-slate-950,
+html.dark .text-slate-900 { color: #EDEDF0; }
+html.dark .text-slate-800,
+html.dark .text-slate-700,
+html.dark .text-slate-600 { color: #A3A3AE; }
+html.dark .text-slate-500,
+html.dark .text-slate-400 { color: #8A8A95; }
+html.dark .border-slate-300,
+html.dark .border-slate-200,
+html.dark .border-slate-100 { border-color: rgba(255,255,255,0.08); }
+html.dark .bg-slate-50,
+html.dark .bg-slate-100 { background-color: #0F0F11; color: #C7C7CF; }
+html.dark .divide-slate-200 > * + * { border-color: rgba(255,255,255,0.08); }
+html.dark .bg-slate-50\/70:hover,
+html.dark .hover\:bg-slate-50\/70:hover,
+html.dark .hover\:bg-slate-100:hover { background-color: rgba(255,255,255,0.03); }
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #101013;
+  border-color: rgba(255,255,255,0.1);
+  color: #EDEDF0;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: rgba(237,237,240,0.34);
+}
+
+html.light .bg-white { background-color: #ffffff; }
+html.light .text-slate-950,
+html.light .text-slate-900,
+html.light .text-slate-800 { color: #0F172A; }
+html.light .text-slate-700 { color: #334155; }
+html.light .text-slate-600 { color: #475569; }
+html.light .text-slate-500 { color: #64748b; }
+html.light .text-slate-400 { color: #94a3b8; }
+html.light .border-slate-300 { border-color: #cbd5e1; }
+html.light .border-slate-200 { border-color: #e2e8f0; }
+html.light .border-slate-100 { border-color: #f1f5f9; }
+html.light .bg-slate-50,
+html.light .bg-slate-100 { background-color: #f8fafc; color: #0F172A; }
+html.light .divide-slate-200 > * + * { border-color: #e2e8f0; }
+
+/* Marketing light-mode bridge for existing dark utility classes. */
+html.light [data-marketing-root] {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(14, 165, 233,0.12), transparent 32rem),
+    linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 42%, #F3F4F6 100%);
+  color: #0F172A;
+}
+html.light [data-marketing-root] .bg-black { background-color: transparent; }
+html.light [data-marketing-root] .bg-black\/90 {
+  background-color: rgba(255,255,255,0.94);
+}
+html.light [data-marketing-root] .bg-black\/60,
+html.light [data-marketing-root] .bg-black\/45,
+html.light [data-marketing-root] .bg-black\/40 {
+  background-color: rgba(255,255,255,0.72);
+}
+html.light [data-marketing-root] .from-black {
+  --tw-gradient-from: rgba(248,250,252,0.96) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(248,250,252,0) var(--tw-gradient-to-position);
+}
+html.light [data-marketing-root] .via-black\/60 {
+  --tw-gradient-to: rgba(248,250,252,0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(248,250,252,0.66) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+html.light [data-marketing-root] .text-white { color: #0F172A; }
+html.light [data-marketing-root] .text-white\/85 { color: rgba(15,23,42,0.85); }
+html.light [data-marketing-root] .text-white\/80 { color: rgba(15,23,42,0.8); }
+html.light [data-marketing-root] .text-white\/75 { color: rgba(15,23,42,0.75); }
+html.light [data-marketing-root] .text-white\/70 { color: rgba(15,23,42,0.72); }
+html.light [data-marketing-root] .text-white\/65 { color: rgba(15,23,42,0.66); }
+html.light [data-marketing-root] .text-white\/60 { color: rgba(51,65,85,0.86); }
+html.light [data-marketing-root] .text-white\/55 { color: rgba(71,85,105,0.86); }
+html.light [data-marketing-root] .text-white\/50 { color: rgba(71,85,105,0.78); }
+html.light [data-marketing-root] .text-white\/45 { color: rgba(71,85,105,0.72); }
+html.light [data-marketing-root] .text-white\/40 { color: rgba(100,116,139,0.8); }
+html.light [data-marketing-root] .text-white\/30 { color: rgba(100,116,139,0.72); }
+html.light [data-marketing-root] .border-white\/35 { border-color: rgba(14, 165, 233,0.26); }
+html.light [data-marketing-root] .border-white\/20 { border-color: rgba(14, 165, 233,0.24); }
+html.light [data-marketing-root] .border-white\/15,
+html.light [data-marketing-root] .border-white\/10,
+html.light [data-marketing-root] .border-white\/8,
+html.light [data-marketing-root] .border-white\/5,
+html.light [data-marketing-root] .border-white\/\[0\.08\],
+html.light [data-marketing-root] .border-white\/\[0\.06\],
+html.light [data-marketing-root] .border-white\/\[0\.04\],
+html.light [data-marketing-root] .border-white\/\[0\.035\] {
+  border-color: rgba(14,165,233,0.14);
+}
+html.light [data-marketing-root] [class*="bg-white/["] {
+  background-color: rgba(255,255,255,0.72);
+}
+html.light [data-marketing-root] [class*="bg-[#F8FAFC]"] {
+  background-color: #3B4FE6;
+  color: #FFFFFF;
+  box-shadow: 0 16px 42px rgba(2,132,199,0.22);
+}
+html.light [data-marketing-root] [class*="bg-[#FF492C]"],
+html.light [data-marketing-root] .bg-accent-500 {
+  color: #FFFFFF;
+}
+html.light [data-marketing-root] [class*="hover:bg-[#EDEDF0]"]:hover {
+  background-color: #3B4FE6;
+}
+html.light [data-marketing-root] [class*="to-[#0F0F11]"] {
+  --tw-gradient-to: #FFFFFF var(--tw-gradient-to-position);
+}
+html.light [data-marketing-root] [class*="via-[#0F0F11]"] {
+  --tw-gradient-stops: var(--tw-gradient-from), #F8FAFC var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+html.light [data-marketing-root] [class*="from-[#160F24]"] {
+  --tw-gradient-from: #F3E8FF var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(243,232,255,0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+html.light [data-marketing-root] .ring-black { --tw-ring-color: #FFFFFF; }
+html.light [data-marketing-root] .shadow-glow {
+  box-shadow: 0 22px 70px rgba(2, 132, 199,0.16);
+}
+
+/* react-phone-number-input dark-theme overrides (BookDemoForm) */
+.marimail-phone {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.marimail-phone .PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  min-width: 5.5rem;
+  position: relative;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.marimail-phone .PhoneInputCountry:focus-within {
+  border-color: #B4C5FF;
+  background: #ffffff;
+}
+.marimail-phone .PhoneInputCountrySelect {
+  color: #0f172a;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+.marimail-phone .PhoneInputCountrySelect option {
+  background: #ffffff;
+  color: #0f172a;
+}
+.marimail-phone .PhoneInputCountryIcon {
+  box-shadow: none;
+  background: transparent;
+}
+.marimail-phone .PhoneInputCountryIcon--border {
+  box-shadow: none;
+}
+.marimail-phone .PhoneInputCountrySelectArrow {
+  color: rgba(15, 23, 42, 0.55);
+  opacity: 1;
+}
+.marimail-phone .PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+}
+
+html.dark .marimail-phone .PhoneInputCountry {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+html.dark .marimail-phone .PhoneInputCountry:focus-within {
+  border-color: rgba(125, 211, 252, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+}
+html.dark .marimail-phone .PhoneInputCountrySelect {
+  color: #ffffff;
+}
+html.dark .marimail-phone .PhoneInputCountrySelect option {
+  background: #0a0a0c;
+  color: #ffffff;
+}
+html.dark .marimail-phone .PhoneInputCountrySelectArrow {
+  color: rgba(255, 255, 255, 0.5);
+}

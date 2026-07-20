@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+
+# Build files
+dist/
+.next/
+# Copied from repo root by scripts/copy-logo.js on every build; not source.
+client/public/logo.png
+# Compiled package artefacts that must not land in src/
+packages/*/src/*.js
+packages/*/src/*.d.ts
+.turbo/
+out/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.pem
+.yarn/install-state.gz
+
+# ---------------------------------------------------------------------------
+# DATA FILES — NEVER commit personal/contact data to git. These belong in the
+# database (Neon), not the repo. Committing them caused a GitHub Trust & Safety
+# takedown for exposing third-party personal information. Keep this broad.
+# ---------------------------------------------------------------------------
+*.csv
+*.xlsx
+*.xls
+*.tsv
+*.parquet
+*.sql
+*.dump
+*.sqlite
+*.sqlite3
+tmp_*
+/tmp/
+data/
+imports/
+exports/

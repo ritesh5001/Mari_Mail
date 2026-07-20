@@ -1,0 +1,5 @@
+{
+  "buildCommand": "pnpm --filter @marimail/client build",
+  "devCommand": "pnpm --filter @marimail/client dev",
+  "installCommand": "pnpm install"
+}
