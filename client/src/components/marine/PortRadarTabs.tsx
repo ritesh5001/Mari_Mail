@@ -4,9 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
-import { apiFetch } from "@/lib/browser-fetch";
 
 export type PortRadarTabKey = "missed" | "newly" | "upcoming";
+
+// These endpoints are Next.js route handlers on the SAME origin as the app — NOT
+// the Express backend. They must be called directly (same-origin, with cookies),
+// never through `apiFetch`, which prefixes `/backend` and proxies to the Express
+// VPS where these routes don't exist (that produced 404s in production).
+async function postJson(url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
 
 const TAB_ENDPOINT: Record<PortRadarTabKey, string> = {
   missed: "/api/port-radar/missed",
@@ -70,10 +82,10 @@ export function PortRadarTabs({
   const fetchPage = useCallback(
     async (which: PortRadarTabKey, page: number): Promise<FeedResponse | null> => {
       try {
-        const res = await apiFetch(TAB_ENDPOINT[which], {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ search: filterSearch(), page, pageSize }),
+        const res = await postJson(TAB_ENDPOINT[which], {
+          search: filterSearch(),
+          page,
+          pageSize,
         });
         if (!res.ok) return null;
         return (await res.json()) as FeedResponse;
@@ -92,11 +104,7 @@ export function PortRadarTabs({
       );
       if (missing.length === 0) return;
       try {
-        const res = await apiFetch("/api/port-radar/contact-counts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ vesselIds: missing }),
-        });
+        const res = await postJson("/api/port-radar/contact-counts", { vesselIds: missing });
         if (!res.ok) return;
         const { counts: fetched } = (await res.json()) as { counts: Record<string, number> };
         for (const [id, n] of Object.entries(fetched)) contactCounts.current.set(id, n);
