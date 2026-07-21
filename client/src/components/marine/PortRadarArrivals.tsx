@@ -407,9 +407,20 @@ export function PortRadarArrivals({
   }
 
   if (etas.length === 0) {
+    // While a fetch is in flight (tab open / sort / page change) show a loader
+    // rather than the empty-state, which otherwise flashes "no results" on every
+    // load and reads as a bug when the feed actually has rows.
+    if (paging) {
+      return (
+        <div className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading arrivals…
+        </div>
+      );
+    }
     return (
       <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
-        No upcoming India ETAs match this filter. Try widening the ETA window or import an India ETA schedule.
+        No arrivals match this filter. Try widening the ETA window or clearing filters.
       </div>
     );
   }
