@@ -233,9 +233,15 @@ function rowValue(row: CsvRow, field: string) {
   return row[field]?.trim();
 }
 
-function validateRequiredRows(rows: CsvRow[], fields: ReturnType<typeof buildHeaderMatches>["fields"]) {
+function validateRequiredRows(
+  rows: CsvRow[],
+  fields: ReturnType<typeof buildHeaderMatches>["fields"],
+  exclude: Set<string> = new Set(),
+) {
   const errors: ImportRowError[] = [];
-  const requiredFields = fields.filter((field) => field.required).map((field) => field.label);
+  const requiredFields = fields
+    .filter((field) => field.required && !exclude.has(field.label))
+    .map((field) => field.label);
   for (const [index, row] of rows.entries()) {
     const rowNumber = index + 2;
     for (const field of requiredFields) {
@@ -248,13 +254,23 @@ function validateRequiredRows(rows: CsvRow[], fields: ReturnType<typeof buildHea
 }
 
 async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields: ReturnType<typeof buildHeaderMatches>["fields"], workspaceId: string) {
-  const errors = validateRequiredRows(rows, fields);
+  // For VESSELS, a missing Vessel Name is NOT a row error — the importer falls
+  // back to using the IMO as the name. IMO is the only hard requirement, checked
+  // explicitly below. So exclude "Vessel Name" from the generic required check.
+  const errors = validateRequiredRows(
+    rows,
+    fields,
+    importType === "VESSELS" ? new Set(["Vessel Name"]) : new Set(),
+  );
 
   if (importType === "VESSELS") {
     for (const [index, row] of rows.entries()) {
       const rowNumber = index + 2;
       const imo = rowValue(row, "IMO");
-      if (imo && !/^\d{7}$/.test(imo)) {
+      // IMO is mandatory (unique key). Missing → skip; present-but-malformed → skip.
+      if (!imo) {
+        errors.push({ row: rowNumber, field: "IMO", message: "IMO is required" });
+      } else if (!/^\d{7}$/.test(imo)) {
         errors.push({ row: rowNumber, field: "IMO", value: imo, message: "IMO must be exactly 7 digits" });
       }
       const eta = rowValue(row, "ETA (UTC)");
@@ -675,17 +691,14 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
     const rowNumber = index + 2;
     const vesselData = vesselDataFromCsvRow(row);
     const imoNumber = vesselData.imoNumber;
-    const vesselName = vesselData.vesselName;
-
+    // IMO is the unique key and is mandatory — skip rows without a valid one.
     if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
       errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
       continue;
     }
-
-    if (!vesselName) {
-      errors.push({ row: rowNumber, message: "Vessel Name is required" });
-      continue;
-    }
+    // Vessel name is required by the schema but optional in the CSV: fall back to
+    // the IMO as a placeholder name so an IMO-only row still imports (rename later).
+    const vesselName = vesselData.vesselName || `IMO ${imoNumber}`;
 
     const shipOwnerName =
       readVesselCsvValue(row, "Ship Owner") ??
