@@ -1,11 +1,11 @@
 import { prisma } from "@marimail/db";
-import { Worker, type Job } from "bullmq";
+import { DelayedError, Worker, type Job } from "bullmq";
 import type { Redis } from "ioredis";
 import type { ManualStepJob } from "../services/campaign-manual-scheduler.js";
 import { findSuppression, sendSequenceStep, shouldSkip } from "../services/sequence-sender.js";
-import { workerOptionsFor } from "./shared-worker-options.js";
+import { deferJob, workerOptionsFor } from "./shared-worker-options.js";
 
-async function processManualStep(job: Job<ManualStepJob>) {
+async function processManualStep(job: Job<ManualStepJob>, token?: string) {
   const [campaign, sequence, contact] = await Promise.all([
     prisma.campaign.findUnique({ where: { id: job.data.campaignId } }),
     prisma.campaignSequence.findUnique({ where: { id: job.data.sequenceStepId } }),
@@ -62,7 +62,7 @@ async function processManualStep(job: Job<ManualStepJob>) {
   }
 
   try {
-    return await sendSequenceStep({
+    const result = await sendSequenceStep({
       campaign,
       sequence,
       contact,
@@ -70,7 +70,20 @@ async function processManualStep(job: Job<ManualStepJob>) {
       eta: null,
       scheduledFor: job.data.scheduledFor,
     });
+    // The chosen inbox is still cooling down (per-inbox send gap). Re-delay this
+    // job in place instead of sending now or failing, so the contact stays
+    // SCHEDULED and fires once the gap has elapsed.
+    if ("deferred" in result && result.deferred) {
+      const delayed = await deferJob(job, token, result.retryAfterMs);
+      if (delayed) throw delayed;
+      return { deferred: true, giveUp: true };
+    }
+    return result;
   } catch (error) {
+    // A DelayedError is the deferral signal (inbox cooling down), not a
+    // failure — rethrow it untouched so BullMQ re-schedules the job and the
+    // contact stays SCHEDULED.
+    if (error instanceof DelayedError) throw error;
     // sendSequenceStep already marks fatal errors as FAILED on the contact
     // and only rethrows transient ones. Once BullMQ has exhausted retries,
     // mark the contact FAILED so the UI stops showing a stale Scheduled time.

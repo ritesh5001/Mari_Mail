@@ -41,7 +41,14 @@ const oauthTokensSchema = z.object({
   scope: z.string().optional(),
 });
 
-const createSchema = z.object({
+const gapRefine = (data: { sendGapMinSeconds: number; sendGapMaxSeconds: number }) =>
+  data.sendGapMaxSeconds >= data.sendGapMinSeconds;
+const gapRefineOptions = {
+  message: "Maximum send gap must be greater than or equal to the minimum",
+  path: ["sendGapMaxSeconds"],
+};
+
+const createBaseSchema = z.object({
   email: z.string().email(),
   displayName: z.string().trim().min(1).optional(),
   provider: providerSchema,
@@ -64,9 +71,14 @@ const createSchema = z.object({
   fromEmail: z.string().email().optional(),
   fromName: z.string().trim().min(1).optional(),
   dailyLimit: z.number().int().min(1).max(2_000).default(50),
+  // Per-inbox randomized send-gap range (seconds). Default 300–1200 = 5–20 min.
+  sendGapMinSeconds: z.number().int().min(0).max(86_400).default(300),
+  sendGapMaxSeconds: z.number().int().min(0).max(86_400).default(1_200),
   warmupEnabled: z.boolean().default(true),
   rotationWeight: z.number().int().min(1).max(100).default(1),
 });
+
+const createSchema = createBaseSchema.refine(gapRefine, gapRefineOptions);
 
 const API_KEY_PROVIDERS = new Set([
   "RESEND",
@@ -87,10 +99,18 @@ const updateSchema = z.object({
   smtpPassword: z.string().min(1).optional(),
   smtpSecure: z.boolean().optional(),
   dailyLimit: z.number().int().min(1).max(2_000).optional(),
+  sendGapMinSeconds: z.number().int().min(0).max(86_400).optional(),
+  sendGapMaxSeconds: z.number().int().min(0).max(86_400).optional(),
   warmupEnabled: z.boolean().optional(),
   warmupDay: z.number().int().min(1).max(365).optional(),
   rotationWeight: z.number().int().min(1).max(100).optional(),
-});
+}).refine(
+  (data) =>
+    data.sendGapMinSeconds === undefined ||
+    data.sendGapMaxSeconds === undefined ||
+    data.sendGapMaxSeconds >= data.sendGapMinSeconds,
+  gapRefineOptions,
+);
 
 const oauthCallbackSchema = z.object({
   accessToken: z.string().min(1).optional(),
@@ -107,8 +127,14 @@ const testSchema = z.object({
 // Same shape as createSchema except every credential is optional at the zod
 // layer — provider-specific guards run in the handler so the user gets a
 // friendly message per missing field instead of a generic zod error.
-const credentialTestSchema = createSchema
-  .partial({ dailyLimit: true, warmupEnabled: true, rotationWeight: true })
+const credentialTestSchema = createBaseSchema
+  .partial({
+    dailyLimit: true,
+    sendGapMinSeconds: true,
+    sendGapMaxSeconds: true,
+    warmupEnabled: true,
+    rotationWeight: true,
+  })
   .extend({ to: z.string().email() });
 
 function accountWhere(workspaceId: string, id: string) {
@@ -317,6 +343,8 @@ inboxRouter.post("/", requireAuth, async (req, res, next) => {
         fromName: input.data.fromName,
         sendingDomainId: sendingDomain?.id,
         dailyLimit: input.data.dailyLimit,
+        sendGapMinSeconds: input.data.sendGapMinSeconds,
+        sendGapMaxSeconds: input.data.sendGapMaxSeconds,
         warmupEnabled: input.data.warmupEnabled,
         rotationWeight: input.data.rotationWeight,
         spfOk: dns.spfOk,
@@ -916,6 +944,10 @@ inboxRouter.patch("/:id", requireAuth, async (req, res, next) => {
       data.smtpSecure = input.data.smtpSecure;
     if (input.data.dailyLimit !== undefined)
       data.dailyLimit = input.data.dailyLimit;
+    if (input.data.sendGapMinSeconds !== undefined)
+      data.sendGapMinSeconds = input.data.sendGapMinSeconds;
+    if (input.data.sendGapMaxSeconds !== undefined)
+      data.sendGapMaxSeconds = input.data.sendGapMaxSeconds;
     if (input.data.warmupEnabled !== undefined)
       data.warmupEnabled = input.data.warmupEnabled;
     if (input.data.warmupDay !== undefined)

@@ -33,6 +33,8 @@ type Inbox = {
   fromEmail: string | null;
   fromName: string | null;
   dailyLimit: number;
+  sendGapMinSeconds: number;
+  sendGapMaxSeconds: number;
   todaySent: number;
   warmupEnabled: boolean;
   warmupDay: number;
@@ -226,6 +228,15 @@ export function InboxesManager({
                     <span>
                       Sent today: <strong className="text-slate-800 dark:text-white/80">{inbox.todaySent}</strong> / {inbox.dailyLimit}
                     </span>
+                    {inbox.sendGapMinSeconds > 0 || inbox.sendGapMaxSeconds > 0 ? (
+                      <span>
+                        Gap:{" "}
+                        <strong className="text-slate-800 dark:text-white/80">
+                          {Math.round(inbox.sendGapMinSeconds / 60)}–
+                          {Math.round(inbox.sendGapMaxSeconds / 60)} min
+                        </strong>
+                      </span>
+                    ) : null}
                     <DnsChip label="SPF" ok={inbox.spfOk} />
                     <DnsChip label="DKIM" ok={inbox.dkimOk} />
                     <DnsChip label="DMARC" ok={inbox.dmarcOk} />
@@ -461,6 +472,9 @@ type SmtpFormState = {
   smtpPassword: string;
   smtpSecure: boolean;
   fromName: string;
+  dailyLimit: string;
+  sendGapMinMinutes: string;
+  sendGapMaxMinutes: string;
 };
 
 function SmtpForm({
@@ -479,6 +493,9 @@ function SmtpForm({
     smtpPassword: "",
     smtpSecure: false,
     fromName: "",
+    dailyLimit: "50",
+    sendGapMinMinutes: "5",
+    sendGapMaxMinutes: "20",
   });
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -493,6 +510,9 @@ function SmtpForm({
 
   function buildPayload() {
     const port = Number(form.smtpPort);
+    const dailyLimit = Number(form.dailyLimit);
+    const gapMinMinutes = Number(form.sendGapMinMinutes);
+    const gapMaxMinutes = Number(form.sendGapMaxMinutes);
     return {
       email: form.email.trim(),
       displayName: form.displayName.trim() || undefined,
@@ -503,6 +523,15 @@ function SmtpForm({
       smtpPassword: form.smtpPassword,
       smtpSecure: form.smtpSecure,
       fromName: form.fromName.trim() || undefined,
+      dailyLimit:
+        Number.isFinite(dailyLimit) && dailyLimit > 0 ? dailyLimit : undefined,
+      // Stored as seconds server-side; the form collects minutes.
+      sendGapMinSeconds: Number.isFinite(gapMinMinutes)
+        ? Math.round(gapMinMinutes * 60)
+        : undefined,
+      sendGapMaxSeconds: Number.isFinite(gapMaxMinutes)
+        ? Math.round(gapMaxMinutes * 60)
+        : undefined,
     };
   }
 
@@ -561,12 +590,18 @@ function SmtpForm({
     }
   }
 
+  const gapInvalid =
+    form.sendGapMinMinutes.length > 0 &&
+    form.sendGapMaxMinutes.length > 0 &&
+    Number(form.sendGapMaxMinutes) < Number(form.sendGapMinMinutes);
+
   const canSubmit =
     form.email.length > 3 &&
     form.smtpHost.length > 0 &&
     form.smtpPort.length > 0 &&
     form.smtpUser.length > 0 &&
-    form.smtpPassword.length > 0;
+    form.smtpPassword.length > 0 &&
+    !gapInvalid;
 
   return (
     <div className="space-y-4">
@@ -625,6 +660,45 @@ function SmtpForm({
         />
         Use TLS on connect (usually only for port 465; leave off for 587/STARTTLS)
       </label>
+
+      <div className="rounded-lg border border-slate-200 p-3 dark:border-white/10">
+        <p className="text-xs font-semibold text-slate-700 dark:text-white/80">
+          Sending limits
+        </p>
+        <p className="mt-0.5 text-[11px] text-slate-500 dark:text-white/50">
+          Caps how much this inbox sends per day and paces consecutive emails.
+          Each send waits a fresh random gap between the min and max below —
+          more human-like pacing protects deliverability.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <TextField
+            label="Daily limit"
+            value={form.dailyLimit}
+            onChange={(value) => update("dailyLimit", value)}
+            placeholder="50"
+            type="number"
+          />
+          <TextField
+            label="Min gap (minutes)"
+            value={form.sendGapMinMinutes}
+            onChange={(value) => update("sendGapMinMinutes", value)}
+            placeholder="5"
+            type="number"
+          />
+          <TextField
+            label="Max gap (minutes)"
+            value={form.sendGapMaxMinutes}
+            onChange={(value) => update("sendGapMaxMinutes", value)}
+            placeholder="20"
+            type="number"
+          />
+        </div>
+        {gapInvalid ? (
+          <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-300">
+            Max gap must be greater than or equal to the min gap.
+          </p>
+        ) : null}
+      </div>
 
       {tested ? (
         <div

@@ -1,8 +1,8 @@
 import { prisma } from "@marimail/db";
-import { Worker, type Job } from "bullmq";
+import { DelayedError, Worker, type Job } from "bullmq";
 import type { Redis } from "ioredis";
 import { findSuppression, sendSequenceStep, shouldSkip } from "../services/sequence-sender.js";
-import { workerOptionsFor } from "./shared-worker-options.js";
+import { deferJob, workerOptionsFor } from "./shared-worker-options.js";
 
 type EtaStepJob = {
   etaTriggerId: string;
@@ -11,7 +11,7 @@ type EtaStepJob = {
   scheduledFor: string;
 };
 
-async function processEtaStep(job: Job<EtaStepJob>) {
+async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
   const [trigger, sequence, contact] = await Promise.all([
     prisma.eTATrigger.findUnique({
       where: { id: job.data.etaTriggerId },
@@ -81,7 +81,7 @@ async function processEtaStep(job: Job<EtaStepJob>) {
   }
 
   try {
-    return await sendSequenceStep({
+    const result = await sendSequenceStep({
       campaign: trigger.campaign,
       sequence,
       contact,
@@ -89,7 +89,18 @@ async function processEtaStep(job: Job<EtaStepJob>) {
       eta: trigger.vesselEta,
       scheduledFor: job.data.scheduledFor,
     });
+    // Chosen inbox is cooling down (per-inbox send gap): re-delay in place so
+    // the contact stays SCHEDULED and fires once the gap has elapsed.
+    if ("deferred" in result && result.deferred) {
+      const delayed = await deferJob(job, token, result.retryAfterMs);
+      if (delayed) throw delayed;
+      return { deferred: true, giveUp: true };
+    }
+    return result;
   } catch (error) {
+    // A DelayedError is the deferral signal (inbox cooling down), not a
+    // failure — rethrow untouched so BullMQ re-schedules the job.
+    if (error instanceof DelayedError) throw error;
     const attempts = job.opts.attempts ?? 1;
     const isFinalAttempt = (job.attemptsMade ?? 0) + 1 >= attempts;
     if (isFinalAttempt) {
