@@ -2,37 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Anchor, ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, Download, Users } from "lucide-react";
+import { Anchor, ArrowLeft, ArrowRight, CheckCircle2, ChevronRight } from "lucide-react";
 import { apiUrl } from "@/lib/client-api";
-import { CONTACT_SCHEMA_HEADERS } from "@/lib/contact-schema";
-
-const companyTypes = [
-  ["MARINE_SERVICE_COMPANY", "Marine service company"],
-  ["SHIP_AGENT", "Ship agent"],
-  ["HOLD_CLEANING", "Hold cleaning"],
-  ["HULL_CLEANING", "Hull cleaning"],
-  ["BUNKER_TRADER", "Bunker trader"],
-  ["CHANDLER", "Chandler"],
-  ["OTHER", "Other"],
-] as const;
-
-const primaryServices = [
-  "Hold cleaning",
-  "Tank cleaning",
-  "Hull cleaning",
-  "Agency",
-  "Bunker",
-  "Chandler",
-  "Other",
-];
 
 const STEPS = [
   { key: "workspace", label: "Workspace" },
-  { key: "contacts", label: "Contacts" },
   { key: "campaign", label: "Campaign" },
 ];
-
-const CONTACT_TEMPLATE = `${CONTACT_SCHEMA_HEADERS.join(",")}\nJames,Ward,Fleet Manager,Pacific Carriers Ltd.,james.ward@example.com,Operations;Technical,Ritesh,+65 6000 0100,+65 9000 0101,+65 6000 0102,+65 6000 0103,https://linkedin.com/in/james,https://pacific.example.com,https://linkedin.com/company/pacific,SG,Parent Shipping Ltd.,james.secondary@example.com,SF-PC-001\n`;
 
 export function OnboardingWizard({ defaultName }: { defaultName: string }) {
   const router = useRouter();
@@ -41,8 +17,6 @@ export function OnboardingWizard({ defaultName }: { defaultName: string }) {
   const [error, setError] = useState<string | null>(null);
   const [workspaceData, setWorkspaceData] = useState({
     workspaceName: defaultName,
-    companyType: "MARINE_SERVICE_COMPANY",
-    primaryService: "Hold cleaning",
     timezone: typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "UTC",
     targetPortCountry: "",
   });
@@ -91,16 +65,6 @@ export function OnboardingWizard({ defaultName }: { defaultName: string }) {
     router.refresh();
   }
 
-  function downloadTemplate(content: string, filename: string) {
-    const blob = new Blob([content], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
@@ -120,20 +84,10 @@ export function OnboardingWizard({ defaultName }: { defaultName: string }) {
           <Field label="Workspace name">
             <input value={workspaceData.workspaceName} onChange={(e) => setWorkspaceData((d) => ({ ...d, workspaceName: e.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Company type">
-            <select value={workspaceData.companyType} onChange={(e) => setWorkspaceData((d) => ({ ...d, companyType: e.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-              {companyTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </Field>
-          <Field label="Primary service">
-            <select value={workspaceData.primaryService} onChange={(e) => setWorkspaceData((d) => ({ ...d, primaryService: e.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-              {primaryServices.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
           <Field label="Timezone">
             <input value={workspaceData.timezone} onChange={(e) => setWorkspaceData((d) => ({ ...d, timezone: e.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>
-          <Field label="Target port country">
+          <Field label="Country">
             <select
               value={workspaceData.targetPortCountry}
               onChange={(e) => setWorkspaceData((d) => ({ ...d, targetPortCountry: e.target.value }))}
@@ -149,30 +103,15 @@ export function OnboardingWizard({ defaultName }: { defaultName: string }) {
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-slate-500">
-              Your workspace will only show vessels arriving at ports in this country.
-            </p>
           </Field>
         </section>
       ) : null}
 
       {step === 1 ? (
         <SkipStep
-          title="Import contacts"
-          icon={Users}
-          description="MariMail contacts include all blueprint fields — first/last name, email, all phone numbers, LinkedIn, Salesforce ID, marine role, seniority."
-        >
-          <button onClick={() => downloadTemplate(CONTACT_TEMPLATE, "marimail-contacts-template.csv")} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-            <Download className="h-3.5 w-3.5" /> Download CSV template
-          </button>
-        </SkipStep>
-      ) : null}
-
-      {step === 2 ? (
-        <SkipStep
           title="Create your first campaign"
           icon={Anchor}
-          description={`We've pre-loaded an ETA-triggered campaign for "${workspaceData.primaryService}". Customise it from the Campaigns page or start from scratch.`}
+          description="We've pre-loaded an ETA-triggered campaign for your workspace. Customise it from the Campaigns page or start from scratch."
         >
           <a href="/dashboard/campaigns" className="text-xs font-semibold text-ocean hover:underline">Open Campaigns →</a>
         </SkipStep>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listMarineVesselRows, toMarineVesselRowView } from "@/lib/marine-row-data";
 import { MarineDbTable } from "@/components/marine/MarineDbTable";
 import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
+import { getServerSession } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,9 @@ export default async function MarineDbPage({
   const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
   const q = typeof searchParams.q === "string" ? searchParams.q : "";
 
+  const session = await getServerSession();
+  const isSuperAdmin = session?.user.isSuperAdmin ?? false;
+
   const { rows, summary, pagination, query } = await listMarineVesselRows({ page, q, searchParams });
   const vesselViews = rows.map(toMarineVesselRowView);
 
@@ -53,12 +57,14 @@ export default async function MarineDbPage({
             domain, or company name.
           </p>
         </div>
-        <Link
-          href="/dashboard/import"
-          className="rounded-md bg-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean dark:bg-[#17171C] dark:hover:bg-[#20202A]"
-        >
-          Import CSV
-        </Link>
+        {isSuperAdmin ? (
+          <Link
+            href="/dashboard/import"
+            className="rounded-md bg-navy px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ocean dark:bg-[#17171C] dark:hover:bg-[#20202A]"
+          >
+            Import CSV
+          </Link>
+        ) : null}
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">

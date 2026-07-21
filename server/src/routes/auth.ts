@@ -43,16 +43,21 @@ const preferencesSchema = z.object({
 
 const onboardingSchema = z.object({
   workspaceName: z.string().trim().min(2),
-  companyType: z.enum([
-    "MARINE_SERVICE_COMPANY",
-    "SHIP_AGENT",
-    "HOLD_CLEANING",
-    "HULL_CLEANING",
-    "BUNKER_TRADER",
-    "CHANDLER",
-    "OTHER",
-  ]),
-  primaryService: z.string().trim().min(2),
+  // Company type / primary service are no longer collected during onboarding;
+  // kept optional so older clients still validate and the columns retain their
+  // schema defaults.
+  companyType: z
+    .enum([
+      "MARINE_SERVICE_COMPANY",
+      "SHIP_AGENT",
+      "HOLD_CLEANING",
+      "HULL_CLEANING",
+      "BUNKER_TRADER",
+      "CHANDLER",
+      "OTHER",
+    ])
+    .optional(),
+  primaryService: z.string().trim().min(2).optional(),
   timezone: z.string().trim().min(2),
   targetPortCountry: z
     .string()
@@ -503,8 +508,10 @@ authRouter.post("/onboarding", requireAuth, async (req, res, next) => {
       where: { id: workspaceId },
       data: {
         name: input.data.workspaceName,
-        companyType: input.data.companyType,
-        primaryService: input.data.primaryService,
+        // Only set when supplied — omitted values keep the column's existing
+        // value / schema default (onboarding no longer collects these).
+        ...(input.data.companyType ? { companyType: input.data.companyType } : {}),
+        ...(input.data.primaryService ? { primaryService: input.data.primaryService } : {}),
         timezone: input.data.timezone,
         targetPortCountry: input.data.targetPortCountry,
         onboardedAt: new Date(),

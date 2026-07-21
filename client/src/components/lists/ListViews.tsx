@@ -106,7 +106,14 @@ const KIND_TO_SLUG: Record<ListCompanyRow["companyKind"], string> = {
 
 type Tab = "companies" | "contacts" | "vessels" | "newVessels";
 
-export function ContactListDetail({ list, companies, contacts, vessels, activity }: ContactListDetailResponse) {
+export function ContactListDetail({
+  list,
+  companies,
+  contacts,
+  vessels,
+  activity,
+  isSuperAdmin = false,
+}: ContactListDetailResponse & { isSuperAdmin?: boolean }) {
   const router = useRouter();
   const kind = listKindOf(list, vessels.length);
   const isEta = kind === "ETA";
@@ -246,7 +253,7 @@ export function ContactListDetail({ list, companies, contacts, vessels, activity
           )}
         </section>
 
-        {!isEta ? <ImportContactsCsvSection listId={list.id} /> : null}
+        {!isEta && isSuperAdmin ? <ImportContactsCsvSection listId={list.id} /> : null}
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div className="flex border-b border-slate-100 dark:border-white/[0.06]">
