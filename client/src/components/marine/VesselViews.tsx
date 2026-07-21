@@ -20,6 +20,8 @@ import { VesselAddToListModal } from "./VesselAddToListModal";
 import { apiFetch } from "@/lib/browser-fetch";
 import { vesselTableColumns } from "@/lib/table-columns";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
+import { useClientSort } from "@/hooks/useClientSort";
+import { SortableHeader } from "@/components/table/SortableHeader";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
 import { ContactAddToListModal } from "@/components/contacts/ContactAddToListModal";
 import { LaunchCampaignFromSelection } from "@/components/campaigns/LaunchCampaignButton";
@@ -162,6 +164,19 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
 
   const allColumns = useMemo(() => vesselTableColumns(), []);
   const { columns, orderedAll, lockedColumns, save, reset } = useColumnPreferences("vessels", allColumns);
+
+  // Client-side sort over the in-memory vessel rows, by each schema column's
+  // displayed value (reuses vesselFieldValue so sort matches the cell text).
+  const sortAccessors = useMemo(() => {
+    const map: Record<string, (v: VesselWithCompanies) => string | number> = {};
+    for (const col of allColumns) {
+      if (col.sortable === false) continue;
+      const field = VESSEL_FIELD_BY_KEY.get(col.sortKey ?? col.id);
+      if (field) map[col.sortKey ?? col.id] = (v) => vesselFieldValue(v, field);
+    }
+    return map;
+  }, [allColumns]);
+  const { sorted: sortedVessels, sort, toggle } = useClientSort(vessels, sortAccessors);
 
   const allIds = vessels.map((v) => v.id);
   const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
@@ -495,26 +510,37 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
                     className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
                   />
                 </th>
-                    {columns.map((col) => (
-                      <th
-                        key={col.id}
-                        className={`whitespace-nowrap px-4 py-3 ${col.id === "vesselName" ? "sticky left-20 top-0 z-50 bg-slate-50" : ""}`}
-                      >
-                    {col.label}
-                  </th>
-                ))}
+                    {columns.map((col) =>
+                      col.sortable === false ? (
+                        <th
+                          key={col.id}
+                          className={`whitespace-nowrap px-4 py-3 ${col.id === "vesselName" ? "sticky left-20 top-0 z-50 bg-slate-50" : ""}`}
+                        >
+                          {col.label}
+                        </th>
+                      ) : (
+                        <SortableHeader
+                          key={col.id}
+                          label={col.label}
+                          sortKey={col.sortKey ?? col.id}
+                          sort={sort}
+                          onSort={toggle}
+                          className={col.id === "vesselName" ? "sticky left-20 top-0 z-50 bg-slate-50" : ""}
+                        />
+                      ),
+                    )}
                 <th className="sticky right-0 top-0 z-50 bg-slate-50 px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-                {vessels.length === 0 ? (
+                {sortedVessels.length === 0 ? (
                   <tr>
                   <td colSpan={columns.length + 3} className="px-4 py-8 text-center text-sm text-slate-400">
                     No vessels match your filters.
                   </td>
                 </tr>
               ) : (
-                vessels.map((vessel) => {
+                sortedVessels.map((vessel) => {
                   const isOpen = expanded.has(vessel.id);
                   return (
                   <Fragment key={vessel.id}>

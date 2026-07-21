@@ -11,6 +11,8 @@ import type {
 import { VESSEL_SCHEMA_FIELDS, type VesselSchemaField } from "@/lib/vessel-schema";
 import { marineDbColumns, type TableColumn } from "@/lib/table-columns";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
+import { useClientSort } from "@/hooks/useClientSort";
+import { SortableHeader } from "@/components/table/SortableHeader";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
 
 type LoadState =
@@ -74,6 +76,21 @@ export function MarineDbTable({ rows }: { rows: MarineVesselRowView[] }) {
 
   const allColumns = useMemo(() => marineDbColumns(), []);
   const { columns, orderedAll, lockedColumns, save, reset } = useColumnPreferences("marine-db", allColumns);
+
+  // Client-side sort: all rows are in memory, so sort locally by the column's
+  // displayed value (reuse marineCellValue so sort matches what's shown).
+  const sortAccessors = useMemo(() => {
+    const map: Record<string, (row: MarineVesselRowView) => string | number> = {};
+    for (const col of allColumns) {
+      const key = col.sortKey ?? col.id;
+      map[key] =
+        col.id === "associatedContacts"
+          ? (row) => row.associatedContactCount
+          : (row) => marineCellValue(row, col);
+    }
+    return map;
+  }, [allColumns]);
+  const { sorted: sortedRows, sort, toggle: toggleSort } = useClientSort(rows, sortAccessors);
 
   // expand toggle column + the visible data columns
   const colSpan = columns.length + 1;
@@ -143,26 +160,38 @@ export function MarineDbTable({ rows }: { rows: MarineVesselRowView[] }) {
           <thead className="sticky top-0 z-40 border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:border-[#202026] dark:bg-[#0E0E12] dark:text-white/45">
             <tr>
               <th className="sticky left-0 top-0 z-50 w-10 bg-slate-50 px-2 py-3 dark:bg-[#0E0E12]" />
-              {columns.map((col) => (
-                <th
-                  key={col.id}
-                  className={`whitespace-nowrap px-3 py-3 ${stickyHeadClass(col.id)}`}
-                  style={stickyStyle(col.id)}
-                >
-                  {col.label}
-                </th>
-              ))}
+              {columns.map((col) =>
+                col.sortable === false ? (
+                  <th
+                    key={col.id}
+                    className={`whitespace-nowrap px-3 py-3 ${stickyHeadClass(col.id)}`}
+                    style={stickyStyle(col.id)}
+                  >
+                    {col.label}
+                  </th>
+                ) : (
+                  <SortableHeader
+                    key={col.id}
+                    label={col.label}
+                    sortKey={col.sortKey ?? col.id}
+                    sort={sort}
+                    onSort={toggleSort}
+                    className={`px-3 ${stickyHeadClass(col.id)}`}
+                    style={stickyStyle(col.id)}
+                  />
+                ),
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-[#1B1B20]">
-            {rows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <tr>
                 <td className="px-4 py-10 text-center text-sm text-slate-500" colSpan={colSpan}>
                   No vessels match the current filters.
                 </td>
               </tr>
             ) : (
-              rows.map((row) => {
+              sortedRows.map((row) => {
                 const isOpen = expanded.has(row.vesselId);
                 const state = loadState[row.vesselId];
                 return (

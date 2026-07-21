@@ -60,51 +60,55 @@ const VESSEL_DEFAULT_VISIBLE = new Set<string>([
 
 export function vesselTableColumns(): TableColumn[] {
   return [
-    { id: "associatedContacts", label: "Associated Contacts", group: "Match" },
+    // Computed/relational columns have no simple sort key.
+    { id: "associatedContacts", label: "Associated Contacts", group: "Match", sortable: false },
     ...VESSEL_SCHEMA_FIELDS.map<TableColumn>((field) => ({
       id: field.key,
       label: field.label,
       group: field.group,
       locked: field.key === "vesselName",
       defaultHidden: field.key === "vesselName" ? false : !VESSEL_DEFAULT_VISIBLE.has(field.key),
+      sortKey: field.key,
     })),
-    { id: "eta", label: "ETA", group: "Voyage" },
-    { id: "linkedOwner", label: "Linked Owner", group: "Ownership and Management" },
-    { id: "campaign", label: "Campaign", group: "Voyage" },
+    { id: "eta", label: "ETA", group: "Voyage", sortable: false },
+    { id: "linkedOwner", label: "Linked Owner", group: "Ownership and Management", sortable: false },
+    { id: "campaign", label: "Campaign", group: "Voyage", sortable: false },
   ];
 }
 
 export function contactTableColumns(): TableColumn[] {
   return [
-    { id: "associatedVessels", label: "Associated Ships", group: "Marine" },
+    { id: "associatedVessels", label: "Associated Ships", group: "Marine", sortable: false },
     ...CONTACT_SCHEMA_FIELDS.map<TableColumn>((field, index) => ({
       id: String(field.key),
       label: field.label,
       group: field.group,
       locked: index === 0,
+      sortKey: String(field.key),
     })),
-    { id: "marineRole", label: "Marine Role", group: "Marine" },
-    { id: "seniority", label: "Seniority", group: "Marine" },
-    { id: "score", label: "Score", group: "Marine" },
+    { id: "marineRole", label: "Marine Role", group: "Marine", sortKey: "marineRole" },
+    { id: "seniority", label: "Seniority", group: "Marine", sortKey: "seniority" },
+    { id: "score", label: "Score", group: "Marine", sortKey: "engagementScore" },
   ];
 }
 
 const MARINE_MATCH_COLUMNS: TableColumn[] = [
-  { id: "matchedValue", label: "Matched Value", group: "Match" },
-  { id: "matchedRole", label: "Matched Role", group: "Match" },
-  { id: "matchSource", label: "Match Source", group: "Match" },
-  { id: "confidence", label: "Confidence", group: "Match" },
+  { id: "matchedValue", label: "Matched Value", group: "Match", sortable: false },
+  { id: "matchedRole", label: "Matched Role", group: "Match", sortable: false },
+  { id: "matchSource", label: "Match Source", group: "Match", sortable: false },
+  { id: "confidence", label: "Confidence", group: "Match", sortable: false },
 ];
 
 export function marineDbColumns(): TableColumn[] {
   return [
-    { id: "associatedContacts", label: "Associated Contacts", group: "Match", locked: true },
+    { id: "associatedContacts", label: "Associated Contacts", group: "Match", locked: true, sortable: false },
     ...VESSEL_SCHEMA_FIELDS.map<TableColumn>((field) => ({
       id: field.key,
       label: field.label,
       group: field.group,
       locked: field.key === "vesselName",
       defaultHidden: field.key === "vesselName" ? false : !VESSEL_DEFAULT_VISIBLE.has(field.key),
+      sortKey: field.key,
     })),
     ...MARINE_MATCH_COLUMNS,
   ];

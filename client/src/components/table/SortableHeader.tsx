@@ -20,6 +20,7 @@ export function SortableHeader({
   onSort,
   align = "left",
   className = "",
+  style,
 }: {
   label: string;
   sortKey: string;
@@ -27,6 +28,7 @@ export function SortableHeader({
   onSort: (key: string) => void;
   align?: "left" | "right" | "center";
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const active = sort?.key === sortKey;
   const direction: SortDirection | null = active ? sort!.direction : null;
@@ -34,7 +36,7 @@ export function SortableHeader({
     align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
 
   return (
-    <th className={`whitespace-nowrap px-4 py-3 ${className}`} aria-sort={ariaSort(direction)}>
+    <th className={`whitespace-nowrap px-4 py-3 ${className}`} style={style} aria-sort={ariaSort(direction)}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
