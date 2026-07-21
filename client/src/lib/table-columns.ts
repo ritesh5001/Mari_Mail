@@ -17,6 +17,14 @@ export type TableColumn = {
   locked?: boolean;
   /** Hidden on first load (used to trim the very wide vessel schema by default). */
   defaultHidden?: boolean;
+  /**
+   * Sort key for this column. Defaults to `id`. Set `sortable: false` to opt a
+   * column out of sorting (e.g. actions / computed columns with no order). When
+   * a table sorts server-side, this key is what the feed's orderBy allowlist
+   * maps to a Prisma column.
+   */
+  sortKey?: string;
+  sortable?: boolean;
 };
 
 /** Persisted unit — one entry per movable column. */
