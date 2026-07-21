@@ -13,6 +13,10 @@ import {
   type VesselContactMatch,
 } from "@/lib/vessel-contact-matcher";
 
+// Per-contact candidate-vessel scan cap for the lazy count-badge endpoint. Keeps
+// a single contact's fan-out bounded so the counts route can't do unbounded work.
+const ASSOCIATION_COUNT_SCAN_CAP = 200;
+
 export const associationCompanySelect = {
   id: true,
   companyName: true,
@@ -331,6 +335,11 @@ export async function countAssociatedVesselsForContacts(workspaceId: string, con
   });
   const counts = new Map<string, number>(contactIds.map((id) => [id, 0]));
 
+  // This runs one candidate scan per contact (badge counts for the contacts
+  // list, fetched lazily after page load — not on the SSR critical path). Cap
+  // each scan with `take` so a contact whose company owns thousands of vessels
+  // can't pull them all just to render a count badge; the badge only needs an
+  // indicative number, and the cap bounds the total work to N×200 rows.
   await Promise.all(
     contacts.map(async (contact) => {
       const or = vesselCandidateWhereForContact(contact);
@@ -338,6 +347,7 @@ export async function countAssociatedVesselsForContacts(workspaceId: string, con
       const vessels = await prisma.vessel.findMany({
         where: { AND: [workspaceScope(workspaceId), { OR: or }] },
         include: associationVesselInclude,
+        take: ASSOCIATION_COUNT_SCAN_CAP,
       });
       const count = vessels.reduce((total, vessel) => {
         return total + (matchContactToVesselWithFallback(contact, vessel) ? 1 : 0);

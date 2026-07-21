@@ -18,6 +18,12 @@ export type ContactListModel = Prisma.ContactListGetPayload<Record<string, never
 };
 type CompanyKindString = "SHIP_OWNER" | "ISM_MANAGER" | "COMMERCIAL_MANAGER" | "GENERIC";
 
+// Upper bounds for the contact-list detail loaders so a huge SMART filter or a
+// company with thousands of vessels can't pull an unbounded result set into the
+// server render. Generous enough to cover any real list; the UI paginates/scrolls.
+const CONTACT_LIST_MAX = 500;
+const VESSEL_LIST_MAX = 500;
+
 function scope(workspaceId: string) {
   return { OR: [{ workspaceId }, { workspaceId: null }] };
 }
@@ -246,9 +252,30 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
     notFound();
   }
 
-  const baseContacts =
+  const companyLinks = list.companies.map((c) => ({ companyId: c.companyId, companyKind: c.companyKind }));
+
+  const vesselInclude = {
+    shipOwnerCompany: { select: { id: true, companyName: true } },
+    ismManagerCompany: { select: { id: true, companyName: true } },
+    commercialManagerCompany: { select: { id: true, companyName: true } },
+  };
+
+  type VesselWithCompanies = Prisma.VesselGetPayload<{ include: typeof vesselInclude }>;
+
+  const vesselOr: Prisma.VesselWhereInput[] = [];
+  for (const { companyId, companyKind } of companyLinks) {
+    if (companyKind === "SHIP_OWNER") vesselOr.push({ shipOwnerCompanyId: companyId });
+    else if (companyKind === "ISM_MANAGER") vesselOr.push({ ismManagerCompanyId: companyId });
+    else if (companyKind === "COMMERCIAL_MANAGER") vesselOr.push({ commercialManagerCompanyId: companyId });
+  }
+
+  // These four reads are independent of one another (they only depend on the
+  // `list` fetched above), so run them in parallel instead of a sequential
+  // await chain. Each is capped with `take` so a huge SMART filter or a company
+  // with thousands of vessels can't load an unbounded result set into memory.
+  const [baseContacts, companyContacts, directVessels, companyVessels] = await Promise.all([
     list.type === "SMART" && list.filterConfig
-      ? await prisma.contact.findMany({
+      ? prisma.contact.findMany({
           where: {
             AND: [
               scope(workspaceId),
@@ -256,20 +283,18 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
             ],
           },
           orderBy: { engagementScore: "desc" },
+          take: CONTACT_LIST_MAX,
         })
-      : await prisma.contact.findMany({
+      : prisma.contact.findMany({
           // No workspace filter on the contact — list ownership is already
           // ownership-scoped above. If the user added a cross-workspace or
           // global contact to their list, they should still see it here.
           where: { listMemberships: { some: { listId: list.id } } },
           orderBy: { engagementScore: "desc" },
-        });
-
-  const companyLinks = list.companies.map((c) => ({ companyId: c.companyId, companyKind: c.companyKind }));
-
-  const companyContacts =
+          take: CONTACT_LIST_MAX,
+        }),
     companyLinks.length > 0
-      ? await prisma.contact.findMany({
+      ? prisma.contact.findMany({
           where: {
             AND: [
               scope(workspaceId),
@@ -277,8 +302,34 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
             ],
           },
           orderBy: { engagementScore: "desc" },
+          take: CONTACT_LIST_MAX,
         })
-      : [];
+      : Promise.resolve([] as ContactModel[]),
+    // Vessels the user explicitly added to the list — no workspace filter here.
+    // The list itself is already ownership-scoped above, and the ETA global
+    // promotion means Port Radar surfaces vessels from any workspace. Adding
+    // one via the "Add to list" action creates a ListVessel row that legitimately
+    // crosses workspaces; hiding it because vessel.workspaceId != viewer's
+    // workspace would silently drop the vessel the user just clicked "Add".
+    prisma.vessel.findMany({
+      where: { listMemberships: { some: { listId: list.id } } },
+      include: vesselInclude,
+      orderBy: { vesselName: "asc" },
+      take: VESSEL_LIST_MAX,
+    }),
+    // Vessels expanded from a company that's in the list: keep workspace scope
+    // here — this branch is auto-expansion (not a user-driven pick), so limiting
+    // it to workspace-owned + global vessels avoids flooding the view with rows
+    // the user never explicitly asked for.
+    vesselOr.length > 0
+      ? prisma.vessel.findMany({
+          where: { AND: [scope(workspaceId), { OR: vesselOr }] },
+          include: vesselInclude,
+          orderBy: { vesselName: "asc" },
+          take: VESSEL_LIST_MAX,
+        })
+      : Promise.resolve([] as VesselWithCompanies[]),
+  ]);
 
   const contactMap = new Map(baseContacts.map((c) => [c.id, c]));
   for (const c of companyContacts) contactMap.set(c.id, c);
@@ -291,46 +342,6 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
   );
   contactMap.clear();
   for (const c of enrichedContacts) contactMap.set(c.id, c);
-
-  const vesselInclude = {
-    shipOwnerCompany: { select: { id: true, companyName: true } },
-    ismManagerCompany: { select: { id: true, companyName: true } },
-    commercialManagerCompany: { select: { id: true, companyName: true } },
-  };
-
-  type VesselWithCompanies = Prisma.VesselGetPayload<{ include: typeof vesselInclude }>;
-
-  // Vessels the user explicitly added to the list — no workspace filter here.
-  // The list itself is already ownership-scoped above, and the ETA global
-  // promotion means Port Radar surfaces vessels from any workspace. Adding
-  // one via the "Add to list" action creates a ListVessel row that legitimately
-  // crosses workspaces; hiding it because vessel.workspaceId != viewer's
-  // workspace would silently drop the vessel the user just clicked "Add".
-  const directVessels: VesselWithCompanies[] = await prisma.vessel.findMany({
-    where: { listMemberships: { some: { listId: list.id } } },
-    include: vesselInclude,
-    orderBy: { vesselName: "asc" },
-  });
-
-  const vesselOr: Prisma.VesselWhereInput[] = [];
-  for (const { companyId, companyKind } of companyLinks) {
-    if (companyKind === "SHIP_OWNER") vesselOr.push({ shipOwnerCompanyId: companyId });
-    else if (companyKind === "ISM_MANAGER") vesselOr.push({ ismManagerCompanyId: companyId });
-    else if (companyKind === "COMMERCIAL_MANAGER") vesselOr.push({ commercialManagerCompanyId: companyId });
-  }
-
-  // Vessels expanded from a company that's in the list: keep workspace scope
-  // here — this branch is auto-expansion (not a user-driven pick), so limiting
-  // it to workspace-owned + global vessels avoids flooding the view with rows
-  // the user never explicitly asked for.
-  const companyVessels: VesselWithCompanies[] =
-    vesselOr.length > 0
-      ? await prisma.vessel.findMany({
-          where: { AND: [scope(workspaceId), { OR: vesselOr }] },
-          include: vesselInclude,
-          orderBy: { vesselName: "asc" },
-        })
-      : [];
 
   const vesselMap = new Map<string, VesselWithCompanies>(directVessels.map((v) => [v.id, v]));
   for (const v of companyVessels) vesselMap.set(v.id, v);

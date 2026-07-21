@@ -13,22 +13,24 @@ export default async function VesselsPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const [session, { vessels, count, error }] = await Promise.all([
-    getServerSession(),
-    listVessels(searchParams),
-  ]);
+  // Resolve the session first (cheap + request-cached), then run the vessel
+  // list and the country-name lookup in parallel — previously the country-name
+  // lookup ran as a serial tail after the list, adding an extra round-trip.
+  const session = await getServerSession();
   const targetPortCountry = session?.activeWorkspace?.targetPortCountry ?? null;
   const isSuperAdmin = session?.user.isSuperAdmin ?? false;
-  // Look up the human-readable country name so the header can read
-  // "X vessels found in Togo" instead of just the count.
-  const targetCountryName = targetPortCountry
-    ? (
-        await prisma.port.findFirst({
+  const [{ vessels, count, error }, targetCountryPort] = await Promise.all([
+    listVessels(searchParams),
+    // Human-readable country name so the header can read "X vessels found in
+    // Togo" instead of just the count.
+    targetPortCountry
+      ? prisma.port.findFirst({
           where: { country: targetPortCountry },
           select: { countryName: true },
         })
-      )?.countryName ?? null
-    : null;
+      : Promise.resolve(null),
+  ]);
+  const targetCountryName = targetCountryPort?.countryName ?? null;
   const countLabel = error
     ? "Failed to load"
     : `${count.toLocaleString()} vessel${count === 1 ? "" : "s"} found${targetCountryName ? ` in ${targetCountryName}` : ""}`;
