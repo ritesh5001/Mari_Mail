@@ -1,135 +1,267 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
+import { apiFetch } from "@/lib/browser-fetch";
 
-type TabKey = "missed" | "newly" | "upcoming";
+export type PortRadarTabKey = "missed" | "newly" | "upcoming";
+
+const TAB_ENDPOINT: Record<PortRadarTabKey, string> = {
+  missed: "/api/port-radar/missed",
+  newly: "/api/port-radar/newly",
+  upcoming: "/api/port-radar/feed",
+};
+
+type FeedResponse = { etas: IndiaRadarEta[]; count: number; page: number; pageSize: number };
+
+type TabState = {
+  rows: IndiaRadarEta[];
+  count: number;
+  page: number;
+  loaded: boolean;
+  loading: boolean;
+};
 
 /**
- * The three Port Radar feeds (missed opportunities / newly added / upcoming)
- * as tabs, matching the ListViews tab pattern. Tabs that have no rows are
- * hidden — except "Upcoming", which always shows since it's the primary feed.
+ * The three Port Radar feeds as tabs. Each tab loads its data lazily — only the
+ * initial tab is seeded from the server; other tabs fetch their first page when
+ * first opened. Paging fetches one page at a time and prefetches the next page
+ * in the background so "Next" is instant. Contact counts load lazily after rows
+ * render (a second request) and are merged into the rows in place.
  */
 export function PortRadarTabs({
   countryLabel,
   isSuperAdmin,
   portsWithCoordinates,
-  missed,
-  newlyAdded,
-  upcoming,
-  upcomingCount,
-  page,
+  counts,
+  initialTab,
+  initialRows,
+  initialCount,
   pageSize,
 }: {
   countryLabel: string;
   isSuperAdmin: boolean;
   portsWithCoordinates: string[];
-  missed: IndiaRadarEta[];
-  newlyAdded: IndiaRadarEta[];
-  upcoming: IndiaRadarEta[];
-  upcomingCount: number;
-  page: number;
+  counts: { missed: number; newly: number; upcoming: number };
+  initialTab: PortRadarTabKey;
+  initialRows: IndiaRadarEta[];
+  initialCount: number;
   pageSize: number;
 }) {
-  // Default to the most urgent tab that has content: missed → newly → upcoming.
-  const initialTab: TabKey =
-    missed.length > 0 ? "missed" : newlyAdded.length > 0 ? "newly" : "upcoming";
-  const [tab, setTab] = useState<TabKey>(initialTab);
+  const [tab, setTab] = useState<PortRadarTabKey>(initialTab);
+  const [tabs, setTabs] = useState<Record<PortRadarTabKey, TabState>>(() => ({
+    missed: emptyTab(),
+    newly: emptyTab(),
+    upcoming: emptyTab(),
+    [initialTab]: { rows: initialRows, count: initialCount, page: 1, loaded: true, loading: false },
+  }));
+
+  // Prefetched next pages, keyed "tab:page". Promoted instantly on Next.
+  const prefetch = useRef<Map<string, FeedResponse>>(new Map());
+  // Contact counts already fetched, keyed by vessel id, so re-visiting a page
+  // doesn't refetch.
+  const contactCounts = useRef<Map<string, number>>(new Map());
+
+  const filterSearch = () =>
+    typeof window === "undefined" ? "" : window.location.search.replace(/^\?/, "");
+
+  const fetchPage = useCallback(
+    async (which: PortRadarTabKey, page: number): Promise<FeedResponse | null> => {
+      try {
+        const res = await apiFetch(TAB_ENDPOINT[which], {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ search: filterSearch(), page, pageSize }),
+        });
+        if (!res.ok) return null;
+        return (await res.json()) as FeedResponse;
+      } catch {
+        return null;
+      }
+    },
+    [pageSize],
+  );
+
+  // Lazily fill in contact-count badges for a set of rows, then merge into state.
+  const loadContactCounts = useCallback(
+    async (which: PortRadarTabKey, rows: IndiaRadarEta[]) => {
+      const missing = Array.from(
+        new Set(rows.map((r) => r.vesselId).filter((id) => !contactCounts.current.has(id))),
+      );
+      if (missing.length === 0) return;
+      try {
+        const res = await apiFetch("/api/port-radar/contact-counts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ vesselIds: missing }),
+        });
+        if (!res.ok) return;
+        const { counts: fetched } = (await res.json()) as { counts: Record<string, number> };
+        for (const [id, n] of Object.entries(fetched)) contactCounts.current.set(id, n);
+        setTabs((prev) => {
+          const current = prev[which];
+          return {
+            ...prev,
+            [which]: {
+              ...current,
+              rows: current.rows.map((row) => ({
+                ...row,
+                associatedContactCount: contactCounts.current.get(row.vesselId) ?? row.associatedContactCount,
+              })),
+            },
+          };
+        });
+      } catch {
+        // Non-fatal — badges just stay at their seeded value.
+      }
+    },
+    [],
+  );
+
+  // Prefetch the page after `page` for a tab so the next "Next" is instant.
+  const prefetchNext = useCallback(
+    async (which: PortRadarTabKey, page: number, count: number) => {
+      const next = page + 1;
+      if ((next - 1) * pageSize >= count) return; // no next page
+      const key = `${which}:${next}`;
+      if (prefetch.current.has(key)) return;
+      const data = await fetchPage(which, next);
+      if (data) prefetch.current.set(key, data);
+    },
+    [fetchPage, pageSize],
+  );
+
+  const applyPage = useCallback(
+    (which: PortRadarTabKey, data: FeedResponse) => {
+      setTabs((prev) => ({
+        ...prev,
+        [which]: { rows: data.etas, count: data.count, page: data.page, loaded: true, loading: false },
+      }));
+      void loadContactCounts(which, data.etas);
+      void prefetchNext(which, data.page, data.count);
+    },
+    [loadContactCounts, prefetchNext],
+  );
+
+  // On first mount, kick off lazy counts + prefetch for the server-seeded tab.
+  // The ref guard makes this run exactly once without needing a lint-disable.
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    const seeded = tabs[initialTab];
+    if (seeded.loaded) {
+      void loadContactCounts(initialTab, seeded.rows);
+      void prefetchNext(initialTab, seeded.page, seeded.count);
+    }
+  }, [tabs, initialTab, loadContactCounts, prefetchNext]);
+
+  const openTab = useCallback(
+    async (which: PortRadarTabKey) => {
+      setTab(which);
+      if (tabs[which].loaded || tabs[which].loading) return;
+      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true } }));
+      const data = await fetchPage(which, 1);
+      if (data) applyPage(which, data);
+      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true } }));
+    },
+    [tabs, fetchPage, applyPage],
+  );
+
+  const goToPage = useCallback(
+    async (which: PortRadarTabKey, page: number) => {
+      const key = `${which}:${page}`;
+      const cached = prefetch.current.get(key);
+      if (cached) {
+        applyPage(which, cached);
+        return;
+      }
+      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true } }));
+      const data = await fetchPage(which, page);
+      if (data) applyPage(which, data);
+      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false } }));
+    },
+    [fetchPage, applyPage],
+  );
+
+  const state = tabs[tab];
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
       <div className="flex flex-wrap border-b border-slate-100 dark:border-white/[0.06]">
-        {missed.length > 0 ? (
+        {counts.missed > 0 ? (
           <TabButton
             active={tab === "missed"}
-            onClick={() => setTab("missed")}
+            onClick={() => void openTab("missed")}
             icon={<AlertTriangle className="h-4 w-4" />}
             label="Missed opportunities"
-            count={missed.length}
+            count={counts.missed}
             tone="amber"
           />
         ) : null}
-        {newlyAdded.length > 0 ? (
+        {counts.newly > 0 ? (
           <TabButton
             active={tab === "newly"}
-            onClick={() => setTab("newly")}
+            onClick={() => void openTab("newly")}
             icon={<Ship className="h-4 w-4" />}
             label="Newly added ETAs"
-            count={newlyAdded.length}
+            count={counts.newly}
           />
         ) : null}
         <TabButton
           active={tab === "upcoming"}
-          onClick={() => setTab("upcoming")}
+          onClick={() => void openTab("upcoming")}
           icon={<Radar className="h-4 w-4" />}
           label={`Upcoming ${countryLabel} arrivals`}
-          count={upcomingCount}
+          count={counts.upcoming}
         />
       </div>
 
-      {tab === "missed" && missed.length > 0 ? (
-        <div className="p-5">
+      <div className="p-5">
+        {tab === "missed" ? (
           <p className="mb-3 text-sm text-amber-800 dark:text-amber-200/80">
-            {missed.length} vessel{missed.length === 1 ? "" : "s"} arriving in
-            &lt; 48h with no campaign assigned — select any to add to a list.
+            {counts.missed} vessel{counts.missed === 1 ? "" : "s"} arriving in &lt; 48h with no
+            campaign assigned — select any to add to a list.
           </p>
-          <PortRadarArrivals
-            etas={missed}
-            count={missed.length}
-            page={1}
-            pageSize={missed.length}
-            portsWithCoordinates={portsWithCoordinates}
-            isSuperAdmin={isSuperAdmin}
-          />
-        </div>
-      ) : null}
-
-      {tab === "newly" && newlyAdded.length > 0 ? (
-        <div className="p-5">
+        ) : null}
+        {tab === "newly" ? (
           <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
-            {newlyAdded.length} vessel{newlyAdded.length === 1 ? "" : "s"} from
-            the most recent upload — visible until the next batch arrives.
+            {counts.newly} vessel{counts.newly === 1 ? "" : "s"} from the most recent upload —
+            visible until the next batch arrives.
           </p>
-          <PortRadarArrivals
-            etas={newlyAdded}
-            count={newlyAdded.length}
-            page={1}
-            pageSize={newlyAdded.length}
-            portsWithCoordinates={portsWithCoordinates}
-            isSuperAdmin={isSuperAdmin}
-          />
-        </div>
-      ) : null}
-
-      {tab === "upcoming" ? (
-        <div className="p-5">
+        ) : null}
+        {tab === "upcoming" ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600 dark:text-white/55">
-              {upcomingCount} upcoming vessels match — sorted by ETA
+              {counts.upcoming} upcoming vessels match — sorted by ETA
             </p>
             {isSuperAdmin ? (
-              <Link
-                href="/dashboard/import"
-                className="text-sm font-medium text-ocean hover:underline"
-              >
+              <Link href="/dashboard/import" className="text-sm font-medium text-ocean hover:underline">
                 Import ETAs
               </Link>
             ) : null}
           </div>
-          <PortRadarArrivals
-            etas={upcoming}
-            count={upcomingCount}
-            page={page}
-            pageSize={pageSize}
-            portsWithCoordinates={portsWithCoordinates}
-            isSuperAdmin={isSuperAdmin}
-          />
-        </div>
-      ) : null}
+        ) : null}
+
+        <PortRadarArrivals
+          etas={state.rows}
+          count={state.count}
+          page={state.page}
+          pageSize={pageSize}
+          paging={state.loading}
+          onPageChange={(next) => void goToPage(tab, next)}
+          portsWithCoordinates={portsWithCoordinates}
+          isSuperAdmin={isSuperAdmin}
+        />
+      </div>
     </section>
   );
+}
+
+function emptyTab(): TabState {
+  return { rows: [], count: 0, page: 1, loaded: false, loading: false };
 }
 
 function TabButton({
@@ -168,9 +300,7 @@ function TabButton({
       {label}
       <span
         className={`rounded-full px-2 py-0.5 text-xs ${
-          active
-            ? activeBadge
-            : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
+          active ? activeBadge : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
         }`}
       >
         {count}

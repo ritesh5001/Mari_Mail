@@ -52,6 +52,15 @@ export type RadarEta = Prisma.VesselETAGetPayload<{
 }>;
 
 
+// Shared paged-feed result shape for the newly-added and missed feeds so the
+// API routes and the SSR page can treat all three feeds uniformly.
+export type PagedFeed = {
+  etas: RadarEta[];
+  count: number;
+  page: number;
+  pageSize: number;
+};
+
 function etaVisibilityWhere(workspaceId: string): Prisma.VesselETAWhereInput {
   return {
     OR: [
@@ -125,16 +134,16 @@ const ETA_CONFIDENCE_VALUES = new Set<string>(Object.values(ETAConfidence));
 const VOYAGE_STATUS_VALUES = new Set<string>(Object.values(VoyageStatus));
 
 export const PORT_RADAR_PAGE_SIZES = [25, 50, 100, 200, 500] as const;
-export const PORT_RADAR_DEFAULT_PAGE_SIZE = 100;
+export const PORT_RADAR_DEFAULT_PAGE_SIZE = 25;
 
-function clampPageSize(value: string | string[] | undefined): number {
+export function clampPageSize(value: string | string[] | undefined): number {
   const raw = Number(typeof value === "string" ? value : NaN);
   return PORT_RADAR_PAGE_SIZES.includes(raw as (typeof PORT_RADAR_PAGE_SIZES)[number])
     ? raw
     : PORT_RADAR_DEFAULT_PAGE_SIZE;
 }
 
-function clampPage(value: string | string[] | undefined): number {
+export function clampPage(value: string | string[] | undefined): number {
   const raw = Number(typeof value === "string" ? value : NaN);
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
 }
@@ -149,7 +158,7 @@ function clampPage(value: string | string[] | undefined): number {
  */
 export async function listPortRadarFeed(
   searchParams: Record<string, string | string[] | undefined>,
-  options: { includeAllCountries?: boolean } = {},
+  options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
 ) {
   const { workspaceId, targetPortCountry } = await requireEtaWorkspaceId();
   // Super-admin view: drop the workspace's target-country restriction so the
@@ -245,8 +254,8 @@ export async function listPortRadarFeed(
   // themselves are one round trip, but each vessel's owner/manager companies
   // then feed a per-vessel OR tree in the contact-association query (~1900
   // clauses of un-indexable ILIKE). Paging first cuts both.
-  const pageSize = clampPageSize(searchParams.pageSize);
-  const page = clampPage(searchParams.page);
+  const pageSize = options.pageSize ?? clampPageSize(searchParams.pageSize);
+  const page = options.page ?? clampPage(searchParams.page);
 
   try {
     const [etas, count, ports] = await Promise.all([
@@ -327,10 +336,12 @@ export async function listLatestBatchEtas(
   workspaceId: string,
   targetPortCountry: string | null,
   searchParams: Record<string, string | string[] | undefined> = {},
-  options: { includeAllCountries?: boolean } = {},
-): Promise<RadarEta[]> {
+  options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
+): Promise<PagedFeed> {
   const MIN_BATCH_SIZE = 5;
   const SCAN_WINDOW = 500;
+  const pageSize = options.pageSize ?? PORT_RADAR_DEFAULT_PAGE_SIZE;
+  const page = Math.max(1, options.page ?? 1);
   const now = new Date();
   // Reuse the same vessel-level filter surface as the main feed so a
   // filter (e.g. BULK_CARRIER) narrows both tables consistently.
@@ -355,7 +366,7 @@ export async function listLatestBatchEtas(
       select: { id: true, createdAt: true },
     });
 
-    if (lightCandidates.length === 0) return [];
+    if (lightCandidates.length === 0) return { etas: [], count: 0, page, pageSize };
 
     // Detect the boundary using createdAt gaps.
     let boundary = lightCandidates.length;
@@ -392,44 +403,127 @@ export async function listLatestBatchEtas(
       batchIds = lightCandidates.slice(0, boundary).map((c) => c.id);
     }
 
-    if (batchIds.length === 0) return [];
+    if (batchIds.length === 0) return { etas: [], count: 0, page, pageSize };
 
-    // Step 2 — Fetch full data ONLY for the batch rows (plus country scope).
-    const batch = await prisma.vesselETA.findMany({
-      where: {
-        AND: [
-          { id: { in: batchIds } },
-          options.includeAllCountries ? {} : countryClause(targetPortCountry),
-        ],
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        vessel: { include: associationVesselInclude },
-        port: {
-          select: {
-            portCode: true,
-            portName: true,
-            region: true,
-            country: true,
-            latitude: true,
-            longitude: true,
+    // Step 2 — Fetch full data for ONLY the requested page of batch rows (plus
+    // country scope). Batch detection above is global; the country filter is
+    // applied here, so we also count the country-scoped batch to get the true
+    // total for pagination. skip/take over the fixed batchId set with a stable
+    // createdAt ordering yields a correct, cheap page.
+    const batchWhere: Prisma.VesselETAWhereInput = {
+      AND: [
+        { id: { in: batchIds } },
+        options.includeAllCountries ? {} : countryClause(targetPortCountry),
+      ],
+    };
+    const [batch, count] = await Promise.all([
+      prisma.vesselETA.findMany({
+        where: batchWhere,
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          vessel: { include: associationVesselInclude },
+          port: {
+            select: {
+              portCode: true,
+              portName: true,
+              region: true,
+              country: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          triggers: {
+            select: {
+              id: true,
+              status: true,
+              nextFireAt: true,
+              campaign: { select: { id: true, name: true } },
+            },
           },
         },
-        triggers: {
-          select: {
-            id: true,
-            status: true,
-            nextFireAt: true,
-            campaign: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
+      }),
+      prisma.vesselETA.count({ where: batchWhere }),
+    ]);
 
-    return batch;
+    return { etas: batch, count, page, pageSize };
   } catch (err) {
     console.error("[eta] listLatestBatchEtas failed:", err);
-    return [];
+    return { etas: [], count: 0, page, pageSize };
+  }
+}
+
+/**
+ * Cheap tab-badge totals for the three Port Radar feeds, without fetching any
+ * full rows. Used by the SSR page so it can render tab counts while loading only
+ * the active tab's first page. `missed` and `upcoming` are plain counts; `newly`
+ * reuses the batch id-scan (id + createdAt only) then counts the country-scoped
+ * batch — the same numbers the feeds themselves report.
+ */
+export async function getPortRadarTabCounts(
+  workspaceId: string,
+  targetPortCountry: string | null,
+  searchParams: Record<string, string | string[] | undefined> = {},
+  options: { includeAllCountries?: boolean } = {},
+): Promise<{ missed: number; newly: number; upcoming: number }> {
+  const now = new Date();
+  const in48h = new Date(now.getTime() + 48 * 3_600_000);
+  const effectiveCountry = options.includeAllCountries ? null : targetPortCountry;
+  const vesselClauses = buildVesselFilterClauses(searchParams);
+  const vesselWhere: Prisma.VesselETAWhereInput =
+    vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};
+
+  try {
+    const [missed, upcoming, newly] = await Promise.all([
+      prisma.vesselETA.count({
+        where: {
+          AND: [
+            etaVisibilityWhere(workspaceId),
+            countryClause(effectiveCountry),
+            { eta: { gte: now, lte: in48h } },
+            { triggers: { none: {} } },
+          ],
+        },
+      }),
+      prisma.vesselETA.count({
+        where: {
+          AND: [
+            etaVisibilityWhere(workspaceId),
+            countryClause(effectiveCountry),
+            { eta: { gte: now } },
+            vesselWhere,
+          ],
+        },
+      }),
+      (async () => {
+        const light = await prisma.vesselETA.findMany({
+          where: { AND: [etaVisibilityWhere(workspaceId), { eta: { gte: now } }, vesselWhere] },
+          orderBy: { createdAt: "desc" },
+          take: 500,
+          select: { id: true, createdAt: true },
+        });
+        if (light.length === 0) return 0;
+        let boundary = light.length;
+        let biggest = 0;
+        for (let i = 1; i < light.length; i += 1) {
+          const gap = light[i - 1].createdAt.getTime() - light[i].createdAt.getTime();
+          if (gap > biggest) {
+            biggest = gap;
+            boundary = i;
+          }
+        }
+        const batchIds = biggest >= 5 * 60 * 1000 ? light.slice(0, boundary).map((c) => c.id) : light.map((c) => c.id);
+        if (batchIds.length === 0) return 0;
+        return prisma.vesselETA.count({
+          where: { AND: [{ id: { in: batchIds } }, countryClause(effectiveCountry)] },
+        });
+      })(),
+    ]);
+    return { missed, newly, upcoming };
+  } catch (err) {
+    console.error("[eta] getPortRadarTabCounts failed:", err);
+    return { missed: 0, newly: 0, upcoming: 0 };
   }
 }
 
@@ -507,46 +601,55 @@ export async function getPortRadarSummary(workspaceId: string, targetPortCountry
 export async function getMissedOpportunityAlerts(
   workspaceId: string,
   targetPortCountry: string | null,
-): Promise<RadarEta[]> {
+  opts: { page?: number; pageSize?: number } = {},
+): Promise<PagedFeed> {
   const now = new Date();
   const in48h = new Date(now.getTime() + 48 * 3_600_000);
+  const pageSize = opts.pageSize ?? PORT_RADAR_DEFAULT_PAGE_SIZE;
+  const page = Math.max(1, opts.page ?? 1);
+  const where: Prisma.VesselETAWhereInput = {
+    AND: [
+      etaVisibilityWhere(workspaceId),
+      countryClause(targetPortCountry),
+      { eta: { gte: now, lte: in48h } },
+      { triggers: { none: {} } },
+    ],
+  };
   try {
-    return await prisma.vesselETA.findMany({
-      where: {
-        AND: [
-          etaVisibilityWhere(workspaceId),
-          countryClause(targetPortCountry),
-          { eta: { gte: now, lte: in48h } },
-          { triggers: { none: {} } },
-        ],
-      },
-      orderBy: { eta: "asc" },
-      take: 50,
-      include: {
-        vessel: { include: associationVesselInclude },
-        port: {
-          select: {
-            portCode: true,
-            portName: true,
-            region: true,
-            country: true,
-            latitude: true,
-            longitude: true,
+    const [etas, count] = await Promise.all([
+      prisma.vesselETA.findMany({
+        where,
+        orderBy: { eta: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          vessel: { include: associationVesselInclude },
+          port: {
+            select: {
+              portCode: true,
+              portName: true,
+              region: true,
+              country: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
+          triggers: {
+            select: {
+              id: true,
+              status: true,
+              nextFireAt: true,
+              campaign: { select: { id: true, name: true } },
+            },
           },
         },
-        triggers: {
-          select: {
-            id: true,
-            status: true,
-            nextFireAt: true,
-            campaign: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
+      }),
+      prisma.vesselETA.count({ where }),
+    ]);
+    return { etas, count, page, pageSize };
   } catch (err) {
     console.error("[eta] getMissedOpportunityAlerts failed:", err);
-    return [];
+    return { etas: [], count: 0, page, pageSize };
   }
 }
 
