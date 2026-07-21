@@ -9,6 +9,8 @@ import { apiFetch } from "@/lib/browser-fetch";
 import { contactTableColumns } from "@/lib/table-columns";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
+import { SortableHeader } from "@/components/table/SortableHeader";
+import type { SortState } from "@/hooks/useClientSort";
 import { ContactAddToListModal } from "./ContactAddToListModal";
 import { LaunchCampaignFromSelection } from "@/components/campaigns/LaunchCampaignButton";
 import { VesselAddToListModal } from "@/components/marine/VesselAddToListModal";
@@ -40,6 +42,16 @@ function scoreTier(score: number) {
   if (score >= 10) return "Cold";
   return "Inactive";
 }
+
+// Mirrors the server's contact search sort allowlist (contacts.ts sortableFields).
+// Only these columns get a clickable sortable header; others render plain.
+const SERVER_SORTABLE_CONTACT_FIELDS = new Set([
+  "firstName",
+  "lastName",
+  "companyName",
+  "email",
+  "engagementScore",
+]);
 
 function buildFilterConfig(filters: PeopleFilterState) {
   return {
@@ -98,6 +110,9 @@ export function ContactFinder() {
   const [importing, setImporting] = useState<Set<string>>(new Set());
   const [revealing, setRevealing] = useState<Map<string, "email" | "phone">>(new Map());
   const [cursor, setCursor] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortState>(null);
+  const sortRef = useRef<SortState>(null);
+  sortRef.current = sort;
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +263,11 @@ export function ContactFinder() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            filterConfig: buildFilterConfig(filtersToUse),
+            filterConfig: {
+              ...buildFilterConfig(filtersToUse),
+              // Server sorts the whole result set by this (allowlisted) field.
+              ...(sortRef.current ? { sortBy: { field: sortRef.current.key, direction: sortRef.current.direction } } : {}),
+            },
             limit: PAGE_SIZE,
             ...(nextCursor ? { cursor: nextCursor } : {}),
           }),
@@ -279,6 +298,25 @@ export function ContactFinder() {
       }
     },
     [],
+  );
+
+  // Header click → cycle asc/desc/clear, then re-run the search from the first
+  // page so the server re-orders the entire result set (not just loaded rows).
+  const onSortColumn = useCallback(
+    (key: string) => {
+      const next: SortState =
+        sortRef.current?.key !== key
+          ? { key, direction: "asc" }
+          : sortRef.current.direction === "asc"
+            ? { key, direction: "desc" }
+            : null;
+      setSort(next);
+      sortRef.current = next;
+      setSelected(new Set());
+      setCursor(null);
+      runSearch(filters, null);
+    },
+    [filters, runSearch],
   );
 
   // Debounced search whenever filters change.
@@ -472,14 +510,25 @@ export function ContactFinder() {
                         className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
                       />
                     </th>
-                    {columns.map((col) => (
-                      <th
-                        key={col.id}
-                        className={`whitespace-nowrap px-4 py-3 ${col.id === "firstName" ? "sticky left-20 top-0 z-40 bg-slate-50" : ""}`}
-                      >
-                        {col.label}
-                      </th>
-                    ))}
+                    {columns.map((col) => {
+                      const key = col.sortKey ?? col.id;
+                      const serverSortable = SERVER_SORTABLE_CONTACT_FIELDS.has(key);
+                      const sticky = col.id === "firstName" ? "sticky left-20 top-0 z-40 bg-slate-50" : "";
+                      return col.sortable === false || !serverSortable ? (
+                        <th key={col.id} className={`whitespace-nowrap px-4 py-3 ${sticky}`}>
+                          {col.label}
+                        </th>
+                      ) : (
+                        <SortableHeader
+                          key={col.id}
+                          label={col.label}
+                          sortKey={key}
+                          sort={sort}
+                          onSort={onSortColumn}
+                          className={sticky}
+                        />
+                      );
+                    })}
                     <th className="sticky right-0 top-0 z-40 bg-slate-50 px-4 py-3">Actions</th>
                   </tr>
                 </thead>
