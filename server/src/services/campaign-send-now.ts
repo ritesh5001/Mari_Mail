@@ -258,6 +258,17 @@ async function sendOneNow(
       scheduledFor: new Date().toISOString(),
     });
     if ("sent" in result && result.sent) return { outcome: "sent" };
+    if ("deferred" in result && result.deferred) {
+      // The inbox is within its per-inbox send-gap cooldown. Send Now is a
+      // manual, immediate action, so rather than silently failing we surface it
+      // as skipped with a clear reason; the contact stays enrollable and the
+      // scheduled path will still fire it once the gap elapses.
+      const seconds = Math.ceil(result.retryAfterMs / 1000);
+      return {
+        outcome: "skipped",
+        reason: `Sending inbox is cooling down (per-inbox send gap); retry in ~${seconds}s.`,
+      };
+    }
     if ("bounced" in result && result.bounced) {
       return { outcome: "failed", reason: "Recipient bounced (hard)." };
     }

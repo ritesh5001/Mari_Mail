@@ -14,8 +14,10 @@ import {
 import { createSignedToken, randomToken } from "@marimail/utils";
 import {
   buildTransport,
+  getInboxLastSentAt,
   getTodaySent,
   incrementTodaySent,
+  markInboxSent,
   resolveFromAddress,
 } from "./email-account.service.js";
 import { getToken, incrementToken } from "./token-store.js";
@@ -247,6 +249,16 @@ function campaignDailyCounterKey(campaignId: string) {
   return `campaign:${campaignId}:sent:${new Date().toISOString().slice(0, 10)}`;
 }
 
+// Picks a fresh random gap (ms) in [min, max] seconds for human-like pacing —
+// same formula the manual scheduler uses for the campaign-level gap.
+function randomGapMs(minSeconds: number, maxSeconds: number) {
+  const min = Math.max(0, minSeconds);
+  const max = Math.max(min, maxSeconds);
+  const seconds =
+    max > min ? min + Math.floor(Math.random() * (max - min + 1)) : min;
+  return seconds * 1000;
+}
+
 /**
  * Selects an inbox, renders the personalized email, sends it, and records the
  * resulting EmailEvent + CampaignContact + inbox usage. The caller is
@@ -276,6 +288,29 @@ export async function sendSequenceStep(args: {
   );
   if (!inbox) {
     throw new Error("No active sending inbox available");
+  }
+
+  // Per-inbox send-gap: enforce at least a randomized [min,max]s cooldown between
+  // two consecutive sends from THIS mailbox. Rotation picks the inbox here at
+  // send time, so this send-time lock is the only place that can guarantee the
+  // real spacing regardless of which campaign queued the job. If the chosen
+  // inbox is still cooling down, we defer the job — the worker re-queues it with
+  // the remaining delay rather than sending now or failing.
+  if (inbox.sendGapMinSeconds > 0 || inbox.sendGapMaxSeconds > 0) {
+    const lastSentAt = await getInboxLastSentAt(inbox.id);
+    if (lastSentAt !== null) {
+      const requiredGapMs = randomGapMs(
+        inbox.sendGapMinSeconds,
+        inbox.sendGapMaxSeconds,
+      );
+      const elapsed = Date.now() - lastSentAt;
+      if (elapsed < requiredGapMs) {
+        return {
+          deferred: true,
+          retryAfterMs: requiredGapMs - elapsed,
+        } as const;
+      }
+    }
   }
 
   const values = buildPersonalization(contact, args.eta ?? null);
@@ -380,6 +415,9 @@ export async function sendSequenceStep(args: {
     await Promise.all([
       incrementTodaySent(inbox.id),
       incrementToken(campaignDailyCounterKey(campaign.id), 36 * 60 * 60),
+      // Stamp the inbox's last-sent time so the next send from this mailbox
+      // waits out a fresh randomized gap.
+      markInboxSent(inbox.id),
     ]);
 
     return { sent: true, messageId: result.messageId } as const;

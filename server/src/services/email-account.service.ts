@@ -7,7 +7,7 @@ import {
 } from "@marimail/utils";
 import { google } from "googleapis";
 import nodemailer from "nodemailer";
-import { getToken, incrementToken } from "./token-store.js";
+import { getToken, incrementToken, setToken } from "./token-store.js";
 import { buildSesTransport, type SesCredentials } from "./transports/ses.js";
 import {
   buildPostmarkHttpTransport,
@@ -64,6 +64,25 @@ export function todayKey(date = new Date()) {
 
 export function inboxCounterKey(accountId: string, date = new Date()) {
   return `inbox:${accountId}:sent:${todayKey(date)}`;
+}
+
+// Per-inbox "last sent at" lock used to enforce the randomized gap between two
+// consecutive sends from the same mailbox (see sequence-sender.ts). Stored via
+// the shared token-store so it transparently uses Redis or the in-memory
+// fallback, matching the daily-send counters above.
+export function inboxGapKey(accountId: string) {
+  return `inbox:${accountId}:lastSentAt`;
+}
+
+export async function getInboxLastSentAt(accountId: string) {
+  const value = await getToken(inboxGapKey(accountId));
+  return value ? Number(value) : null;
+}
+
+export async function markInboxSent(accountId: string, at = Date.now()) {
+  // TTL comfortably longer than any gap (max gap is 86_400s = 24h) so the lock
+  // never expires mid-cooldown.
+  await setToken(inboxGapKey(accountId), String(at), 25 * 60 * 60);
 }
 
 export async function getTodaySent(accountId: string) {

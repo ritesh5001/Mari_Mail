@@ -1121,6 +1121,11 @@ model EmailAccount {
   sendingDomainId   String?
   senderVerified    Boolean            @default(false)
   dailyLimit        Int                @default(50)
+  // Per-inbox randomized gap (seconds) between two consecutive sends from this
+  // mailbox. A fresh random value in [min, max] is picked per send and enforced
+  // at send time via a Redis/in-memory "last sent at" lock. 300–1200 = 5–20 min.
+  sendGapMinSeconds Int                @default(300)
+  sendGapMaxSeconds Int                @default(1200)
   todaySent         Int                @default(0)
   warmupEnabled     Boolean            @default(true)
   warmupDay         Int                @default(1)
