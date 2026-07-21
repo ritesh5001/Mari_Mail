@@ -10,6 +10,8 @@ import type {
   ListVesselRow,
 } from "@/lib/contact-data";
 import { apiFetch } from "@/lib/browser-fetch";
+import { useClientSort } from "@/hooks/useClientSort";
+import { SortableHeader } from "@/components/table/SortableHeader";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSection";
 import { RoleFilterPanel, EMPTY_ROLE_FILTER, type RoleFilter } from "@/components/lists/RoleFilterPanel";
@@ -370,6 +372,14 @@ function TabButton({ active, onClick, icon, label, count }: { active: boolean; o
 }
 
 function CompaniesTable({ rows, onRemove }: { rows: ListCompanyRow[]; onRemove: (row: ListCompanyRow) => void }) {
+  const { sorted, sort, toggle } = useClientSort(rows, {
+    company: (r) => r.companyName,
+    kind: (r) => r.companyKind,
+    country: (r) => r.country,
+    fleet: (r) => r.fleetSize,
+    employees: (r) => r.employeeCount,
+    vessels: (r) => r.listVessels.length,
+  });
   if (rows.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-slate-500">No companies in this list yet.</p>;
   }
@@ -377,17 +387,17 @@ function CompaniesTable({ rows, onRemove }: { rows: ListCompanyRow[]; onRemove: 
     <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
       <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-white/[0.02] dark:text-white/60 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
         <tr>
-          <th className="px-4 py-3">Company</th>
-          <th className="px-4 py-3">Kind</th>
-          <th className="px-4 py-3">Country</th>
-          <th className="px-4 py-3">Fleet</th>
-          <th className="px-4 py-3">Employees</th>
-          <th className="px-4 py-3">Vessels in this list</th>
+          <SortableHeader label="Company" sortKey="company" sort={sort} onSort={toggle} />
+          <SortableHeader label="Kind" sortKey="kind" sort={sort} onSort={toggle} />
+          <SortableHeader label="Country" sortKey="country" sort={sort} onSort={toggle} />
+          <SortableHeader label="Fleet" sortKey="fleet" sort={sort} onSort={toggle} />
+          <SortableHeader label="Employees" sortKey="employees" sort={sort} onSort={toggle} />
+          <SortableHeader label="Vessels in this list" sortKey="vessels" sort={sort} onSort={toggle} />
           <th className="w-10 px-4 py-3" />
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-        {rows.map((row) => (
+        {sorted.map((row) => (
           <tr key={`${row.companyKind}:${row.companyId}`}>
             <td className="px-4 py-3 font-semibold">
               <Link href={`/dashboard/companies/${KIND_TO_SLUG[row.companyKind]}/${row.companyId}`} className="text-slate-950 hover:text-ocean dark:text-white">
@@ -469,9 +479,6 @@ function ContactsTable({
   onReveal: (contact: ContactRow, field: "email" | "phone") => void;
   revealing: Record<string, "email" | "phone" | undefined>;
 }) {
-  if (rows.length === 0) {
-    return <p className="px-4 py-10 text-center text-sm text-slate-500">No contacts in this list yet.</p>;
-  }
   // Trimmed to the fields that matter for a list-detail view. The Apollo-
   // style extras (Departments, Contact Owner, LinkedIn, Salesforce ID,
   // Corporate Phone) blew the table past 1600px wide and forced horizontal
@@ -480,21 +487,32 @@ function ContactsTable({
   const listContactFields = CONTACT_SCHEMA_FIELDS.filter((field) =>
     ["First Name", "Last Name", "Title", "Company", "Email", "Mobile Phone"].includes(field.label),
   );
+  const sortAccessors: Record<string, (c: ContactRow) => string | number | null | undefined> = {
+    marineRole: (c) => c.marineRole,
+    added: (c) => (c.addedAt ? new Date(c.addedAt).getTime() : null),
+  };
+  for (const field of listContactFields) {
+    sortAccessors[field.label] = (c) => contactFieldValue(c, field);
+  }
+  const { sorted, sort, toggle } = useClientSort(rows, sortAccessors);
+  if (rows.length === 0) {
+    return <p className="px-4 py-10 text-center text-sm text-slate-500">No contacts in this list yet.</p>;
+  }
   return (
     <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
       <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-white/[0.02] dark:text-white/60 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
         <tr>
           {listContactFields.map((field) => (
-            <th key={field.label} className="whitespace-nowrap px-4 py-3">{field.label}</th>
+            <SortableHeader key={field.label} label={field.label} sortKey={field.label} sort={sort} onSort={toggle} />
           ))}
           <th className="whitespace-nowrap px-4 py-3">Ship / ETA</th>
-          <th className="px-4 py-3">Marine Role</th>
-          <th className="px-4 py-3">Added</th>
+          <SortableHeader label="Marine Role" sortKey="marineRole" sort={sort} onSort={toggle} />
+          <SortableHeader label="Added" sortKey="added" sort={sort} onSort={toggle} />
           <th className="w-10 px-4 py-3" />
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-        {rows.map((contact) => {
+        {sorted.map((contact) => {
           const externalId = apolloExternalId(contact);
           const emailLocked = isEmailLocked(contact);
           const phoneMissing = !contact.mobilePhone && !contact.corporatePhone;
@@ -563,6 +581,19 @@ function ContactsTable({
 }
 
 function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id: string) => void }) {
+  const { sorted, sort, toggle } = useClientSort(rows, {
+    vessel: (v) => v.vesselName,
+    imo: (v) => v.imoNumber,
+    type: (v) => v.vesselType,
+    flag: (v) => v.flag,
+    dwt: (v) => v.capacityDwt ?? v.dwt,
+    currentPort: (v) => v.currentPortUnlocode,
+    commercialManager: (v) => v.commercialManagerName ?? v.commercialManagerCompany?.companyName,
+    ismManager: (v) => v.ismManagerName ?? v.ismManagerCompany?.companyName,
+    operator: (v) => v.operatorName,
+    contacts: (v) => v.contactCount,
+    added: (v) => (v.addedAt ? new Date(v.addedAt) : null),
+  });
   if (rows.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-slate-500">No vessels in this list yet.</p>;
   }
@@ -570,22 +601,22 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
     <table className="min-w-[1100px] divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
       <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-white/[0.02] dark:text-white/60 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
         <tr>
-          <th className="px-4 py-3">Vessel</th>
-          <th className="px-4 py-3">IMO</th>
-          <th className="px-4 py-3">Type</th>
-          <th className="px-4 py-3">Flag</th>
-          <th className="px-4 py-3">Capacity - Dwt</th>
-          <th className="px-4 py-3">Current Port Unlocode</th>
-          <th className="px-4 py-3">Commercial Manager</th>
-          <th className="px-4 py-3">Ism Manager</th>
-          <th className="px-4 py-3">Operator</th>
-          <th className="px-4 py-3">Contacts</th>
-          <th className="px-4 py-3">Added</th>
+          <SortableHeader label="Vessel" sortKey="vessel" sort={sort} onSort={toggle} />
+          <SortableHeader label="IMO" sortKey="imo" sort={sort} onSort={toggle} />
+          <SortableHeader label="Type" sortKey="type" sort={sort} onSort={toggle} />
+          <SortableHeader label="Flag" sortKey="flag" sort={sort} onSort={toggle} />
+          <SortableHeader label="Capacity - Dwt" sortKey="dwt" sort={sort} onSort={toggle} />
+          <SortableHeader label="Current Port Unlocode" sortKey="currentPort" sort={sort} onSort={toggle} />
+          <SortableHeader label="Commercial Manager" sortKey="commercialManager" sort={sort} onSort={toggle} />
+          <SortableHeader label="Ism Manager" sortKey="ismManager" sort={sort} onSort={toggle} />
+          <SortableHeader label="Operator" sortKey="operator" sort={sort} onSort={toggle} />
+          <SortableHeader label="Contacts" sortKey="contacts" sort={sort} onSort={toggle} />
+          <SortableHeader label="Added" sortKey="added" sort={sort} onSort={toggle} />
           <th className="w-10 px-4 py-3" />
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">
-        {rows.map((vessel) => (
+        {sorted.map((vessel) => (
           <tr key={vessel.id}>
             <td className="px-4 py-3 font-semibold">
               <Link href={`/dashboard/vessels/${vessel.imoNumber}`} className="text-slate-950 hover:text-ocean dark:text-white">

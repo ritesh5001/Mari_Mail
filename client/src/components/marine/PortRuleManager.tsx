@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/browser-fetch";
+import { useClientSort } from "@/hooks/useClientSort";
+import { SortableHeader } from "@/components/table/SortableHeader";
 
 type PortOption = { portCode: string; portName: string };
 type CampaignOption = { id: string; name: string };
@@ -44,6 +46,13 @@ export function PortRuleManager({ rules, campaigns, ports }: { rules: Rule[]; ca
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const { sorted, sort, toggle } = useClientSort(rules, {
+    port: (r) => r.portName || r.portCode,
+    vesselTypes: (r) => r.vesselTypes.join(", "),
+    campaign: (r) => r.campaignName,
+    autoEnroll: (r) => r.autoEnroll,
+    priority: (r) => r.priority,
+  });
 
   async function createRule(form: FormData) {
     setError(null);
@@ -87,16 +96,16 @@ export function PortRuleManager({ rules, campaigns, ports }: { rules: Rule[]; ca
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-3 py-2">Port</th>
-                <th className="px-3 py-2">Vessel Types</th>
-                <th className="px-3 py-2">Campaign</th>
-                <th className="px-3 py-2">Auto-Enroll</th>
-                <th className="px-3 py-2">Priority</th>
+                <SortableHeader label="Port" sortKey="port" sort={sort} onSort={toggle} className="px-3 py-2" />
+                <SortableHeader label="Vessel Types" sortKey="vesselTypes" sort={sort} onSort={toggle} className="px-3 py-2" />
+                <SortableHeader label="Campaign" sortKey="campaign" sort={sort} onSort={toggle} className="px-3 py-2" />
+                <SortableHeader label="Auto-Enroll" sortKey="autoEnroll" sort={sort} onSort={toggle} className="px-3 py-2" />
+                <SortableHeader label="Priority" sortKey="priority" sort={sort} onSort={toggle} className="px-3 py-2" />
                 <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
-              {rules.map((rule) => (
+              {sorted.map((rule) => (
                 <tr key={rule.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 font-medium text-slate-900">{rule.portName} ({rule.portCode})</td>
                   <td className="px-3 py-2 text-slate-600">{rule.vesselTypes.length === 0 ? "All types" : rule.vesselTypes.join(", ")}</td>
