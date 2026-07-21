@@ -199,7 +199,7 @@ export function PortRadarTabs({
       if (!shouldFetch) return;
       const data = await fetchPage(which, 1);
       if (data) applyPage(which, data);
-      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true } }));
+      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true, error: true } }));
     },
     [fetchPage, applyPage],
   );
@@ -238,10 +238,10 @@ export function PortRadarTabs({
         applyPage(which, cached);
         return;
       }
-      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true } }));
+      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true, error: false } }));
       const data = await fetchPage(which, page);
       if (data) applyPage(which, data);
-      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false } }));
+      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, error: true } }));
     },
     [fetchPage, applyPage],
   );
@@ -267,13 +267,13 @@ export function PortRadarTabs({
         for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
           if (t !== active) reset[t] = { ...prev[t], loaded: false, loading: false };
         }
-        reset[active] = { ...prev[active], loading: true };
+        reset[active] = { ...prev[active], loading: true, error: false };
         return reset;
       });
       void (async () => {
         const data = await fetchPage(active, 1);
         if (data) applyPage(active, data);
-        else setTabs((prev) => ({ ...prev, [active]: { ...prev[active], loading: false } }));
+        else setTabs((prev) => ({ ...prev, [active]: { ...prev[active], loading: false, error: true } }));
       })();
     },
     [tab, fetchPage, applyPage],
@@ -344,18 +344,31 @@ export function PortRadarTabs({
           </div>
         ) : null}
 
-        <PortRadarArrivals
-          etas={state.rows}
-          count={state.count}
-          page={state.page}
-          pageSize={pageSize}
-          paging={state.loading}
-          onPageChange={(next) => void goToPage(tab, next)}
-          sort={sort}
-          onSort={onSortColumn}
-          portsWithCoordinates={portsWithCoordinates}
-          isSuperAdmin={isSuperAdmin}
-        />
+        {state.error && state.rows.length === 0 ? (
+          <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-dashed border-rose-200 bg-rose-50 p-8 text-center text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+            <p>Couldn&apos;t load arrivals — the request timed out or the server is busy.</p>
+            <button
+              type="button"
+              onClick={() => void goToPage(tab, 1)}
+              className="rounded-md border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-transparent dark:text-rose-200"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <PortRadarArrivals
+            etas={state.rows}
+            count={state.count}
+            page={state.page}
+            pageSize={pageSize}
+            paging={state.loading}
+            onPageChange={(next) => void goToPage(tab, next)}
+            sort={sort}
+            onSort={onSortColumn}
+            portsWithCoordinates={portsWithCoordinates}
+            isSuperAdmin={isSuperAdmin}
+          />
+        )}
       </div>
     </section>
   );
