@@ -1106,6 +1106,11 @@ campaignRouter.get("/:id/sends", requireAuth, async (req, res, next) => {
     const take = Math.min(Number(req.query.take) || 100, 500);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
 
+    // Sort allowlist for the sends table. Unknown/absent → default newest-first.
+    const dir: "asc" | "desc" = req.query.dir === "asc" ? "asc" : "desc";
+    const orderBy: Prisma.EmailEventOrderByWithRelationInput =
+      req.query.sort === "status" ? { eventType: dir } : { occurredAt: req.query.sort === "when" ? dir : "desc" };
+
     // SENT + FAILED + hard/soft bounce → the "outgoing" audit. Follow-up
     // OPENED / CLICKED / REPLIED events are folded into flags on their SENT
     // row via messageId/trackingId join below.
@@ -1117,7 +1122,7 @@ campaignRouter.get("/:id/sends", requireAuth, async (req, res, next) => {
           campaignId: campaign.id,
           eventType: { in: OUTGOING_TYPES as unknown as Prisma.EnumEmailEventTypeFilter["in"] },
         },
-        orderBy: { occurredAt: "desc" },
+        orderBy,
         take,
         skip,
         include: {

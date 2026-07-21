@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Mail, MailOpen, MousePointerClick, Reply, RotateCcw } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
+import { SortableHeader } from "@/components/table/SortableHeader";
+import type { SortState } from "@/hooks/useClientSort";
 
 type SendRow = {
   id: string;
@@ -83,11 +85,22 @@ export function CampaignSentTab({ campaignId }: { campaignId: string }) {
   const [skip, setSkip] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortState>(null);
+
+  // Header click → cycle asc/desc/clear and reset to the first page (server
+  // re-orders the whole result set, not just the visible page).
+  const toggleSort = (key: string) => {
+    setSkip(0);
+    setSort((prev) =>
+      prev?.key !== key ? { key, direction: "asc" } : prev.direction === "asc" ? { key, direction: "desc" } : null,
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    apiFetch(`/api/campaigns/${campaignId}/sends?take=${PAGE_SIZE}&skip=${skip}`)
+    const sortQuery = sort ? `&sort=${sort.key}&dir=${sort.direction}` : "";
+    apiFetch(`/api/campaigns/${campaignId}/sends?take=${PAGE_SIZE}&skip=${skip}${sortQuery}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(String(r.status));
         return (await r.json()) as {
@@ -110,7 +123,7 @@ export function CampaignSentTab({ campaignId }: { campaignId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [campaignId, skip]);
+  }, [campaignId, skip, sort]);
 
   if (loading) {
     return (
@@ -179,12 +192,12 @@ export function CampaignSentTab({ campaignId }: { campaignId: string }) {
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-30 shadow-[0_1px_0_0_rgb(226,232,240)] dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
             <tr className="border-b border-slate-100 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:border-white/[0.06] dark:bg-[#12121a] dark:text-white/55">
-              <th className="px-4 py-2 font-medium">When</th>
+              <SortableHeader label="When" sortKey="when" sort={sort} onSort={toggleSort} className="px-4 py-2 font-medium" />
               <th className="px-4 py-2 font-medium">To</th>
               <th className="px-4 py-2 font-medium">From</th>
               <th className="px-4 py-2 font-medium">Step</th>
               <th className="px-4 py-2 font-medium">Subject</th>
-              <th className="px-4 py-2 font-medium">Status</th>
+              <SortableHeader label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="px-4 py-2 font-medium" />
               <th className="px-4 py-2 font-medium">Engagement</th>
               <th className="px-4 py-2 font-medium">Actions</th>
             </tr>
