@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { CalendarClock, Check, ExternalLink, Loader2, SlidersHorizontal } from "lucide-react";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
 
@@ -142,7 +141,6 @@ const COLUMN_DEFS: { key: ColumnKey; label: string }[] = [
 ];
 
 const COLUMN_STORAGE_KEY = "portRadar.visibleColumns";
-const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500] as const;
 
 function loadVisibleColumns(): Set<ColumnKey> {
   if (typeof window === "undefined") return new Set(COLUMN_DEFS.map((c) => c.key));
@@ -165,6 +163,8 @@ export function PortRadarArrivals({
   count,
   page,
   pageSize,
+  paging = false,
+  onPageChange,
   portsWithCoordinates,
   isSuperAdmin = false,
 }: {
@@ -172,6 +172,10 @@ export function PortRadarArrivals({
   count: number;
   page: number;
   pageSize: number;
+  // Paging is now driven by the parent (client-fetch + prefetch); these replace
+  // the old URL-navigation approach so switching pages doesn't reload the page.
+  paging?: boolean;
+  onPageChange?: (page: number) => void;
   portsWithCoordinates: string[];
   isSuperAdmin?: boolean;
 }) {
@@ -189,35 +193,10 @@ export function PortRadarArrivals({
   );
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const customizeRef = useRef<HTMLDivElement | null>(null);
-  const router = useRouter();
-  const [paging, setPaging] = useState(false);
 
   useEffect(() => {
     setVisibleColumns(loadVisibleColumns());
   }, []);
-
-  // Paging lives in the URL because the server only fetches the visible page —
-  // it can't be a local slice. Read straight off window.location rather than
-  // useSearchParams so this component doesn't need a Suspense boundary, and
-  // keep every existing filter param intact.
-  function goTo(next: { page?: number; pageSize?: number }) {
-    const params = new URLSearchParams(window.location.search);
-    if (next.pageSize !== undefined) {
-      params.set("pageSize", String(next.pageSize));
-      // A bigger page can put the current offset past the end — restart.
-      params.set("page", "1");
-    }
-    if (next.page !== undefined) params.set("page", String(next.page));
-    setPaging(true);
-    router.push(`/dashboard/port-radar?${params.toString()}`, { scroll: false });
-  }
-
-  // The push above re-renders this component with fresh server data; clearing
-  // here (rather than in the click) is what makes the button re-enable only
-  // once the new page has actually arrived.
-  useEffect(() => {
-    setPaging(false);
-  }, [etas, page, pageSize]);
 
   useEffect(() => {
     if (!customizeOpen) return;
@@ -450,22 +429,6 @@ export function PortRadarArrivals({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-            <label className="inline-flex items-center gap-1.5 font-normal">
-              <span className="text-slate-500">Rows</span>
-              <select
-                value={pageSize}
-                onChange={(event) => goTo({ pageSize: Number(event.target.value) })}
-                disabled={paging}
-                aria-label="Vessels per page"
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none hover:border-ocean focus:border-ocean disabled:opacity-50"
-              >
-                {PAGE_SIZE_OPTIONS.map((size) => (
-                  <option key={size} value={size}>
-                    {size}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div className="relative" ref={customizeRef}>
               <button
                 type="button"
@@ -745,7 +708,7 @@ export function PortRadarArrivals({
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
             <button
               type="button"
-              onClick={() => goTo({ page: currentPage - 1 })}
+              onClick={() => onPageChange?.(currentPage - 1)}
               disabled={currentPage <= 1 || paging}
               className="rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-600"
             >
@@ -756,7 +719,7 @@ export function PortRadarArrivals({
             </span>
             <button
               type="button"
-              onClick={() => goTo({ page: currentPage + 1 })}
+              onClick={() => onPageChange?.(currentPage + 1)}
               disabled={currentPage >= totalPages || paging}
               className="rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:text-slate-600"
             >
