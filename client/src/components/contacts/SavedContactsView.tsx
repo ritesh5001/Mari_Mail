@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Bookmark } from "lucide-react";
 import type { ContactModel } from "@/lib/contact-data";
 import { apiFetch } from "@/lib/browser-fetch";
+import { useClientSort } from "@/hooks/useClientSort";
+import { SortableHeader } from "@/components/table/SortableHeader";
 
 function fullName(c: ContactModel) {
   return [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || "(no name)";
@@ -16,6 +18,14 @@ function formatEnum(value: string | null | undefined) {
 
 export function SavedContactsView({ contacts: initial }: { contacts: ContactModel[] }) {
   const [contacts, setContacts] = useState<ContactModel[]>(initial);
+  const { sorted, sort, toggle } = useClientSort(contacts, {
+    name: (c) => fullName(c),
+    title: (c) => c.title,
+    company: (c) => c.companyName,
+    email: (c) => c.email,
+    country: (c) => c.country,
+    role: (c) => c.marineRole,
+  });
 
   async function unsave(id: string) {
     setContacts((prev) => prev.filter((c) => c.id !== id));
@@ -47,17 +57,17 @@ export function SavedContactsView({ contacts: initial }: { contacts: ContactMode
         <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-white/10">
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-white/[0.04] dark:text-white/45 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
             <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Title</th>
-              <th className="px-4 py-3">Company</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Country</th>
-              <th className="px-4 py-3">Role</th>
+              <SortableHeader label="Name" sortKey="name" sort={sort} onSort={toggle} />
+              <SortableHeader label="Title" sortKey="title" sort={sort} onSort={toggle} />
+              <SortableHeader label="Company" sortKey="company" sort={sort} onSort={toggle} />
+              <SortableHeader label="Email" sortKey="email" sort={sort} onSort={toggle} />
+              <SortableHeader label="Country" sortKey="country" sort={sort} onSort={toggle} />
+              <SortableHeader label="Role" sortKey="role" sort={sort} onSort={toggle} />
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-            {contacts.map((c) => (
+            {sorted.map((c) => (
               <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-white/[0.04]">
                 <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">
                   <Link href={`/dashboard/contacts/${c.id}`} className="hover:text-ocean">
