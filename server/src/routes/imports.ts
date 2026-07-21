@@ -11,7 +11,7 @@ import { emitWorkspaceEvent } from "../services/realtime.js";
 import { createETATriggers, matchCampaignsToETA } from "../services/campaign-matcher.js";
 import { CONTACT_CSV_HEADERS, contactDataFromRow } from "../services/contact-data.js";
 import { enqueueCsvImport, getCsvImportJob } from "../services/csv-import-queue.js";
-import { ensureDestinationPort, resolveDestinationPort } from "../services/port-resolution.js";
+import { ensureDestinationPort, isResolvableDestination } from "../services/port-resolution.js";
 import { readVesselCsvValue, VESSEL_CSV_HEADERS, vesselDataFromCsvRow } from "../services/vessel-data.js";
 
 export const importRouter = Router();
@@ -266,11 +266,8 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
         const destination = rowValue(row, "Destination");
         if (!destination) {
           errors.push({ row: rowNumber, field: "Destination", message: "Destination is required when ETA (UTC) is present" });
-        } else {
-          const port = await resolveDestinationPort(destination);
-          if (!port) {
-            errors.push({ row: rowNumber, field: "Destination", value: destination, message: "Destination must contain letters or numbers" });
-          }
+        } else if (!isResolvableDestination(destination)) {
+          errors.push({ row: rowNumber, field: "Destination", value: destination, message: "Destination must contain letters or numbers" });
         }
       }
     }
@@ -286,27 +283,36 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
   }
 
   if (importType === "VESSEL_ETAS") {
+    // Batch the vessel-existence check: gather every syntactically-valid IMO in
+    // the file and look them all up in ONE query, instead of a findFirst per row
+    // (which timed out large files). Then validate rows against the result set.
+    const validImos = rows
+      .map((row) => rowValue(row, "IMO"))
+      .filter((imo): imo is string => typeof imo === "string" && /^\d{7}$/.test(imo));
+    const existingImos = new Set<string>();
+    if (validImos.length > 0) {
+      const found = await prisma.vessel.findMany({
+        where: { imoNumber: { in: Array.from(new Set(validImos)) }, workspaceId },
+        select: { imoNumber: true },
+      });
+      for (const v of found) existingImos.add(v.imoNumber);
+    }
+
     for (const [index, row] of rows.entries()) {
       const rowNumber = index + 2;
       const imo = rowValue(row, "IMO");
       if (imo && !/^\d{7}$/.test(imo)) {
         errors.push({ row: rowNumber, field: "IMO", value: imo, message: "IMO must be exactly 7 digits" });
-      } else if (imo) {
-        const vessel = await prisma.vessel.findFirst({ where: { imoNumber: imo, workspaceId }, select: { id: true } });
-        if (!vessel) {
-          errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imo} was not found in this workspace` });
-        }
+      } else if (imo && !existingImos.has(imo)) {
+        errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imo} was not found in this workspace` });
       }
       const eta = rowValue(row, "ETA (UTC)") ?? rowValue(row, "ETA");
       if (eta && Number.isNaN(new Date(eta).getTime())) {
         errors.push({ row: rowNumber, field: "ETA (UTC)", value: eta, message: "ETA must be a valid date/time" });
       }
       const destinationPort = rowValue(row, "Destination Port");
-      if (destinationPort) {
-        const port = await resolveDestinationPort(destinationPort);
-        if (!port) {
-          errors.push({ row: rowNumber, field: "Destination Port", value: destinationPort, message: "Destination Port must contain letters or numbers" });
-        }
+      if (destinationPort && !isResolvableDestination(destinationPort)) {
+        errors.push({ row: rowNumber, field: "Destination Port", value: destinationPort, message: "Destination Port must contain letters or numbers" });
       }
     }
   }

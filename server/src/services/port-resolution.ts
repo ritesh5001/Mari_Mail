@@ -23,6 +23,17 @@ function titleCasePortName(value: string) {
     .join(" ");
 }
 
+/**
+ * Pure, DB-free validity check for a destination value. `resolveDestinationPort`
+ * only ever returns null when the value normalizes to empty (otherwise it falls
+ * back to a synthesized port), so validation during CSV preview needs nothing
+ * more than this — avoiding a per-row DB round-trip that made large-file preview
+ * time out (504). Actual port resolution/creation still happens at import time.
+ */
+export function isResolvableDestination(rawValue: string | undefined): boolean {
+  return Boolean(normalizePortValue(rawValue));
+}
+
 export async function resolveDestinationPort(rawValue: string | undefined): Promise<ResolvedDestinationPort | null> {
   const raw = rawValue?.trim();
   const normalized = normalizePortValue(raw);
