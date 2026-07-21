@@ -947,6 +947,9 @@ model Campaign {
   @@index([triggerType])
   @@index([sendingMode])
   @@index([status])
+  // Campaign list filters by workspace and sorts by createdAt desc; the
+  // composite serves both without a filesort.
+  @@index([workspaceId, createdAt])
 }
 
 model CampaignSequence {
@@ -998,6 +1001,9 @@ model ETATrigger {
   @@index([workspaceId])
   @@index([nextFireAt])
   @@index([status])
+  // vesselEtaId is only the 2nd column of the composite unique, so a
+  // `vesselEtaId = ?` lookup (recompute + analytics joins) couldn't use it.
+  @@index([vesselEtaId])
 }
 
 model CampaignContact {
@@ -1033,6 +1039,8 @@ model CampaignContact {
   @@index([campaignId, status])
   @@index([nextSendAt])
   @@index([etaTriggerId])
+  // Used by vessel CRM history and analytics per-vessel joins.
+  @@index([vesselId])
 }
 
 model EmailEvent {

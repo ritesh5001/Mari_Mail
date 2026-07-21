@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { unstable_cache } from "next/cache";
 import { Prisma, prisma, type EmailEventType } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
 
@@ -20,7 +21,18 @@ function trend(current: number, previous: number) {
   return Number((((current - previous) / previous) * 100).toFixed(1));
 }
 
-export async function getOverview(workspaceId: string, days = 30) {
+// The analytics overview is a heavy 10-query fan-out that isn't personalized
+// (pure function of workspaceId + window). Cache it for 60s so revisiting the
+// analytics page or refreshing doesn't re-run every aggregate against Neon.
+// The date windows use `new Date()` internally, so a 60s cache shifts the
+// window boundaries by at most a minute — immaterial for these KPIs.
+export const getOverview = unstable_cache(
+  (workspaceId: string, days = 30) => getOverviewImpl(workspaceId, days),
+  ["analytics-overview"],
+  { revalidate: 60, tags: ["analytics"] },
+);
+
+async function getOverviewImpl(workspaceId: string, days = 30) {
   const now = new Date();
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);

@@ -1,7 +1,21 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
 import { matchContactToVessel } from "@/lib/vessel-contact-matcher";
 import { enrichApolloContactsWithCachedWebsite } from "@/lib/apollo-contact-enrichment";
+
+// The port dropdown list is global and effectively static — cache it for 60s so
+// it isn't re-queried from Neon on every campaigns page render.
+const getPortOptionsCached = unstable_cache(
+  async () =>
+    prisma.port.findMany({
+      orderBy: { portName: "asc" },
+      take: 100,
+      select: { portCode: true, portName: true },
+    }),
+  ["campaign-port-options"],
+  { revalidate: 60, tags: ["ports"] },
+);
 
 export type CampaignDashboardData = Awaited<
   ReturnType<typeof getCampaignDashboardData>
@@ -68,11 +82,7 @@ export async function getCampaignDashboardData(triggerFilter?: "MANUAL" | "ETA_B
           },
         },
       }),
-      prisma.port.findMany({
-        orderBy: { portName: "asc" },
-        take: 100,
-        select: { portCode: true, portName: true },
-      }),
+      getPortOptionsCached(),
       prisma.contactList.findMany({
         where: { workspaceId, isArchived: false },
         orderBy: { name: "asc" },
