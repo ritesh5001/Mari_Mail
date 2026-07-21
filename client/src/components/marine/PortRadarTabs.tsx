@@ -153,8 +153,29 @@ export function PortRadarTabs({
     [loadContactCounts, prefetchNext],
   );
 
-  // On first mount, kick off lazy counts + prefetch for the server-seeded tab.
-  // The ref guard makes this run exactly once without needing a lint-disable.
+  // Warm an inactive tab's first page in the background so clicking it is
+  // instant. Only fetches tabs that actually have rows (per the badge counts)
+  // and that aren't already loaded/loading. Runs at low priority after the
+  // active tab is set up.
+  const warmTab = useCallback(
+    async (which: PortRadarTabKey) => {
+      let shouldFetch = false;
+      setTabs((prev) => {
+        const t = prev[which];
+        if (t.loaded || t.loading) return prev;
+        shouldFetch = true;
+        return { ...prev, [which]: { ...t, loading: true } };
+      });
+      if (!shouldFetch) return;
+      const data = await fetchPage(which, 1);
+      if (data) applyPage(which, data);
+      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true } }));
+    },
+    [fetchPage, applyPage],
+  );
+
+  // On first mount: lazy counts + next-page prefetch for the seeded tab, THEN
+  // background-prefetch the other tabs' first pages so tab switching is seamless.
   const didInit = useRef(false);
   useEffect(() => {
     if (didInit.current) return;
@@ -164,18 +185,19 @@ export function PortRadarTabs({
       void loadContactCounts(initialTab, seeded.rows);
       void prefetchNext(initialTab, seeded.page, seeded.count);
     }
-  }, [tabs, initialTab, loadContactCounts, prefetchNext]);
+    // Warm the inactive tabs that have content, so opening them is instant.
+    const others = (["missed", "newly", "upcoming"] as PortRadarTabKey[]).filter(
+      (t) => t !== initialTab && counts[t] > 0,
+    );
+    for (const t of others) void warmTab(t);
+  }, [tabs, initialTab, counts, loadContactCounts, prefetchNext, warmTab]);
 
   const openTab = useCallback(
     async (which: PortRadarTabKey) => {
       setTab(which);
-      if (tabs[which].loaded || tabs[which].loading) return;
-      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true } }));
-      const data = await fetchPage(which, 1);
-      if (data) applyPage(which, data);
-      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true } }));
+      void warmTab(which);
     },
-    [tabs, fetchPage, applyPage],
+    [warmTab],
   );
 
   const goToPage = useCallback(
@@ -196,26 +218,32 @@ export function PortRadarTabs({
 
   const state = tabs[tab];
 
+  // Prefer the actual feed count once a tab has loaded; the SSR badge counts are
+  // cheap estimates that can differ from the feed's real total (especially the
+  // batch-detected "newly" feed), so a loaded tab is the source of truth.
+  const badgeCount = (which: PortRadarTabKey) =>
+    tabs[which].loaded ? tabs[which].count : counts[which];
+
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
       <div className="flex flex-wrap border-b border-slate-100 dark:border-white/[0.06]">
-        {counts.missed > 0 ? (
+        {badgeCount("missed") > 0 ? (
           <TabButton
             active={tab === "missed"}
             onClick={() => void openTab("missed")}
             icon={<AlertTriangle className="h-4 w-4" />}
             label="Missed opportunities"
-            count={counts.missed}
+            count={badgeCount("missed")}
             tone="amber"
           />
         ) : null}
-        {counts.newly > 0 ? (
+        {badgeCount("newly") > 0 ? (
           <TabButton
             active={tab === "newly"}
             onClick={() => void openTab("newly")}
             icon={<Ship className="h-4 w-4" />}
             label="Newly added ETAs"
-            count={counts.newly}
+            count={badgeCount("newly")}
           />
         ) : null}
         <TabButton
@@ -223,27 +251,27 @@ export function PortRadarTabs({
           onClick={() => void openTab("upcoming")}
           icon={<Radar className="h-4 w-4" />}
           label={`Upcoming ${countryLabel} arrivals`}
-          count={counts.upcoming}
+          count={badgeCount("upcoming")}
         />
       </div>
 
       <div className="p-5">
         {tab === "missed" ? (
           <p className="mb-3 text-sm text-amber-800 dark:text-amber-200/80">
-            {counts.missed} vessel{counts.missed === 1 ? "" : "s"} arriving in &lt; 48h with no
-            campaign assigned — select any to add to a list.
+            {badgeCount("missed")} vessel{badgeCount("missed") === 1 ? "" : "s"} arriving in &lt; 48h
+            with no campaign assigned — select any to add to a list.
           </p>
         ) : null}
         {tab === "newly" ? (
           <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
-            {counts.newly} vessel{counts.newly === 1 ? "" : "s"} from the most recent upload —
-            visible until the next batch arrives.
+            {badgeCount("newly")} vessel{badgeCount("newly") === 1 ? "" : "s"} from the most recent
+            upload — visible until the next batch arrives.
           </p>
         ) : null}
         {tab === "upcoming" ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600 dark:text-white/55">
-              {counts.upcoming} upcoming vessels match — sorted by ETA
+              {badgeCount("upcoming")} upcoming vessels match — sorted by ETA
             </p>
             {isSuperAdmin ? (
               <Link href="/dashboard/import" className="text-sm font-medium text-ocean hover:underline">
