@@ -1,0 +1,1 @@
+ALTER TABLE "Contact" ADD COLUMN IF NOT EXISTS "contactOwnerName" TEXT;

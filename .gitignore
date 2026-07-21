@@ -62,4 +62,10 @@ tmp_*
 /tmp/
 data/
 imports/
+
+# Prisma migration DDL is schema, not data — it MUST be committed so deploys
+# (prisma migrate deploy) and fresh clones/CI have the migrations to apply.
+# Re-include it after the broad *.sql data-exfiltration guard above.
+!packages/db/prisma/migrations/
+!packages/db/prisma/migrations/**/*.sql
 exports/
