@@ -13,12 +13,22 @@ export type PortRadarTabKey = "missed" | "newly" | "upcoming";
 // never through `apiFetch`, which prefixes `/backend` and proxies to the Express
 // VPS where these routes don't exist (that produced 404s in production).
 async function postJson(url: string, body: unknown): Promise<Response> {
-  return fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  // Hard client timeout so a slow/hung feed request can never leave the tab
+  // spinning "Loading arrivals…" forever — it surfaces as a failed fetch that
+  // the caller turns into a retryable error state.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const TAB_ENDPOINT: Record<PortRadarTabKey, string> = {
@@ -35,6 +45,7 @@ type TabState = {
   page: number;
   loaded: boolean;
   loading: boolean;
+  error: boolean;
 };
 
 /**
@@ -68,7 +79,7 @@ export function PortRadarTabs({
     missed: emptyTab(),
     newly: emptyTab(),
     upcoming: emptyTab(),
-    [initialTab]: { rows: initialRows, count: initialCount, page: 1, loaded: true, loading: false },
+    [initialTab]: { rows: initialRows, count: initialCount, page: 1, loaded: true, loading: false, error: false },
   }));
   // Server-side sort, shared across tabs (each fetch appends it to the query).
   const [sort, setSort] = useState<SortState>(null);
@@ -164,7 +175,7 @@ export function PortRadarTabs({
     (which: PortRadarTabKey, data: FeedResponse) => {
       setTabs((prev) => ({
         ...prev,
-        [which]: { rows: data.etas, count: data.count, page: data.page, loaded: true, loading: false },
+        [which]: { rows: data.etas, count: data.count, page: data.page, loaded: true, loading: false, error: false },
       }));
       void loadContactCounts(which, data.etas);
       void prefetchNext(which, data.page, data.count);
@@ -351,7 +362,7 @@ export function PortRadarTabs({
 }
 
 function emptyTab(): TabState {
-  return { rows: [], count: 0, page: 1, loaded: false, loading: false };
+  return { rows: [], count: 0, page: 1, loaded: false, loading: false, error: false };
 }
 
 function TabButton({

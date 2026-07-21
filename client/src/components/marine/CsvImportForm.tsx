@@ -48,6 +48,8 @@ type ImportPreview = {
   ignoredHeaders: string[];
   missingRequiredFields: string[];
   rowErrors: Array<{ row: number; field: string; value?: string; message: string }>;
+  skippedRowCount?: number;
+  importableRowCount?: number;
   previewRows: Record<string, string | undefined>[];
   canImport: boolean;
 };
@@ -422,7 +424,7 @@ export function CsvImportForm() {
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                <AlertCircle className="h-3.5 w-3.5" /> Needs fixes
+                <AlertCircle className="h-3.5 w-3.5" /> Map required columns
               </span>
             )}
           </div>
@@ -434,8 +436,19 @@ export function CsvImportForm() {
           ) : null}
 
           {preview.rowErrors.length > 0 ? (
-            <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-              <p className="font-semibold">Fix these row values, then preview again.</p>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p className="font-semibold">
+                {(preview.skippedRowCount ?? preview.rowErrors.length).toLocaleString()} row
+                {(preview.skippedRowCount ?? preview.rowErrors.length) === 1 ? "" : "s"} will be skipped
+                {typeof preview.importableRowCount === "number"
+                  ? ` — ${preview.importableRowCount.toLocaleString()} will import`
+                  : ""}
+                .
+              </p>
+              <p className="mt-1 text-xs text-amber-700">
+                Rows missing a required value (e.g. Vessel Name or IMO) or with an invalid value are
+                skipped automatically — you don&apos;t need to fix them to import the rest.
+              </p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
                 {preview.rowErrors.slice(0, 8).map((item) => (
                   <li key={`${item.row}:${item.field}:${item.message}`}>
@@ -443,7 +456,7 @@ export function CsvImportForm() {
                     {item.value ? ` (${item.value})` : ""}
                   </li>
                 ))}
-                {preview.rowErrors.length > 8 ? <li>{preview.rowErrors.length - 8} more row errors not shown.</li> : null}
+                {preview.rowErrors.length > 8 ? <li>{preview.rowErrors.length - 8} more skipped rows not shown.</li> : null}
               </ul>
             </div>
           ) : null}

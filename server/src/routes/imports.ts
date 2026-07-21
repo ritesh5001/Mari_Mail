@@ -353,6 +353,15 @@ async function buildImportPreview(input: { importType: ImportType; csv: string; 
   const missingRequiredFields = requiredMappingErrors(headerMatches.fields);
   const rowErrors = missingRequiredFields.length > 0 ? [] : await validateMappedRows(input.importType, normalizedRows, headerMatches.fields, workspaceId);
 
+  // Row-level errors no longer BLOCK the import — the importer already skips
+  // rows that are missing required values (e.g. Vessel Name / IMO) or malformed.
+  // We surface them as "these N rows will be skipped" instead. The only hard
+  // blocker is an unmapped required COLUMN (missingRequiredFields), which means
+  // we can't import anything meaningfully. `skippedRowCount` counts distinct
+  // rows that have at least one error.
+  const skippedRows = new Set(rowErrors.map((e) => e.row));
+  const importableRowCount = Math.max(0, normalizedRows.length - skippedRows.size);
+
   return {
     detectedHeaders: headers,
     csvHeaders: headers.map((header) => ({ header, samples: samples[header] ?? [] })),
@@ -362,9 +371,13 @@ async function buildImportPreview(input: { importType: ImportType; csv: string; 
     ignoredHeaders: headerMatches.ignoredHeaders,
     missingRequiredFields,
     rowErrors,
+    skippedRowCount: skippedRows.size,
+    importableRowCount,
     normalizedRows,
     previewRows: normalizedRows.slice(0, 5),
-    canImport: missingRequiredFields.length === 0 && rowErrors.length === 0,
+    // Can import as long as required columns are mapped AND at least one row is
+    // actually importable. Rows with errors are skipped, not blocking.
+    canImport: missingRequiredFields.length === 0 && importableRowCount > 0,
   };
 }
 
@@ -1128,7 +1141,14 @@ export async function processCsvImport(
   const preview = await buildImportPreview(input, workspaceId);
 
   if (!preview.canImport) {
-    const error = new Error("Please match required fields and fix row errors before importing.");
+    // canImport is now false only when required COLUMNS aren't mapped, or when
+    // every row would be skipped (nothing importable). Rows with missing/invalid
+    // values no longer block — the importers skip them.
+    const reason =
+      preview.missingRequiredFields.length > 0
+        ? `Map the required column(s) first: ${preview.missingRequiredFields.join(", ")}.`
+        : "No importable rows — every row is missing a required value (e.g. Vessel Name or IMO).";
+    const error = new Error(reason);
     (error as Error & { preview?: typeof preview }).preview = preview;
     throw error;
   }
@@ -1190,7 +1210,7 @@ importRouter.post("/csv", requireAuth, async (req, res, next) => {
       return res.status(400).json({
         error: {
           code: "IMPORT_PREVIEW_REQUIRED",
-          message: "Please match required fields and fix row errors before importing.",
+          message: preview.missingRequiredFields.length > 0 ? `Map the required column(s) first: ${preview.missingRequiredFields.join(", ")}.` : "No importable rows — every row is missing a required value (e.g. Vessel Name or IMO).",
           details: preview,
         },
       });
@@ -1223,7 +1243,7 @@ importRouter.post("/csv/jobs", requireAuth, async (req, res, next) => {
       return res.status(400).json({
         error: {
           code: "IMPORT_PREVIEW_REQUIRED",
-          message: "Please match required fields and fix row errors before importing.",
+          message: preview.missingRequiredFields.length > 0 ? `Map the required column(s) first: ${preview.missingRequiredFields.join(", ")}.` : "No importable rows — every row is missing a required value (e.g. Vessel Name or IMO).",
           details: preview,
         },
       });
