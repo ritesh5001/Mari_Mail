@@ -148,6 +148,38 @@ export function clampPage(value: string | string[] | undefined): number {
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 1;
 }
 
+// Allowlist mapping a sortable Port Radar column key → a Prisma orderBy for the
+// VesselETA feed. Anything not listed (or absent) falls back to the feed's
+// default ETA ordering. Vessel columns route through the `vessel` relation.
+function radarOrderBy(
+  searchParams: Record<string, string | string[] | undefined>,
+  fallback: Prisma.VesselETAOrderByWithRelationInput = { eta: "asc" },
+): Prisma.VesselETAOrderByWithRelationInput | Prisma.VesselETAOrderByWithRelationInput[] {
+  const sort = typeof searchParams.sort === "string" ? searchParams.sort : "";
+  const dir: "asc" | "desc" = searchParams.dir === "desc" ? "desc" : "asc";
+  switch (sort) {
+    case "eta":
+    case "etaUtc":
+      return { eta: dir };
+    case "destination":
+      return { destinationPort: dir };
+    case "added":
+      return { createdAt: dir };
+    case "voyage":
+      return { voyageStatus: dir };
+    case "vesselName":
+      return { vessel: { vesselName: dir } };
+    case "imo":
+      return { vessel: { imoNumber: dir } };
+    case "type":
+      return { vessel: { vesselType: dir } };
+    case "flag":
+      return { vessel: { flag: dir } };
+    default:
+      return fallback;
+  }
+}
+
 /**
  * Every filter surfaced by the frontend VesselFilterPanel maps into a Prisma
  * clause here — either on the ETA row directly (destination, ETA window,
@@ -261,7 +293,7 @@ export async function listPortRadarFeed(
     const [etas, count, ports] = await Promise.all([
       prisma.vesselETA.findMany({
         where,
-        orderBy: { eta: "asc" },
+        orderBy: radarOrderBy(searchParams, { eta: "asc" }),
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
@@ -419,7 +451,9 @@ export async function listLatestBatchEtas(
     const [batch, count] = await Promise.all([
       prisma.vesselETA.findMany({
         where: batchWhere,
-        orderBy: { createdAt: "desc" },
+        // Batch DETECTION above stays on createdAt; only the visible page's
+        // display order honours the user's chosen sort (default createdAt desc).
+        orderBy: radarOrderBy(searchParams, { createdAt: "desc" }),
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
@@ -601,7 +635,7 @@ export async function getPortRadarSummary(workspaceId: string, targetPortCountry
 export async function getMissedOpportunityAlerts(
   workspaceId: string,
   targetPortCountry: string | null,
-  opts: { page?: number; pageSize?: number } = {},
+  opts: { page?: number; pageSize?: number; sort?: string; dir?: string } = {},
 ): Promise<PagedFeed> {
   const now = new Date();
   const in48h = new Date(now.getTime() + 48 * 3_600_000);
@@ -619,7 +653,7 @@ export async function getMissedOpportunityAlerts(
     const [etas, count] = await Promise.all([
       prisma.vesselETA.findMany({
         where,
-        orderBy: { eta: "asc" },
+        orderBy: radarOrderBy({ sort: opts.sort, dir: opts.dir }, { eta: "asc" }),
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {

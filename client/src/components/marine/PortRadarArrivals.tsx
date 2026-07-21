@@ -33,6 +33,8 @@ import { VesselAddToListModal } from "@/components/marine/VesselAddToListModal";
 import { ExternalContactsSubrow, type ExternalContactRow, type ExternalLoadState } from "@/components/marine/VesselViews";
 import { EditVesselButton } from "@/components/marine/EditVesselButton";
 import { EditEtaModal, type EditEtaInitial } from "@/components/marine/EditEtaModal";
+import { SortableHeader } from "@/components/table/SortableHeader";
+import type { SortState } from "@/hooks/useClientSort";
 import { apiFetch } from "@/lib/browser-fetch";
 
 type ContactLoadState =
@@ -165,6 +167,8 @@ export function PortRadarArrivals({
   pageSize,
   paging = false,
   onPageChange,
+  sort = null,
+  onSort,
   portsWithCoordinates,
   isSuperAdmin = false,
 }: {
@@ -176,6 +180,10 @@ export function PortRadarArrivals({
   // the old URL-navigation approach so switching pages doesn't reload the page.
   paging?: boolean;
   onPageChange?: (page: number) => void;
+  // Server-side sort: the parent re-queries the feed ordered by the clicked
+  // column across the full dataset (not just the visible page).
+  sort?: SortState;
+  onSort?: (key: string) => void;
   portsWithCoordinates: string[];
   isSuperAdmin?: boolean;
 }) {
@@ -224,6 +232,15 @@ export function PortRadarArrivals({
   }
 
   const isVisible = (key: ColumnKey) => visibleColumns.has(key);
+
+  // Render a sortable header when the parent supplied an onSort handler (server
+  // sort); otherwise a plain header. Keeps the JSX below terse.
+  const sortableTh = (label: string, key: string) =>
+    onSort ? (
+      <SortableHeader label={label} sortKey={key} sort={sort} onSort={onSort} />
+    ) : (
+      <th className="whitespace-nowrap px-4 py-3">{label}</th>
+    );
   const selectedVesselIds = Array.from(selectedVessels);
 
   // `etas` is already just this page — the server applied skip/take.
@@ -491,19 +508,30 @@ export function PortRadarArrivals({
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
             <tr>
               <th className="sticky left-0 top-0 z-40 bg-slate-50 px-4 py-3" />
-              <th className="sticky left-12 top-0 z-40 bg-slate-50 px-4 py-3 whitespace-nowrap">Vessel Name</th>
-              {isVisible("flag") ? <th className="whitespace-nowrap px-4 py-3">Flag</th> : null}
-              {isVisible("imo") ? <th className="whitespace-nowrap px-4 py-3">IMO</th> : null}
-              {isVisible("type") ? <th className="whitespace-nowrap px-4 py-3">Type</th> : null}
-              {isVisible("etaUtc") ? <th className="whitespace-nowrap px-4 py-3">ETA (UTC)</th> : null}
-              {isVisible("destination") ? <th className="whitespace-nowrap px-4 py-3">Destination</th> : null}
-              {isVisible("eta") ? <th className="whitespace-nowrap px-4 py-3">ETA</th> : null}
+              {onSort ? (
+                <SortableHeader
+                  label="Vessel Name"
+                  sortKey="vesselName"
+                  sort={sort}
+                  onSort={onSort}
+                  className="sticky left-12 top-0 z-40 bg-slate-50"
+                />
+              ) : (
+                <th className="sticky left-12 top-0 z-40 bg-slate-50 px-4 py-3 whitespace-nowrap">Vessel Name</th>
+              )}
+              {isVisible("flag") ? sortableTh("Flag", "flag") : null}
+              {isVisible("imo") ? sortableTh("IMO", "imo") : null}
+              {isVisible("type") ? sortableTh("Type", "type") : null}
+              {isVisible("etaUtc") ? sortableTh("ETA (UTC)", "etaUtc") : null}
+              {isVisible("destination") ? sortableTh("Destination", "destination") : null}
+              {isVisible("eta") ? sortableTh("ETA", "eta") : null}
+              {/* Campaign / Cargo / AIS / Contacts have no single sortable column. */}
               {isVisible("campaign") ? <th className="whitespace-nowrap px-4 py-3">Campaign</th> : null}
-              {isVisible("voyage") ? <th className="whitespace-nowrap px-4 py-3">Voyage</th> : null}
+              {isVisible("voyage") ? sortableTh("Voyage", "voyage") : null}
               {isVisible("cargo") ? <th className="whitespace-nowrap px-4 py-3">Cargo</th> : null}
               {isVisible("ais") ? <th className="whitespace-nowrap px-4 py-3">AIS</th> : null}
               {isVisible("contacts") ? <th className="whitespace-nowrap px-4 py-3">Contacts</th> : null}
-              {isVisible("added") ? <th className="whitespace-nowrap px-4 py-3">Added</th> : null}
+              {isVisible("added") ? sortableTh("Added", "added") : null}
               <th className="sticky right-0 top-0 z-40 bg-slate-50 px-4 py-3">Actions</th>
             </tr>
           </thead>

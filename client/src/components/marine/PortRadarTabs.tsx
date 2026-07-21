@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
+import type { SortState } from "@/hooks/useClientSort";
 
 export type PortRadarTabKey = "missed" | "newly" | "upcoming";
 
@@ -69,6 +70,10 @@ export function PortRadarTabs({
     upcoming: emptyTab(),
     [initialTab]: { rows: initialRows, count: initialCount, page: 1, loaded: true, loading: false },
   }));
+  // Server-side sort, shared across tabs (each fetch appends it to the query).
+  const [sort, setSort] = useState<SortState>(null);
+  const sortRef = useRef<SortState>(null);
+  sortRef.current = sort;
 
   // Prefetched next pages, keyed "tab:page". Promoted instantly on Next.
   const prefetch = useRef<Map<string, FeedResponse>>(new Map());
@@ -76,8 +81,22 @@ export function PortRadarTabs({
   // doesn't refetch.
   const contactCounts = useRef<Map<string, number>>(new Map());
 
-  const filterSearch = () =>
-    typeof window === "undefined" ? "" : window.location.search.replace(/^\?/, "");
+  // Current filter query + the active sort, as the query string every feed fetch
+  // sends. Sort is appended here so all tabs/pages stay consistently ordered.
+  const filterSearch = () => {
+    const params = new URLSearchParams(
+      typeof window === "undefined" ? "" : window.location.search,
+    );
+    const s = sortRef.current;
+    if (s) {
+      params.set("sort", s.key);
+      params.set("dir", s.direction);
+    } else {
+      params.delete("sort");
+      params.delete("dir");
+    }
+    return params.toString();
+  };
 
   const fetchPage = useCallback(
     async (which: PortRadarTabKey, page: number): Promise<FeedResponse | null> => {
@@ -216,6 +235,39 @@ export function PortRadarTabs({
     [fetchPage, applyPage],
   );
 
+  // Header click → cycle asc → desc → cleared, then re-fetch the active tab's
+  // first page in the new order. Other tabs are marked unloaded so they re-fetch
+  // (in the new order) when next opened; the prefetch cache is dropped since the
+  // ordering changed.
+  const onSortColumn = useCallback(
+    (key: string) => {
+      const next: SortState =
+        sortRef.current?.key !== key
+          ? { key, direction: "asc" }
+          : sortRef.current.direction === "asc"
+            ? { key, direction: "desc" }
+            : null;
+      setSort(next);
+      sortRef.current = next;
+      prefetch.current.clear();
+      const active = tab;
+      setTabs((prev) => {
+        const reset: Record<PortRadarTabKey, TabState> = { ...prev };
+        for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+          if (t !== active) reset[t] = { ...prev[t], loaded: false, loading: false };
+        }
+        reset[active] = { ...prev[active], loading: true };
+        return reset;
+      });
+      void (async () => {
+        const data = await fetchPage(active, 1);
+        if (data) applyPage(active, data);
+        else setTabs((prev) => ({ ...prev, [active]: { ...prev[active], loading: false } }));
+      })();
+    },
+    [tab, fetchPage, applyPage],
+  );
+
   const state = tabs[tab];
 
   // Prefer the actual feed count once a tab has loaded; the SSR badge counts are
@@ -288,6 +340,8 @@ export function PortRadarTabs({
           pageSize={pageSize}
           paging={state.loading}
           onPageChange={(next) => void goToPage(tab, next)}
+          sort={sort}
+          onSort={onSortColumn}
           portsWithCoordinates={portsWithCoordinates}
           isSuperAdmin={isSuperAdmin}
         />

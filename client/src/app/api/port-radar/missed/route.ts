@@ -13,14 +13,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const isSuperAdmin = session.user.isSuperAdmin ?? false;
-  const { page, pageSize } = await parseFeedRequest(request);
+  const { searchParams, page, pageSize } = await parseFeedRequest(request);
   // Super-admin sees every country's missed alerts; regular users stay scoped.
   const countryScope = isSuperAdmin ? null : session.activeWorkspace.targetPortCountry;
+  const sort = typeof searchParams.sort === "string" ? searchParams.sort : undefined;
+  const dir = typeof searchParams.dir === "string" ? searchParams.dir : undefined;
 
   const { etas, count } = await getMissedOpportunityAlerts(
     session.activeWorkspace.id,
     countryScope,
-    { page, pageSize },
+    { page, pageSize, sort, dir },
   );
 
   return NextResponse.json({
