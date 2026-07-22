@@ -77,7 +77,7 @@ export default async function PortRadarPage({
       <VesselFilterPanel
         searchParams={searchParams}
         basePath="/dashboard/port-radar"
-        orientation="horizontal"
+        orientation="modal"
       />
 
       <PortRadarTabs

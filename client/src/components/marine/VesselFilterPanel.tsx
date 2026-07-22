@@ -1,8 +1,8 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Filter, Search, Upload } from "lucide-react";
+import { ChevronDown, ChevronUp, Filter, Search, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 import {
@@ -167,8 +167,10 @@ function countActive(state: FilterState): number {
 }
 
 // Section rendering variant — "list" is the sidebar look (border between rows);
-// "card" is the horizontal grid look (bordered card per section).
-const SectionVariantContext = createContext<"list" | "card">("list");
+// "card" is the horizontal grid look (bordered card per section);
+// "plain" strips the collapsible chrome for the modal tab-pane, where the
+// enclosing sidebar already handles section switching.
+const SectionVariantContext = createContext<"list" | "card" | "plain">("list");
 
 function Section({
   title,
@@ -185,6 +187,10 @@ function Section({
   // In card mode (horizontal grid), start collapsed regardless of the caller's
   // defaultOpen so every card lines up at the same height on first render.
   const [open, setOpen] = useState(variant === "card" ? false : defaultOpen);
+
+  if (variant === "plain") {
+    return <div className="space-y-3">{children}</div>;
+  }
 
   if (variant === "card") {
     return (
@@ -237,7 +243,7 @@ export function VesselFilterPanel({
 }: {
   searchParams: SearchParams;
   basePath?: string;
-  orientation?: "vertical" | "horizontal";
+  orientation?: "vertical" | "horizontal" | "modal";
 }) {
   const router = useRouter();
   const [state, setState] = useState<FilterState>(() => searchParamsToState(searchParams));
@@ -368,305 +374,314 @@ export function VesselFilterPanel({
     <span className="rounded-full bg-ocean/10 px-2 text-xs font-semibold text-ocean">{active}</span>
   ) : null;
 
-  const sections = (
+  const etaVoyageCount =
+    (state.hasEta ? 1 : 0) +
+    (state.etaFrom || state.etaTo ? 1 : 0) +
+    state.destCountry.length +
+    state.destPort.length +
+    state.etaConfidence.length +
+    state.voyageStatus.length;
+  const sizeCount =
+    (state.dwtMin || state.dwtMax ? 1 : 0) +
+    (state.gtMin || state.gtMax ? 1 : 0) +
+    (state.builtMin || state.builtMax ? 1 : 0) +
+    (state.loaMin || state.loaMax ? 1 : 0);
+  const ownerCount =
+    (state.owner.trim() ? 1 : 0) +
+    (state.manager.trim() ? 1 : 0) +
+    (state.operator.trim() ? 1 : 0);
+  const cargoCount = (state.market.trim() ? 1 : 0) + (state.sizeClass.trim() ? 1 : 0);
+  const qualityCount = (state.verified ? 1 : 0) + (state.hasMmsi ? 1 : 0) + (state.hasEmail ? 1 : 0);
+  const identityCount = state.flag.trim() ? 1 : 0;
+
+  const etaVoyageBody = (
     <>
-      <Section
-        title="ETA & voyage"
-        defaultOpen
-        count={
-          (state.hasEta ? 1 : 0) +
-          (state.etaFrom || state.etaTo ? 1 : 0) +
-          state.destCountry.length +
-          state.destPort.length +
-          state.etaConfidence.length +
-          state.voyageStatus.length
-        }
-      >
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
-          <input
-            type="checkbox"
-            checked={state.hasEta}
-            onChange={(e) => patch({ hasEta: e.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-          />
-          Only vessels with an upcoming ETA
-        </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+        <input
+          type="checkbox"
+          checked={state.hasEta}
+          onChange={(e) => patch({ hasEta: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+        />
+        Only vessels with an upcoming ETA
+      </label>
 
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA window (UTC)</p>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={state.etaFrom}
-              onChange={(e) => patch({ etaFrom: e.target.value })}
-              className={inputClass}
-            />
-            <input
-              type="date"
-              value={state.etaTo}
-              onChange={(e) => patch({ etaTo: e.target.value })}
-              className={inputClass}
-            />
-          </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA window (UTC)</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input type="date" value={state.etaFrom} onChange={(e) => patch({ etaFrom: e.target.value })} className={inputClass} />
+          <input type="date" value={state.etaTo} onChange={(e) => patch({ etaTo: e.target.value })} className={inputClass} />
         </div>
+      </div>
 
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">
-            Destination country
-          </p>
-          <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
-            {countries.length === 0 ? (
-              <p className="px-1 py-1 text-xs text-slate-400">Loading…</p>
-            ) : (
-              countries.map((option) => (
-                <label
-                  key={option.country}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={state.destCountry.includes(option.country)}
-                    onChange={() => toggleListField("destCountry", option.country)}
-                    className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                  />
-                  <span className="min-w-0 truncate">
-                    {option.countryName}
-                    <span className="ml-1 text-xs text-slate-400">({option.country})</span>
-                  </span>
-                </label>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">
-            Destination port
-          </p>
-          {state.destCountry.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
-              Pick a country first to filter by specific ports.
-            </p>
-          ) : ports.length === 0 ? (
-            <p className="rounded-md border border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
-              Loading ports…
-            </p>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Destination country</p>
+        <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
+          {countries.length === 0 ? (
+            <p className="px-1 py-1 text-xs text-slate-400">Loading…</p>
           ) : (
-            <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
-              {ports.map((port) => (
-                <label
-                  key={port.portCode}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={state.destPort.includes(port.portCode)}
-                    onChange={() => toggleListField("destPort", port.portCode)}
-                    className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                  />
-                  <span className="min-w-0 truncate">
-                    {port.portName}
-                    <span className="ml-1 text-xs text-slate-400">
-                      ({port.portCode} · {port.country})
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
+            countries.map((option) => (
+              <label
+                key={option.country}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+              >
+                <input
+                  type="checkbox"
+                  checked={state.destCountry.includes(option.country)}
+                  onChange={() => toggleListField("destCountry", option.country)}
+                  className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                />
+                <span className="min-w-0 truncate">
+                  {option.countryName}
+                  <span className="ml-1 text-xs text-slate-400">({option.country})</span>
+                </span>
+              </label>
+            ))
           )}
         </div>
+      </div>
 
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA confidence</p>
-          <div className="flex flex-wrap gap-2">
-            {ETA_CONFIDENCES.map((value) => (
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Destination port</p>
+        {state.destCountry.length === 0 ? (
+          <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
+            Pick a country first to filter by specific ports.
+          </p>
+        ) : ports.length === 0 ? (
+          <p className="rounded-md border border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
+            Loading ports…
+          </p>
+        ) : (
+          <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
+            {ports.map((port) => (
               <label
-                key={value}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                key={port.portCode}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
               >
                 <input
                   type="checkbox"
-                  checked={state.etaConfidence.includes(value)}
-                  onChange={() => toggleListField("etaConfidence", value)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+                  checked={state.destPort.includes(port.portCode)}
+                  onChange={() => toggleListField("destPort", port.portCode)}
+                  className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
                 />
-                {formatVesselEnum(value)}
+                <span className="min-w-0 truncate">
+                  {port.portName}
+                  <span className="ml-1 text-xs text-slate-400">
+                    ({port.portCode} · {port.country})
+                  </span>
+                </span>
               </label>
             ))}
           </div>
-        </div>
+        )}
+      </div>
 
-        <div>
-          <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Voyage status</p>
-          <div className="flex flex-wrap gap-2">
-            {VOYAGE_STATUSES.map((value) => (
-              <label
-                key={value}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
-              >
-                <input
-                  type="checkbox"
-                  checked={state.voyageStatus.includes(value)}
-                  onChange={() => toggleListField("voyageStatus", value)}
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
-                />
-                {formatVesselEnum(value)}
-              </label>
-            ))}
-          </div>
-        </div>
-      </Section>
-
-      <Section title="Vessel type" count={typeCount}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            value={typeSearch}
-            onChange={(e) => setTypeSearch(e.target.value)}
-            placeholder="Search vessel type"
-            className="w-full rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm dark:border-[#262631] dark:bg-[#08080B] dark:text-white/85"
-          />
-        </div>
-        <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-          {categories.map((cat) => {
-            const allSelected = cat.types.every((t) => state.vesselType.includes(t));
-            return (
-              <div key={cat.label}>
-                <button
-                  type="button"
-                  onClick={() => toggleCategory(cat.types, allSelected)}
-                  className="text-xs font-semibold uppercase tracking-wide text-ocean hover:underline"
-                >
-                  {allSelected ? "Clear" : "Select all"} · {cat.label}
-                </button>
-                <div className="mt-1 space-y-1">
-                  {cat.types.map((type) => (
-                    <label
-                      key={type}
-                      className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={state.vesselType.includes(type)}
-                        onChange={() => toggleType(type)}
-                        className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                      />
-                      {formatVesselEnum(type)}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {categories.length === 0 ? (
-            <p className="px-1 py-2 text-sm text-slate-400">No vessel type matches.</p>
-          ) : null}
-        </div>
-      </Section>
-
-      <Section title="Identity" count={state.flag.trim() ? 1 : 0}>
-        <input
-          value={state.flag}
-          onChange={(e) => patch({ flag: e.target.value.toUpperCase() })}
-          placeholder="Flag states, e.g. LR, PA, MH"
-          className={`${inputClass} uppercase`}
-        />
-        <p className="text-xs text-slate-400 dark:text-white/35">Comma-separate multiple flag codes.</p>
-      </Section>
-
-      <Section title="Status" count={state.status.length}>
-        <div className="space-y-1">
-          {VESSEL_STATUSES.map((value) => (
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA confidence</p>
+        <div className="flex flex-wrap gap-2">
+          {ETA_CONFIDENCES.map((value) => (
             <label
               key={value}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
             >
               <input
                 type="checkbox"
-                checked={state.status.includes(value)}
-                onChange={() => toggleStatus(value)}
-                className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                checked={state.etaConfidence.includes(value)}
+                onChange={() => toggleListField("etaConfidence", value)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
               />
               {formatVesselEnum(value)}
             </label>
           ))}
         </div>
-      </Section>
+      </div>
 
-      <Section
-        title="Size & specs"
-        count={
-          (state.dwtMin || state.dwtMax ? 1 : 0) +
-          (state.gtMin || state.gtMax ? 1 : 0) +
-          (state.builtMin || state.builtMax ? 1 : 0) +
-          (state.loaMin || state.loaMax ? 1 : 0)
-        }
-      >
-        <RangeRow label="DWT" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
-        <RangeRow label="Gross tonnage" min={state.gtMin} max={state.gtMax} onMin={(v) => patch({ gtMin: v })} onMax={(v) => patch({ gtMax: v })} />
-        <RangeRow label="Built year" min={state.builtMin} max={state.builtMax} onMin={(v) => patch({ builtMin: v })} onMax={(v) => patch({ builtMax: v })} />
-        <RangeRow label="Length (LOA)" min={state.loaMin} max={state.loaMax} onMin={(v) => patch({ loaMin: v })} onMax={(v) => patch({ loaMax: v })} />
-      </Section>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Voyage status</p>
+        <div className="flex flex-wrap gap-2">
+          {VOYAGE_STATUSES.map((value) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
+            >
+              <input
+                type="checkbox"
+                checked={state.voyageStatus.includes(value)}
+                onChange={() => toggleListField("voyageStatus", value)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+              />
+              {formatVesselEnum(value)}
+            </label>
+          ))}
+        </div>
+      </div>
+    </>
+  );
 
-      <Section
-        title="Owner & manager"
-        count={(state.owner.trim() ? 1 : 0) + (state.manager.trim() ? 1 : 0) + (state.operator.trim() ? 1 : 0)}
-      >
-        <input value={state.owner} onChange={(e) => patch({ owner: e.target.value })} placeholder="Owner (registered / beneficial / company)" className={inputClass} />
-        <input value={state.manager} onChange={(e) => patch({ manager: e.target.value })} placeholder="Manager (ISM / commercial / technical)" className={inputClass} />
-        <input value={state.operator} onChange={(e) => patch({ operator: e.target.value })} placeholder="Operator" className={inputClass} />
-      </Section>
-
-      <Section
-        title="Cargo & market"
-        count={(state.market.trim() ? 1 : 0) + (state.sizeClass.trim() ? 1 : 0)}
-      >
+  const vesselTypeBody = (
+    <>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
-          value={state.market}
-          onChange={(e) => patch({ market: e.target.value })}
-          placeholder="Commercial market, e.g. Crude Oil, LNG"
-          className={inputClass}
+          value={typeSearch}
+          onChange={(e) => setTypeSearch(e.target.value)}
+          placeholder="Search vessel type"
+          className="w-full rounded-md border border-slate-300 py-1.5 pl-8 pr-3 text-sm dark:border-[#262631] dark:bg-[#08080B] dark:text-white/85"
         />
-        <input
-          value={state.sizeClass}
-          onChange={(e) => patch({ sizeClass: e.target.value })}
-          placeholder="Size class, e.g. Aframax, Panamax"
-          className={inputClass}
-        />
-      </Section>
+      </div>
+      <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+        {categories.map((cat) => {
+          const allSelected = cat.types.every((t) => state.vesselType.includes(t));
+          return (
+            <div key={cat.label}>
+              <button
+                type="button"
+                onClick={() => toggleCategory(cat.types, allSelected)}
+                className="text-xs font-semibold uppercase tracking-wide text-ocean hover:underline"
+              >
+                {allSelected ? "Clear" : "Select all"} · {cat.label}
+              </button>
+              <div className="mt-1 space-y-1">
+                {cat.types.map((type) => (
+                  <label
+                    key={type}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={state.vesselType.includes(type)}
+                      onChange={() => toggleType(type)}
+                      className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                    />
+                    {formatVesselEnum(type)}
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {categories.length === 0 ? (
+          <p className="px-1 py-2 text-sm text-slate-400">No vessel type matches.</p>
+        ) : null}
+      </div>
+    </>
+  );
 
-      <Section
-        title="Data quality"
-        count={(state.verified ? 1 : 0) + (state.hasMmsi ? 1 : 0) + (state.hasEmail ? 1 : 0)}
-      >
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+  const identityBody = (
+    <>
+      <input
+        value={state.flag}
+        onChange={(e) => patch({ flag: e.target.value.toUpperCase() })}
+        placeholder="Flag states, e.g. LR, PA, MH"
+        className={`${inputClass} uppercase`}
+      />
+      <p className="text-xs text-slate-400 dark:text-white/35">Comma-separate multiple flag codes.</p>
+    </>
+  );
+
+  const statusBody = (
+    <div className="space-y-1">
+      {VESSEL_STATUSES.map((value) => (
+        <label
+          key={value}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+        >
           <input
             type="checkbox"
-            checked={state.verified}
-            onChange={(e) => patch({ verified: e.target.checked })}
+            checked={state.status.includes(value)}
+            onChange={() => toggleStatus(value)}
             className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
           />
-          Verified vessels only
+          {formatVesselEnum(value)}
         </label>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
-          <input
-            type="checkbox"
-            checked={state.hasMmsi}
-            onChange={(e) => patch({ hasMmsi: e.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-          />
-          Has MMSI (AIS active)
-        </label>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
-          <input
-            type="checkbox"
-            checked={state.hasEmail}
-            onChange={(e) => patch({ hasEmail: e.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-          />
-          Has at least one contact email
-        </label>
-      </Section>
+      ))}
+    </div>
+  );
+
+  const sizeSpecsBody = (
+    <>
+      <RangeRow label="DWT" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
+      <RangeRow label="Gross tonnage" min={state.gtMin} max={state.gtMax} onMin={(v) => patch({ gtMin: v })} onMax={(v) => patch({ gtMax: v })} />
+      <RangeRow label="Built year" min={state.builtMin} max={state.builtMax} onMin={(v) => patch({ builtMin: v })} onMax={(v) => patch({ builtMax: v })} />
+      <RangeRow label="Length (LOA)" min={state.loaMin} max={state.loaMax} onMin={(v) => patch({ loaMin: v })} onMax={(v) => patch({ loaMax: v })} />
+    </>
+  );
+
+  const ownerBody = (
+    <>
+      <input value={state.owner} onChange={(e) => patch({ owner: e.target.value })} placeholder="Owner (registered / beneficial / company)" className={inputClass} />
+      <input value={state.manager} onChange={(e) => patch({ manager: e.target.value })} placeholder="Manager (ISM / commercial / technical)" className={inputClass} />
+      <input value={state.operator} onChange={(e) => patch({ operator: e.target.value })} placeholder="Operator" className={inputClass} />
+    </>
+  );
+
+  const cargoBody = (
+    <>
+      <input
+        value={state.market}
+        onChange={(e) => patch({ market: e.target.value })}
+        placeholder="Commercial market, e.g. Crude Oil, LNG"
+        className={inputClass}
+      />
+      <input
+        value={state.sizeClass}
+        onChange={(e) => patch({ sizeClass: e.target.value })}
+        placeholder="Size class, e.g. Aframax, Panamax"
+        className={inputClass}
+      />
+    </>
+  );
+
+  const qualityBody = (
+    <>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+        <input
+          type="checkbox"
+          checked={state.verified}
+          onChange={(e) => patch({ verified: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+        />
+        Verified vessels only
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+        <input
+          type="checkbox"
+          checked={state.hasMmsi}
+          onChange={(e) => patch({ hasMmsi: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+        />
+        Has MMSI (AIS active)
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+        <input
+          type="checkbox"
+          checked={state.hasEmail}
+          onChange={(e) => patch({ hasEmail: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+        />
+        Has at least one contact email
+      </label>
+    </>
+  );
+
+  const sectionList: Array<{ key: string; title: string; count: number; body: React.ReactNode; defaultOpen?: boolean }> = [
+    { key: "eta", title: "ETA & voyage", count: etaVoyageCount, body: etaVoyageBody, defaultOpen: true },
+    { key: "type", title: "Vessel type", count: typeCount, body: vesselTypeBody },
+    { key: "identity", title: "Identity", count: identityCount, body: identityBody },
+    { key: "status", title: "Status", count: state.status.length, body: statusBody },
+    { key: "size", title: "Size & specs", count: sizeCount, body: sizeSpecsBody },
+    { key: "owner", title: "Owner & manager", count: ownerCount, body: ownerBody },
+    { key: "cargo", title: "Cargo & market", count: cargoCount, body: cargoBody },
+    { key: "quality", title: "Data quality", count: qualityCount, body: qualityBody },
+  ];
+
+  const sections = (
+    <>
+      {sectionList.map((s) => (
+        <Section key={s.key} title={s.title} count={s.count} defaultOpen={s.defaultOpen}>
+          {s.body}
+        </Section>
+      ))}
     </>
   );
 
@@ -688,6 +703,19 @@ export function VesselFilterPanel({
       </button>
     </div>
   );
+
+  if (orientation === "modal") {
+    return (
+      <FilterModalShell
+        activeBadge={activeBadge}
+        active={active}
+        searchRow={searchRow}
+        sections={sectionList}
+        onApply={apply}
+        onReset={reset}
+      />
+    );
+  }
 
   if (orientation === "horizontal") {
     return (
@@ -820,6 +848,223 @@ function RangeRow({
           className="min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-[#262631] dark:bg-[#08080B] dark:text-white/85"
         />
       </div>
+    </div>
+  );
+}
+
+type FilterSectionMeta = {
+  key: string;
+  title: string;
+  count: number;
+  body: React.ReactNode;
+};
+
+/**
+ * Full-screen filter modal — the trigger sits in the page header; clicking it
+ * mounts an overlay with a two-column layout (section list on the left, the
+ * active section's fields on the right). Open/close is animated in two phases:
+ * `mounted` gates the DOM, `visible` drives the transition classes. Closing
+ * flips `visible` off first, then unmounts after the transition ends so the
+ * exit animation actually plays.
+ */
+function FilterModalShell({
+  activeBadge,
+  active,
+  searchRow,
+  sections,
+  onApply,
+  onReset,
+}: {
+  activeBadge: React.ReactNode;
+  active: number;
+  searchRow: React.ReactNode;
+  sections: FilterSectionMeta[];
+  onApply: () => void;
+  onReset: () => void;
+}) {
+  const [mounted, setMounted] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [activeKey, setActiveKey] = useState(sections[0]?.key ?? "");
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function open() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+    setMounted(true);
+    // Next frame — mount first so the DOM lands with the "hidden" classes,
+    // then flip `visible` to trigger the transition.
+    requestAnimationFrame(() => setVisible(true));
+  }
+
+  function close() {
+    setVisible(false);
+    closeTimer.current = setTimeout(() => setMounted(false), 220);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+    };
+  }, []);
+
+  // Lock body scroll while the modal is open — otherwise the page underneath
+  // scrolls with the wheel when the panel already has its own scroll.
+  useEffect(() => {
+    if (!mounted) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") close();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mounted]);
+
+  const activeSection = sections.find((s) => s.key === activeKey) ?? sections[0];
+
+  function handleApply() {
+    onApply();
+    close();
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white/90">
+          <Filter className="h-4 w-4 text-ocean" />
+          Vessel filters
+          {activeBadge}
+        </div>
+        <div className="min-w-0 flex-1 md:max-w-lg">{searchRow}</div>
+        <div className="flex items-center gap-2 md:ml-auto">
+          <button
+            type="button"
+            onClick={open}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/[0.06]"
+          >
+            <Filter className="h-4 w-4" />
+            Filter vessels
+          </button>
+          {active ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-[#262631] dark:text-white/70"
+            >
+              Reset
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {mounted ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Filter vessels"
+          className={`fixed inset-0 z-50 flex items-stretch justify-stretch transition-opacity duration-200 ${
+            visible ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <button
+            type="button"
+            aria-label="Close filters"
+            onClick={close}
+            className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm dark:bg-black/60"
+          />
+          <div
+            className={`relative m-3 flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-shell transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0A0A0C] sm:m-6 ${
+              visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-[0.98] opacity-0"
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-white/10">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white/90">Filter Vessels</h2>
+                {activeBadge}
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                aria-label="Close"
+                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-white/60 dark:hover:bg-white/[0.06]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+              <nav className="shrink-0 overflow-y-auto border-b border-slate-100 px-3 py-4 md:w-56 md:border-b-0 md:border-r dark:border-white/10">
+                <ul className="flex gap-1 overflow-x-auto md:block md:space-y-0.5">
+                  {sections.map((s) => {
+                    const isActive = s.key === activeSection?.key;
+                    return (
+                      <li key={s.key} className="shrink-0 md:shrink">
+                        <button
+                          type="button"
+                          onClick={() => setActiveKey(s.key)}
+                          className={`flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
+                            isActive
+                              ? "bg-ocean/10 font-semibold text-ocean dark:bg-accent-500/15 dark:text-accent-300"
+                              : "text-slate-600 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                          }`}
+                        >
+                          <span className="truncate">{s.title}</span>
+                          {s.count ? (
+                            <span
+                              className={`rounded-full px-2 text-xs font-semibold ${
+                                isActive
+                                  ? "bg-ocean/15 text-ocean dark:bg-accent-500/20 dark:text-accent-200"
+                                  : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
+                              }`}
+                            >
+                              {s.count}
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
+
+              <div key={activeSection?.key} className="flex-1 overflow-y-auto px-6 py-5 animate-in-fade">
+                <SectionVariantContext.Provider value="plain">
+                  {activeSection?.body}
+                </SectionVariantContext.Provider>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4 dark:border-white/10 dark:bg-white/[0.02]">
+              <button
+                type="button"
+                onClick={() => {
+                  onReset();
+                  close();
+                }}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-white/60 dark:hover:text-white"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={handleApply}
+                className="rounded-md bg-navy px-5 py-2 text-sm font-semibold text-white hover:bg-ocean dark:bg-accent-600 dark:hover:bg-accent-500"
+              >
+                Show Results
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
