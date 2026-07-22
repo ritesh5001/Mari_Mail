@@ -346,28 +346,33 @@ export async function sendSequenceStep(args: {
     },
   );
 
+  // Prefer the raw text the user typed for the plain-text alternate —
+  // it already has the correct line breaks. Only fall back to stripping
+  // HTML if the caller explicitly authored a separate bodyText. Computed
+  // up here so the same value goes on the wire AND into SentMessage.
+  const plainText = sequence.bodyText
+    ? renderTemplate(sequence.bodyText, values)
+    : rawBody || plainTextFromHtml(bodyHtml);
+
+  // resolveFromAddress validates the raw address shape; a campaign-level
+  // fromName override still routes through the same shape check by falling
+  // through to resolveFromAddress when the inbox address is clean, and by
+  // throwing early when it isn't. Hoisted here so both the transport call
+  // and the SentMessage write see the same values.
+  const resolvedInboxFrom = resolveFromAddress(inbox);
+  const cleanAddress = inbox.fromEmail?.trim() || inbox.email.trim();
+  const fromAddress = campaign.fromName
+    ? `${campaign.fromName} <${cleanAddress}>`
+    : resolvedInboxFrom;
+
   try {
     const transport = await buildTransport(inbox);
-    // resolveFromAddress validates the raw address shape; a campaign-level
-    // fromName override still routes through the same shape check by falling
-    // through to resolveFromAddress when the inbox address is clean, and by
-    // throwing early when it isn't.
-    const resolvedInboxFrom = resolveFromAddress(inbox);
-    const cleanAddress = inbox.fromEmail?.trim() || inbox.email.trim();
-    const fromAddress = campaign.fromName
-      ? `${campaign.fromName} <${cleanAddress}>`
-      : resolvedInboxFrom;
     const result = await transport.sendMail({
       from: fromAddress,
       to: contact.email,
       subject,
       html: bodyHtml,
-      // Prefer the raw text the user typed for the plain-text alternate —
-      // it already has the correct line breaks. Only fall back to stripping
-      // HTML if the caller explicitly authored a separate bodyText.
-      text: sequence.bodyText
-        ? renderTemplate(sequence.bodyText, values)
-        : rawBody || plainTextFromHtml(bodyHtml),
+      text: plainText,
       // Replies go straight back to the sending mailbox so the recipient's
       // reply lands in the user's own inbox (not a platform inbound-tracking
       // address). Reply threading via the platform is intentionally disabled
@@ -395,6 +400,49 @@ export async function sendSequenceStep(args: {
             inboxId: inbox.id,
             scheduledFor: args.scheduledFor,
           } as Prisma.InputJsonValue,
+        },
+      }),
+      // Store exactly what went out so the campaign detail page's inbox-style
+      // viewer can show the real message per recipient — not a re-render of
+      // the template. Upsert on (campaignContactId, stepOrder) so a retry that
+      // eventually succeeds replaces the earlier attempt cleanly.
+      prisma.sentMessage.upsert({
+        where: {
+          campaignContactId_stepOrder: {
+            campaignContactId,
+            stepOrder: sequence.stepOrder,
+          },
+        },
+        create: {
+          workspaceId: campaign.workspaceId,
+          campaignId: campaign.id,
+          campaignContactId,
+          sequenceId: sequence.id,
+          stepOrder: sequence.stepOrder,
+          contactId: contact.id,
+          inboxId: inbox.id,
+          messageId: result.messageId,
+          fromAddress,
+          toAddress: contact.email,
+          replyTo: fromAddress,
+          subject,
+          bodyHtml,
+          bodyText: plainText,
+          variant: variantB ? "B" : "A",
+        },
+        update: {
+          sequenceId: sequence.id,
+          contactId: contact.id,
+          inboxId: inbox.id,
+          messageId: result.messageId,
+          fromAddress,
+          toAddress: contact.email,
+          replyTo: fromAddress,
+          subject,
+          bodyHtml,
+          bodyText: plainText,
+          variant: variantB ? "B" : "A",
+          sentAt: new Date(),
         },
       }),
       prisma.campaignContact.update({

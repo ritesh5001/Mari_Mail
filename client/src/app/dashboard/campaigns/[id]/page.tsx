@@ -306,7 +306,7 @@ export default async function CampaignDetailPage({
                     : "Target contacts are present, but no matching trigger has enrolled them into scheduled sends yet."}
             </div>
           ) : null}
-          <CampaignStepBreakdown steps={stepBreakdown} />
+          <CampaignStepBreakdown steps={stepBreakdown} campaignId={campaign.id} />
 
           {targetOnlyContacts.length > 0 ? (
             <div className="mt-5">

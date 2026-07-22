@@ -405,6 +405,7 @@ model Workspace {
   creditLedger         CreditLedger[]
   billingEvents        BillingEvent[]
   marineDataRows       MarineDataRow[]
+  sentMessages         SentMessage[]
 
   @@index([ownerId])
   @@index([plan])
@@ -754,6 +755,7 @@ model Contact {
   savedBy            SavedContact[]
   campaignContacts   CampaignContact[]
   emailEvents        EmailEvent[]
+  sentMessages       SentMessage[]
 
   @@unique([email, workspaceId])
   @@index([workspaceId])
@@ -942,6 +944,7 @@ model Campaign {
   etaTriggers       ETATrigger[]
   portRules         PortCampaignRule[]
   cargoTriggers     CargoChangeTrigger[]
+  sentMessages      SentMessage[]
 
   @@index([workspaceId])
   @@index([triggerType])
@@ -971,6 +974,7 @@ model CampaignSequence {
   campaign         Campaign              @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   campaignContacts CampaignContact[]
   emailEvents      EmailEvent[]
+  sentMessages     SentMessage[]
 
   @@unique([campaignId, stepOrder])
   @@index([campaignId])
@@ -1031,6 +1035,7 @@ model CampaignContact {
   etaTrigger   ETATrigger?           @relation(fields: [etaTriggerId], references: [id], onDelete: SetNull)
   sequence     CampaignSequence?     @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
   events       EmailEvent[]
+  sentMessages SentMessage[]
 
   @@unique([campaignId, contactId])
   @@index([workspaceId])
@@ -1070,6 +1075,44 @@ model EmailEvent {
   @@index([trackingId])
   @@index([workspaceId, occurredAt])
   @@index([workspaceId, eventType, occurredAt])
+}
+
+/// One row per real send. Stores the exact rendered subject + HTML + text +
+/// from/to/reply-to so the campaign detail page can show what actually went
+/// out, byte-for-byte, per recipient — instead of re-rendering the template.
+///
+/// (campaignContactId, stepOrder) is unique so a step retry that succeeds a
+/// second time replaces the previous row rather than duplicating it.
+model SentMessage {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  campaignId        String
+  campaignContactId String
+  sequenceId        String?
+  stepOrder         Int
+  contactId         String
+  inboxId           String?
+  messageId         String?
+  fromAddress       String
+  toAddress         String
+  replyTo           String?
+  subject           String
+  bodyHtml          String
+  bodyText          String
+  variant           String            @default("A")
+  sentAt            DateTime          @default(now())
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  campaign          Campaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignContact   CampaignContact   @relation(fields: [campaignContactId], references: [id], onDelete: Cascade)
+  sequence          CampaignSequence? @relation(fields: [sequenceId], references: [id], onDelete: SetNull)
+  contact           Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignContactId, stepOrder])
+  @@index([workspaceId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([sentAt])
+  @@index([campaignId, sentAt])
 }
 
 model PortCampaignRule {

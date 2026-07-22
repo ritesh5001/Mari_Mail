@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronRight, Clock, Mail, Ship } from "lucide-react";
 import type { StepBreakdownRow, StepMailRow } from "@/lib/campaign-data";
+import { SentMessageViewer } from "./SentMessageViewer";
 
 function formatDate(value: string | null) {
   if (!value) return null;
@@ -35,12 +36,26 @@ function stateTone(state: StepMailRow["state"]) {
  * Every sequence step, always listed — each with its own to-go / sent / pending
  * counts, expanding to the individual mails and their send times.
  */
-export function CampaignStepBreakdown({ steps }: { steps: StepBreakdownRow[] }) {
+export function CampaignStepBreakdown({
+  steps,
+  campaignId,
+}: {
+  steps: StepBreakdownRow[];
+  campaignId: string;
+}) {
   // Step 1 open by default: it's the one with something happening on a fresh
   // campaign, and an all-collapsed list reads as an empty page.
   const [open, setOpen] = useState<Set<string>>(
     () => new Set(steps.length ? [steps[0].sequenceId] : []),
   );
+  // Currently opened mail in the inbox-style viewer. Only SENT mails have a
+  // stored copy to show; other states no-op the click.
+  const [viewing, setViewing] = useState<{
+    contactId: string;
+    stepOrder: number;
+    recipientName: string;
+    recipientEmail: string;
+  } | null>(null);
 
   function toggle(sequenceId: string) {
     setOpen((prev) => {
@@ -61,6 +76,16 @@ export function CampaignStepBreakdown({ steps }: { steps: StepBreakdownRow[] }) 
 
   return (
     <div className="mt-4 space-y-2">
+      {viewing ? (
+        <SentMessageViewer
+          campaignId={campaignId}
+          contactId={viewing.contactId}
+          stepOrder={viewing.stepOrder}
+          recipientName={viewing.recipientName}
+          recipientEmail={viewing.recipientEmail}
+          onClose={() => setViewing(null)}
+        />
+      ) : null}
       {steps.map((step) => {
         const isOpen = open.has(step.sequenceId);
         const nextLabel = formatDate(step.nextAt);
@@ -130,10 +155,24 @@ export function CampaignStepBreakdown({ steps }: { steps: StepBreakdownRow[] }) 
                       <tbody>
                         {step.mails.map((mail) => {
                           const when = formatDate(mail.at);
+                          const openable = mail.state === "SENT";
                           return (
                             <tr
                               key={mail.contactId}
-                              className="border-t border-slate-100 align-top"
+                              onClick={
+                                openable
+                                  ? () =>
+                                      setViewing({
+                                        contactId: mail.contactId,
+                                        stepOrder: step.stepOrder,
+                                        recipientName: mail.name,
+                                        recipientEmail: mail.email,
+                                      })
+                                  : undefined
+                              }
+                              className={`border-t border-slate-100 align-top ${
+                                openable ? "cursor-pointer hover:bg-slate-50" : ""
+                              }`}
                             >
                               <td className="px-4 py-3">
                                 <p className="font-medium text-slate-950">{mail.name}</p>
@@ -147,6 +186,11 @@ export function CampaignStepBreakdown({ steps }: { steps: StepBreakdownRow[] }) 
                                   <Mail className="h-3 w-3 shrink-0 text-slate-400" />
                                   <span className="truncate">{step.subject || "(no subject)"}</span>
                                 </p>
+                                {openable ? (
+                                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ocean">
+                                    Click to open
+                                  </p>
+                                ) : null}
                               </td>
                               <td className="px-4 py-3 text-xs text-slate-600">
                                 {mail.vesselName ? (
