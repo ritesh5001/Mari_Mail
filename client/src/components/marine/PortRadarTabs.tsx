@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
 import type { SortState } from "@/hooks/useClientSort";
@@ -254,6 +255,50 @@ export function PortRadarTabs({
     },
     [warmTab],
   );
+
+  // When the URL's filter changes (Apply / Reset on VesselFilterPanel pushes a
+  // new querystring), invalidate every tab's cached data — the seeded rows on
+  // the initial tab are already the new filter's result from the server, but
+  // the other tabs still hold results from the OLD filter and will otherwise
+  // serve stale data forever because warmTab short-circuits on loaded=true.
+  // Re-fetches the active tab immediately and marks the inactive tabs as
+  // unloaded so they refetch on next open (or via background warming below).
+  const urlSearch = useSearchParams();
+  const searchKey = urlSearch?.toString() ?? "";
+  const firstSearchKey = useRef<string | null>(null);
+  useEffect(() => {
+    // Skip the initial render — the seeded tab already reflects the URL.
+    if (firstSearchKey.current === null) {
+      firstSearchKey.current = searchKey;
+      return;
+    }
+    if (firstSearchKey.current === searchKey) return;
+    firstSearchKey.current = searchKey;
+
+    // Drop cached prefetches — they're for the old filter.
+    prefetch.current.clear();
+
+    // Reset every tab and force the active one to reload with the new filter.
+    setTabs((prev) => {
+      const reset: Record<PortRadarTabKey, TabState> = { ...prev };
+      for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+        reset[t] =
+          t === tab
+            ? { ...prev[t], loading: true, loaded: false, error: false, errorReason: undefined }
+            : { rows: [], count: 0, page: 1, loaded: false, loading: false, error: false };
+      }
+      return reset;
+    });
+    void (async () => {
+      const result = await fetchPage(tab, 1);
+      if (result.ok) applyPage(tab, result.data);
+      else
+        setTabs((prev) => ({
+          ...prev,
+          [tab]: { ...prev[tab], loading: false, loaded: true, error: true, errorReason: result.reason },
+        }));
+    })();
+  }, [searchKey, tab, fetchPage, applyPage]);
 
   const goToPage = useCallback(
     async (which: PortRadarTabKey, page: number) => {
