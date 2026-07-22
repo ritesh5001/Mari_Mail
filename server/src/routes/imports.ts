@@ -253,7 +253,7 @@ function validateRequiredRows(
   return errors;
 }
 
-async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields: ReturnType<typeof buildHeaderMatches>["fields"], workspaceId: string) {
+async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields: ReturnType<typeof buildHeaderMatches>["fields"], _workspaceId: string) {
   // For VESSELS, a missing Vessel Name is NOT a row error — the importer falls
   // back to using the IMO as the name. IMO is the only hard requirement, checked
   // explicitly below. So exclude "Vessel Name" from the generic required check.
@@ -307,8 +307,12 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
       .filter((imo): imo is string => typeof imo === "string" && /^\d{7}$/.test(imo));
     const existingImos = new Set<string>();
     if (validImos.length > 0) {
+      // Vessels are global — look up across the whole table, not the caller's
+      // workspace. Otherwise the ETA preview would flag every WADI/TAILWIND
+      // row as "vessel not found" for anyone but the workspace that first
+      // imported the vessel.
       const found = await prisma.vessel.findMany({
-        where: { imoNumber: { in: Array.from(new Set(validImos)) }, workspaceId },
+        where: { imoNumber: { in: Array.from(new Set(validImos)) } },
         select: { imoNumber: true },
       });
       for (const v of found) existingImos.add(v.imoNumber);
@@ -320,7 +324,7 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
       if (imo && !/^\d{7}$/.test(imo)) {
         errors.push({ row: rowNumber, field: "IMO", value: imo, message: "IMO must be exactly 7 digits" });
       } else if (imo && !existingImos.has(imo)) {
-        errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imo} was not found in this workspace` });
+        errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imo} is not in the database — import a vessels CSV first` });
       }
       const eta = rowValue(row, "ETA (UTC)") ?? rowValue(row, "ETA");
       if (eta && Number.isNaN(new Date(eta).getTime())) {
@@ -782,14 +786,18 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
           continue;
         }
         try {
-          // Re-imports of the same CSV shouldn't stack duplicate ETA rows.
-          // Match on (vessel, port, exact ETA) and update; otherwise create.
+          // ETAs are global (like vessels): keyed by (vessel, destinationPort).
+          // A re-import from CSV for the same voyage overwrites the ETA time
+          // with the newer value rather than stacking a second row — the "arrive
+          // 03:30 → arrive 04:30 → arrive 05:15" refinement flow shipmasters
+          // actually do in practice. Different destination = different voyage,
+          // so that gets a new row.
           const existingEta = await prisma.vesselETA.findFirst({
             where: {
               vesselId: vessel.id,
               destinationPort: port.portCode,
-              eta: etaDate,
             },
+            orderBy: { createdAt: "desc" },
             select: { id: true },
           });
           if (existingEta) {
@@ -797,8 +805,10 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
               where: { id: existingEta.id },
               data: {
                 destinationPortName: port.portName,
+                eta: etaDate,
                 etaSource: "CSV_IMPORT",
                 etaConfidence: "ESTIMATED",
+                workspaceId: null,
               },
             });
           } else {
@@ -810,7 +820,7 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
                 eta: etaDate,
                 etaSource: "CSV_IMPORT",
                 etaConfidence: "ESTIMATED",
-                workspaceId,
+                workspaceId: null,
               },
             });
           }

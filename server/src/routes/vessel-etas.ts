@@ -118,11 +118,10 @@ vesselEtaRouter.post("/", requireAuth, async (req, res, next) => {
     }
 
     const { workspaceId, userId } = (req as AuthedRequest).auth;
-    // Super-admin ETA writes land as global (workspaceId=null) so every
-    // workspace's Port Radar sees the same authoritative row. Regular users
-    // still create ETAs scoped to their own workspace.
+    // ETAs are global — every workspace sees the same voyage schedule for a
+    // given vessel. The admin/regular distinction is preserved only for the
+    // vessel-lookup path below (admins can reach global vessels by design).
     const isAdmin = await isActorSuperAdmin(userId);
-    const targetWorkspaceId = isAdmin ? null : workspaceId;
     const vesselId = await resolveVesselId(workspaceId, input.data, { includeGlobal: isAdmin });
     if (!vesselId) {
       return sendError(res, 404, "NOT_FOUND", isAdmin ? "Vessel not found" : "Vessel not found in this workspace");
@@ -150,7 +149,7 @@ vesselEtaRouter.post("/", requireAuth, async (req, res, next) => {
         currentLon: input.data.currentLon ?? undefined,
         currentPort: input.data.currentPort ?? undefined,
         speedOverGround: input.data.speedOverGround ?? undefined,
-        workspaceId: targetWorkspaceId,
+        workspaceId: null,
       },
     });
 
@@ -506,11 +505,11 @@ vesselEtaRouter.post("/bulk-update", requireAuth, async (req, res, next) => {
       return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
     }
     const { workspaceId, userId } = (req as AuthedRequest).auth;
-    // Super-admin bulk uploads land as GLOBAL ETAs (workspaceId=null) so every
-    // workspace sees the corrected data — that's the whole point of admin
-    // publishing schedules. Regular workspace users keep private ETAs.
+    // ETAs are global — every CSV bulk upload writes workspaceId=null so
+    // every workspace sees the same voyage schedule. isAdmin is still used
+    // downstream to control which vessels are addressable (globals are only
+    // reachable via admin uploads or the vessel-CSV import path).
     const isAdmin = await isActorSuperAdmin(userId);
-    const targetWorkspaceId: string | null = isAdmin ? null : workspaceId;
 
     let records: string[][];
     try {
@@ -839,10 +838,11 @@ vesselEtaRouter.post("/bulk-update", requireAuth, async (req, res, next) => {
             let destinationPort = latest.destinationPort;
             const data: Prisma.VesselETAUpdateInput = {
               etaSource: "CSV_IMPORT",
-              // Admin edits promote the existing ETA to global so every
-              // workspace sees the corrected value; regular users leave the
-              // workspace binding as-is.
-              ...(isAdmin ? { workspace: { disconnect: true } } : {}),
+              // ETAs are global — every CSV update (admin or otherwise)
+              // promotes the row to global so every workspace sees the
+              // corrected value. The old per-workspace binding was the
+              // source of the "duplicate ETA per port" problem.
+              workspace: { disconnect: true },
             };
             if (rowIsNewer) data.eta = row.eta;
             if (portChanging && resolvedPort) {
@@ -874,9 +874,9 @@ vesselEtaRouter.post("/bulk-update", requireAuth, async (req, res, next) => {
               eta: row.eta,
               etaSource: "CSV_IMPORT",
               etaConfidence: "ESTIMATED",
-              // Admin creates land global (null workspaceId); regular users
-              // stay scoped to their own workspace.
-              workspaceId: targetWorkspaceId,
+              // ETAs are global — every workspace sees the same voyage
+              // schedule for a given vessel.
+              workspaceId: null,
             },
           });
           return {
