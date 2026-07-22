@@ -85,8 +85,11 @@ function ShipEtaCell({ vessels }: { vessels: ContactRow["matchedVessels"] }) {
 }
 
 /**
- * Compact next-ETA badge for the vessels-in-list table — matches the tone of
- * the ShipEtaCell chips used elsewhere so the two views read as one system.
+ * Compact ETA badge for the vessels-in-list table — matches the tone of the
+ * ShipEtaCell chips used elsewhere so the two views read as one system. Shows
+ * the latest known ETA regardless of past/future, with a colour + label swap
+ * for past ETAs so ops staff can still see "ship said it would be at Kandla
+ * yesterday" instead of a bare "No upcoming ETA".
  */
 function VesselNextEtaBadge({
   nextEta,
@@ -96,10 +99,26 @@ function VesselNextEtaBadge({
   nextEtaPort: string | null;
 }) {
   const eta = formatEtaShort(nextEta);
-  if (!eta) {
+  if (!eta || !nextEta) {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
-        No upcoming ETA
+        No ETA on file
+      </span>
+    );
+  }
+  const isPast = new Date(nextEta).getTime() < Date.now();
+  if (isPast) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-300 dark:bg-white/[0.06] dark:text-white/60 dark:ring-white/10"
+        title={`Last known ETA${nextEtaPort ? ` — ${nextEtaPort}` : ""} (UTC) — this time is in the past`}
+      >
+        <Clock className="h-3 w-3" />
+        ETA {eta}
+        {nextEtaPort ? ` · ${nextEtaPort}` : ""}
+        <span className="ml-0.5 rounded bg-slate-200 px-1 text-[9px] font-bold uppercase tracking-wide text-slate-700 dark:bg-white/10 dark:text-white/70">
+          past
+        </span>
       </span>
     );
   }

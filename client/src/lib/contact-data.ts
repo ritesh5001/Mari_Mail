@@ -587,23 +587,35 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
       vesselContactCounts.set(vessel.id, (vesselContactCounts.get(vessel.id) ?? 0) + 1);
     }
   }
-  // Next-ETA per vessel: pulled from the matchVessels query above (which
-  // already loads the top-1 upcoming ETA for each vessel), keyed by vesselId.
-  const vesselNextEta = new Map<string, { eta: string; port: string | null }>();
-  for (const v of matchVessels) {
-    const next = v.etas[0];
-    if (!next) continue;
-    vesselNextEta.set(v.id, {
-      eta: next.eta.toISOString(),
-      port: next.destinationPortName || next.destinationPort || null,
+  // ETA per vessel for the vessels-table "Next ETA" column. The matchVessels
+  // query above only loads FUTURE ETAs (needed by the contact-matcher's
+  // "when would this campaign fire?" question). For the vessels-table badge
+  // we want to show a value even when the last-known ETA is in the past —
+  // otherwise a vessel with only historical ETAs reads as "we know nothing"
+  // when we actually know quite a lot ("last said it would be at Kandla
+  // yesterday at 12:00"). Pull the single most-recent ETA per vessel and
+  // classify past-vs-future in code.
+  const latestEtaRows = listVesselIds.length
+    ? await prisma.vesselETA.findMany({
+        where: { vesselId: { in: listVesselIds } },
+        orderBy: [{ vesselId: "asc" }, { eta: "desc" }],
+        distinct: ["vesselId"],
+        select: { vesselId: true, eta: true, destinationPortName: true, destinationPort: true },
+      })
+    : [];
+  const vesselLatestEta = new Map<string, { eta: string; port: string | null }>();
+  for (const row of latestEtaRows) {
+    vesselLatestEta.set(row.vesselId, {
+      eta: row.eta.toISOString(),
+      port: row.destinationPortName || row.destinationPort || null,
     });
   }
   for (const vessel of vessels) {
     vessel.contactCount = vesselContactCounts.get(vessel.id) ?? 0;
-    const next = vesselNextEta.get(vessel.id);
-    if (next) {
-      vessel.nextEta = next.eta;
-      vessel.nextEtaPort = next.port;
+    const latest = vesselLatestEta.get(vessel.id);
+    if (latest) {
+      vessel.nextEta = latest.eta;
+      vessel.nextEtaPort = latest.port;
     }
   }
 
