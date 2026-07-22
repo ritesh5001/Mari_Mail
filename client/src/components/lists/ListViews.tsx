@@ -84,6 +84,37 @@ function ShipEtaCell({ vessels }: { vessels: ContactRow["matchedVessels"] }) {
   );
 }
 
+/**
+ * Compact next-ETA badge for the vessels-in-list table — matches the tone of
+ * the ShipEtaCell chips used elsewhere so the two views read as one system.
+ */
+function VesselNextEtaBadge({
+  nextEta,
+  nextEtaPort,
+}: {
+  nextEta: string | null;
+  nextEtaPort: string | null;
+}) {
+  const eta = formatEtaShort(nextEta);
+  if (!eta) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
+        No upcoming ETA
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-200 dark:ring-emerald-500/40"
+      title={`Next ETA${nextEtaPort ? ` — ${nextEtaPort}` : ""} (UTC)`}
+    >
+      <Clock className="h-3 w-3" />
+      ETA {eta}
+      {nextEtaPort ? ` · ${nextEtaPort}` : ""}
+    </span>
+  );
+}
+
 function formatRelative(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   if (Number.isNaN(ms)) return "";
@@ -591,6 +622,9 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
     commercialManager: (v) => v.commercialManagerName ?? v.commercialManagerCompany?.companyName,
     ismManager: (v) => v.ismManagerName ?? v.ismManagerCompany?.companyName,
     operator: (v) => v.operatorName,
+    // Sort by the actual date so "sooner" sorts before "later"; vessels with
+    // no ETA go to the bottom regardless of direction.
+    nextEta: (v) => (v.nextEta ? new Date(v.nextEta) : null),
     contacts: (v) => v.contactCount,
     added: (v) => (v.addedAt ? new Date(v.addedAt) : null),
   });
@@ -610,6 +644,7 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
           <SortableHeader label="Commercial Manager" sortKey="commercialManager" sort={sort} onSort={toggle} />
           <SortableHeader label="Ism Manager" sortKey="ismManager" sort={sort} onSort={toggle} />
           <SortableHeader label="Operator" sortKey="operator" sort={sort} onSort={toggle} />
+          <SortableHeader label="Next ETA" sortKey="nextEta" sort={sort} onSort={toggle} />
           <SortableHeader label="Contacts" sortKey="contacts" sort={sort} onSort={toggle} />
           <SortableHeader label="Added" sortKey="added" sort={sort} onSort={toggle} />
           <th className="w-10 px-4 py-3" />
@@ -631,6 +666,9 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
             <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.commercialManagerName ?? vessel.commercialManagerCompany?.companyName ?? "—"}</td>
             <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.ismManagerName ?? vessel.ismManagerCompany?.companyName ?? "—"}</td>
             <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.operatorName ?? "—"}</td>
+            <td className="whitespace-nowrap px-4 py-3">
+              <VesselNextEtaBadge nextEta={vessel.nextEta} nextEtaPort={vessel.nextEtaPort} />
+            </td>
             <td className="whitespace-nowrap px-4 py-3">
               {vessel.contactCount > 0 ? (
                 <span className="text-slate-600 dark:text-white/60">{vessel.contactCount}</span>

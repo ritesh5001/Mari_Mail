@@ -212,6 +212,10 @@ export type ListVesselRow = {
   addedAt: string | null;
   /** Contacts in this list that match this vessel. Zero = nobody to email. */
   contactCount: number;
+  /** Next upcoming ETA (soonest in the future) for this vessel — null when the
+   *  vessel has no ETAs on file. This is the time an ETA campaign would fire. */
+  nextEta: string | null;
+  nextEtaPort: string | null;
 };
 
 export type MatchedVesselRow = {
@@ -512,6 +516,10 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
     addedAt: vesselAddedMap.get(v.id) ?? null,
     // Filled in below, once contact↔vessel matches are known.
     contactCount: 0,
+    // Filled in below, once matchVessels (which loads the etas relation) is
+    // available — free ride since the matcher already needs that query.
+    nextEta: null,
+    nextEtaPort: null,
   }));
 
   // Contact ↔ vessel association for the list. Pull the full match-signal
@@ -579,8 +587,24 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
       vesselContactCounts.set(vessel.id, (vesselContactCounts.get(vessel.id) ?? 0) + 1);
     }
   }
+  // Next-ETA per vessel: pulled from the matchVessels query above (which
+  // already loads the top-1 upcoming ETA for each vessel), keyed by vesselId.
+  const vesselNextEta = new Map<string, { eta: string; port: string | null }>();
+  for (const v of matchVessels) {
+    const next = v.etas[0];
+    if (!next) continue;
+    vesselNextEta.set(v.id, {
+      eta: next.eta.toISOString(),
+      port: next.destinationPortName || next.destinationPort || null,
+    });
+  }
   for (const vessel of vessels) {
     vessel.contactCount = vesselContactCounts.get(vessel.id) ?? 0;
+    const next = vesselNextEta.get(vessel.id);
+    if (next) {
+      vessel.nextEta = next.eta;
+      vessel.nextEtaPort = next.port;
+    }
   }
 
   const activity: ListActivityEntry[] = [
