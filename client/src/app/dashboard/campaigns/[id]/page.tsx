@@ -98,6 +98,7 @@ function targetWaitingReason(
   campaign: Campaign,
   contact: UnenrolledContact,
   targetVesselCount: number,
+  vesselsWithFutureEta: number,
 ): { headline: string; hint?: string } {
   // Contact-level exclusions first — these apply regardless of trigger type
   // and the fix is always on the contact, not the campaign.
@@ -130,9 +131,20 @@ function targetWaitingReason(
       };
     }
     if (targetVesselCount > 0) {
+      // No future ETA anywhere in the target list means every ETA on those
+      // vessels has already passed — the campaign literally cannot fire until
+      // fresh ETA data lands (via a new CSV or the ETA-import flow). Say so
+      // explicitly instead of the misleading "Waiting for ETA" reason, which
+      // reads as if it's about to happen any moment.
+      if (vesselsWithFutureEta === 0) {
+        return {
+          headline: "All ETAs on target vessels are in the past",
+          hint: `${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list, but every ETA on file is expired. Upload a fresh ETA CSV (or add an ETA on the vessel) so the campaign can fire.`,
+        };
+      }
       return {
         headline: "Waiting for ETA on your vessels",
-        hint: `${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list — this recipient will enroll when any of them gets a new ETA.`,
+        hint: `${vesselsWithFutureEta} of ${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list ${vesselsWithFutureEta === 1 ? "has" : "have"} a future ETA. This recipient will enroll when a matching one fires.`,
       };
     }
     return {
@@ -176,6 +188,10 @@ export default async function CampaignDetailPage({
 
   const { campaign, targetConfig, targetContacts, targetLists, targetVessels, stepBreakdown } = data;
   const targetVesselCount = targetVessels.length;
+  // `nextEta` on each target vessel is only populated when there's a FUTURE
+  // ETA on file (see [campaign-data.ts:564]). So "how many can actually fire"
+  // is just the count of vessels whose nextEta is not null.
+  const vesselsWithFutureEta = targetVessels.filter((vessel) => vessel.nextEta !== null).length;
   const counts = eventCounts(campaign.emailEvents);
   const enrolledContactIds = new Set(
     campaign.contacts.map((row) => row.contactId),
@@ -294,7 +310,9 @@ export default async function CampaignDetailPage({
                   </>
                 : campaign.triggerType === "ETA_BASED"
                   ? targetVesselCount > 0
-                    ? `Target contacts are present. This ETA campaign will enrol them when any of the ${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list gets a new ETA.`
+                    ? vesselsWithFutureEta === 0
+                      ? `Target contacts are present, but every ETA on the ${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list has already passed. Upload a fresh ETA CSV so this campaign can fire.`
+                      : `Target contacts are present. ${vesselsWithFutureEta} of ${targetVesselCount} vessel${targetVesselCount === 1 ? "" : "s"} in the target list ${vesselsWithFutureEta === 1 ? "has" : "have"} a future ETA — enrolment fires when a matching one lands.`
                     : "Target contacts are present, but this ETA campaign has no matching ETA trigger yet. It will not send until an ETA matches the campaign rule and enrolls contacts."
                   : campaign.triggerType === "MANUAL"
                     ? <>
@@ -328,7 +346,13 @@ export default async function CampaignDetailPage({
                   </thead>
                   <tbody>
                     {targetOnlyContacts.map((contact) => {
-                      const reason = targetWaitingReason(campaign, contact, targetVesselCount);
+                      const reason = targetWaitingReason(campaign, contact, targetVesselCount, vesselsWithFutureEta);
+                      // ETA campaigns with vessels but zero future ETAs are
+                      // stuck, not "waiting" — reflect that in the pill too.
+                      const stuckOnPastEtas =
+                        campaign.triggerType === "ETA_BASED" &&
+                        targetVesselCount > 0 &&
+                        vesselsWithFutureEta === 0;
                       return (
                         <tr key={contact.id} className="border-t border-slate-100 align-top">
                           <td className="px-3 py-3">
@@ -346,8 +370,18 @@ export default async function CampaignDetailPage({
                             ) : null}
                           </td>
                           <td className="px-3 py-3">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
-                              {campaign.triggerType === "ETA_BASED" ? "WAITING ETA" : "TARGET"}
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                stuckOnPastEtas
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {campaign.triggerType === "ETA_BASED"
+                                ? stuckOnPastEtas
+                                  ? "ETA EXPIRED"
+                                  : "WAITING ETA"
+                                : "TARGET"}
                             </span>
                           </td>
                         </tr>
