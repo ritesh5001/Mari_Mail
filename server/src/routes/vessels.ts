@@ -470,26 +470,42 @@ vesselRouter.post("/", requireAuth, async (req, res, next) => {
   try {
     const input = createVesselSchema.safeParse(normalizeCreateVesselBody(req.body));
     if (!input.success) return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
-    const { workspaceId } = (req as AuthedRequest).auth;
 
-    const existing = await prisma.vessel.findFirst({ where: { imoNumber: input.data.imoNumber, workspaceId } });
-    if (existing) return sendError(res, 409, "DUPLICATE", "A vessel with this IMO already exists in your workspace");
-
-    const vessel = await prisma.vessel.create({
-      data: {
-        ...input.data,
-        capacityDwt: input.data.capacityDwt ?? input.data.dwt,
-        capacityGt: input.data.capacityGt ?? input.data.grossTonnage,
-        draught: input.data.draught ?? input.data.draft,
-        draft: input.data.draft ?? input.data.draught,
-        workspaceId,
-        source: "MANUAL",
-        verified: false,
-      },
-      include: vesselInclude,
+    // Vessels are shared globally by IMO. If the IMO already exists in the DB
+    // (from any workspace's import or a global row), refresh its fields with
+    // the values the user just submitted rather than 409'ing — the caller's
+    // add still succeeds and everyone benefits from the updated data. New
+    // IMOs land as workspaceId=null so every workspace can see them.
+    const existing = await prisma.vessel.findUnique({
+      where: { imoNumber: input.data.imoNumber },
+      select: { id: true },
     });
 
-    return sendData(res, serializeVessel(vessel), 201);
+    const shared = {
+      ...input.data,
+      capacityDwt: input.data.capacityDwt ?? input.data.dwt,
+      capacityGt: input.data.capacityGt ?? input.data.grossTonnage,
+      draught: input.data.draught ?? input.data.draft,
+      draft: input.data.draft ?? input.data.draught,
+    };
+
+    const vessel = existing
+      ? await prisma.vessel.update({
+          where: { id: existing.id },
+          data: shared,
+          include: vesselInclude,
+        })
+      : await prisma.vessel.create({
+          data: {
+            ...shared,
+            workspaceId: null,
+            source: "MANUAL",
+            verified: false,
+          },
+          include: vesselInclude,
+        });
+
+    return sendData(res, serializeVessel(vessel), existing ? 200 : 201);
   } catch (error) {
     return next(error);
   }

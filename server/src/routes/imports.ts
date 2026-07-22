@@ -740,6 +740,11 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
         )
       : null;
 
+    // Vessels are global: keyed by IMO across every workspace. If the IMO
+    // exists we refresh its fields with the latest CSV values; if it doesn't
+    // we create it as workspaceId=null so every workspace can see it. The
+    // caller's workspaceId is deliberately NOT written onto the vessel row —
+    // that would privatize a shared record.
     const existing = await prisma.vessel.findUnique({ where: { imoNumber }, select: { id: true } });
     const vessel = await prisma.vessel.upsert({
       where: { imoNumber },
@@ -748,7 +753,6 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
         shipOwnerCompanyId: shipOwner?.id,
         ismManagerCompanyId: ismManager?.id,
         commercialManagerCompanyId: commercialManager?.id,
-        workspaceId,
         source: "CSV_IMPORT",
       },
       create: {
@@ -758,7 +762,7 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
         shipOwnerCompanyId: shipOwner?.id,
         ismManagerCompanyId: ismManager?.id,
         commercialManagerCompanyId: commercialManager?.id,
-        workspaceId,
+        workspaceId: null,
         source: "CSV_IMPORT",
       },
       select: { id: true },
@@ -778,17 +782,38 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
           continue;
         }
         try {
-          await prisma.vesselETA.create({
-            data: {
+          // Re-imports of the same CSV shouldn't stack duplicate ETA rows.
+          // Match on (vessel, port, exact ETA) and update; otherwise create.
+          const existingEta = await prisma.vesselETA.findFirst({
+            where: {
               vesselId: vessel.id,
               destinationPort: port.portCode,
-              destinationPortName: port.portName,
               eta: etaDate,
-              etaSource: "CSV_IMPORT",
-              etaConfidence: "ESTIMATED",
-              workspaceId,
             },
+            select: { id: true },
           });
+          if (existingEta) {
+            await prisma.vesselETA.update({
+              where: { id: existingEta.id },
+              data: {
+                destinationPortName: port.portName,
+                etaSource: "CSV_IMPORT",
+                etaConfidence: "ESTIMATED",
+              },
+            });
+          } else {
+            await prisma.vesselETA.create({
+              data: {
+                vesselId: vessel.id,
+                destinationPort: port.portCode,
+                destinationPortName: port.portName,
+                eta: etaDate,
+                etaSource: "CSV_IMPORT",
+                etaConfidence: "ESTIMATED",
+                workspaceId,
+              },
+            });
+          }
         } catch (error) {
           errors.push({ row: rowNumber, message: error instanceof Error ? error.message : "Unable to create ETA record" });
         }
