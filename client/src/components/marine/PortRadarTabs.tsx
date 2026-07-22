@@ -205,21 +205,25 @@ export function PortRadarTabs({
     [loadContactCounts, prefetchNext],
   );
 
-  // Warm an inactive tab's first page in the background so clicking it is
-  // instant. Only fetches tabs that actually have rows (per the badge counts)
-  // and that aren't already loaded/loading. Runs at low priority after the
-  // active tab is set up.
-  const warmTab = useCallback(
+  // Monotonic request token per tab. Every fetch captures the token that was
+  // current when it started; when it resolves it only writes state if the
+  // token still matches. This is what makes concurrent warm/open/filter
+  // fetches safe — a superseded response can never land and leave the tab in
+  // a half-updated state (the bug that produced a permanent "Loading arrivals…"
+  // spinner: a stale response set loaded=true, so every later warmTab
+  // short-circuited and nothing ever cleared loading).
+  const reqToken = useRef<Record<PortRadarTabKey, number>>({ missed: 0, newly: 0, upcoming: 0 });
+
+  // Load a tab's first page unconditionally, superseding any in-flight request.
+  const loadTab = useCallback(
     async (which: PortRadarTabKey) => {
-      let shouldFetch = false;
-      setTabs((prev) => {
-        const t = prev[which];
-        if (t.loaded || t.loading) return prev;
-        shouldFetch = true;
-        return { ...prev, [which]: { ...t, loading: true } };
-      });
-      if (!shouldFetch) return;
+      const token = (reqToken.current[which] += 1);
+      setTabs((prev) => ({
+        ...prev,
+        [which]: { ...prev[which], loading: true, error: false, errorReason: undefined },
+      }));
       const result = await fetchPage(which, 1);
+      if (reqToken.current[which] !== token) return; // superseded — drop it
       if (result.ok) applyPage(which, result.data);
       else
         setTabs((prev) => ({
@@ -230,13 +234,28 @@ export function PortRadarTabs({
     [fetchPage, applyPage],
   );
 
+  // Warm an inactive tab's first page in the background so clicking it is
+  // instant. Unlike loadTab this skips tabs that already hold data — but it
+  // reads `loaded` from a ref rather than deciding inside a state updater, so
+  // it can't deadlock against a concurrent reset.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+  const warmTab = useCallback(
+    async (which: PortRadarTabKey) => {
+      const t = tabsRef.current[which];
+      if (t.loaded || t.loading) return;
+      await loadTab(which);
+    },
+    [loadTab],
+  );
+
   // On first mount: lazy counts + next-page prefetch for the seeded tab, THEN
   // background-prefetch the other tabs' first pages so tab switching is seamless.
   const didInit = useRef(false);
   useEffect(() => {
     if (didInit.current) return;
     didInit.current = true;
-    const seeded = tabs[initialTab];
+    const seeded = tabsRef.current[initialTab];
     if (seeded.loaded) {
       void loadContactCounts(initialTab, seeded.rows);
       void prefetchNext(initialTab, seeded.page, seeded.count);
@@ -246,70 +265,100 @@ export function PortRadarTabs({
       (t) => t !== initialTab && counts[t] > 0,
     );
     for (const t of others) void warmTab(t);
-  }, [tabs, initialTab, counts, loadContactCounts, prefetchNext, warmTab]);
+  }, [initialTab, counts, loadContactCounts, prefetchNext, warmTab]);
 
   const openTab = useCallback(
-    async (which: PortRadarTabKey) => {
+    (which: PortRadarTabKey) => {
       setTab(which);
-      void warmTab(which);
+      // Safety net: if the tab somehow has neither data nor an in-flight
+      // request (a warm that was superseded, a reset that raced), force a
+      // fresh load rather than showing a spinner forever.
+      const t = tabsRef.current[which];
+      if (!t.loaded && !t.loading) void loadTab(which);
     },
-    [warmTab],
+    [loadTab],
   );
 
   // When the URL's filter changes (Apply / Reset on VesselFilterPanel pushes a
-  // new querystring), invalidate every tab's cached data — the seeded rows on
-  // the initial tab are already the new filter's result from the server, but
-  // the other tabs still hold results from the OLD filter and will otherwise
-  // serve stale data forever because warmTab short-circuits on loaded=true.
-  // Re-fetches the active tab immediately and marks the inactive tabs as
-  // unloaded so they refetch on next open (or via background warming below).
+  // new querystring), invalidate every tab's cached data — the other tabs still
+  // hold results from the OLD filter and would otherwise serve stale data. The
+  // active tab reloads immediately; inactive ones reload when next opened.
+  // `tab` is deliberately NOT a dependency — this must fire on filter changes
+  // only, never on tab switches, and it reads the active tab from a ref.
   const urlSearch = useSearchParams();
   const searchKey = urlSearch?.toString() ?? "";
-  const firstSearchKey = useRef<string | null>(null);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
+  const lastSearchKey = useRef<string | null>(null);
   useEffect(() => {
     // Skip the initial render — the seeded tab already reflects the URL.
-    if (firstSearchKey.current === null) {
-      firstSearchKey.current = searchKey;
+    if (lastSearchKey.current === null) {
+      lastSearchKey.current = searchKey;
       return;
     }
-    if (firstSearchKey.current === searchKey) return;
-    firstSearchKey.current = searchKey;
+    if (lastSearchKey.current === searchKey) return;
+    lastSearchKey.current = searchKey;
 
-    // Drop cached prefetches — they're for the old filter.
+    // Drop cached prefetches — they're for the old filter. Bumping each
+    // inactive tab's token cancels its in-flight fetch from the previous
+    // filter; the matching state reset below clears `loading` for it, so the
+    // cancelled fetch can't leave the tab stuck mid-load.
     prefetch.current.clear();
-
-    // Reset every tab and force the active one to reload with the new filter.
+    const active = tabRef.current;
+    for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+      if (t !== active) reqToken.current[t] += 1;
+    }
     setTabs((prev) => {
       const reset: Record<PortRadarTabKey, TabState> = { ...prev };
       for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
-        reset[t] =
-          t === tab
-            ? { ...prev[t], loading: true, loaded: false, error: false, errorReason: undefined }
-            : { rows: [], count: 0, page: 1, loaded: false, loading: false, error: false };
+        if (t !== active) {
+          reset[t] = { rows: [], count: 0, page: 1, loaded: false, loading: false, error: false };
+        }
       }
       return reset;
     });
-    void (async () => {
-      const result = await fetchPage(tab, 1);
-      if (result.ok) applyPage(tab, result.data);
-      else
-        setTabs((prev) => ({
-          ...prev,
-          [tab]: { ...prev[tab], loading: false, loaded: true, error: true, errorReason: result.reason },
-        }));
-    })();
-  }, [searchKey, tab, fetchPage, applyPage]);
+    void loadTab(active);
+  }, [searchKey, loadTab]);
+
+  // Watchdog: a tab must never sit on "Loading arrivals…" forever. If the
+  // active tab is still loading 35s after it started (5s past the fetch's own
+  // abort timeout), nothing is coming — surface a retryable error instead of
+  // an eternal spinner.
+  useEffect(() => {
+    if (!tabs[tab].loading) return;
+    const timer = setTimeout(() => {
+      reqToken.current[tab] += 1; // orphan whatever is still pending
+      setTabs((prev) =>
+        prev[tab].loading
+          ? {
+              ...prev,
+              [tab]: {
+                ...prev[tab],
+                loading: false,
+                loaded: true,
+                error: true,
+                errorReason: "The radar feed never responded. Retry, or narrow the filter.",
+              },
+            }
+          : prev,
+      );
+    }, 35_000);
+    return () => clearTimeout(timer);
+  }, [tab, tabs]);
 
   const goToPage = useCallback(
     async (which: PortRadarTabKey, page: number) => {
       const key = `${which}:${page}`;
       const cached = prefetch.current.get(key);
       if (cached) {
+        reqToken.current[which] += 1; // cancel anything in flight
         applyPage(which, cached);
         return;
       }
+      const token = (reqToken.current[which] += 1);
       setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true, error: false, errorReason: undefined } }));
       const result = await fetchPage(which, page);
+      if (reqToken.current[which] !== token) return; // superseded
       if (result.ok) applyPage(which, result.data);
       else
         setTabs((prev) => ({
@@ -335,26 +384,22 @@ export function PortRadarTabs({
       setSort(next);
       sortRef.current = next;
       prefetch.current.clear();
-      const active = tab;
+      const active = tabRef.current;
+      // Invalidate the inactive tabs (and cancel their in-flight fetches) so
+      // they re-load in the new order when next opened.
+      for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+        if (t !== active) reqToken.current[t] += 1;
+      }
       setTabs((prev) => {
         const reset: Record<PortRadarTabKey, TabState> = { ...prev };
         for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
           if (t !== active) reset[t] = { ...prev[t], loaded: false, loading: false };
         }
-        reset[active] = { ...prev[active], loading: true, error: false };
         return reset;
       });
-      void (async () => {
-        const result = await fetchPage(active, 1);
-        if (result.ok) applyPage(active, result.data);
-        else
-          setTabs((prev) => ({
-            ...prev,
-            [active]: { ...prev[active], loading: false, error: true, errorReason: result.reason },
-          }));
-      })();
+      void loadTab(active);
     },
-    [tab, fetchPage, applyPage],
+    [loadTab],
   );
 
   const state = tabs[tab];
