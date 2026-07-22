@@ -214,6 +214,70 @@ export async function cancelManualJobsForCampaign(campaignId: string): Promise<n
 }
 
 /**
+ * Move a single already-queued step to a new fire time. Used by the campaign
+ * detail's per-row "Reschedule" action so an overdue SCHEDULED row (send time
+ * in the past because the campaign sat idle) can be pushed to a future time
+ * without cancel/re-enrol. Idempotent: if no queued job exists it still
+ * updates `nextSendAt` and adds a fresh job.
+ */
+export async function rescheduleManualStep(input: {
+  campaignId: string;
+  sequenceStepId: string;
+  contactId: string;
+  fireAt: Date;
+}): Promise<{ ok: boolean; reason?: string }> {
+  if (!manualStepQueue || !(await ensureConnection())) {
+    return { ok: false, reason: "Queue backend unavailable" };
+  }
+  const jobId = `manual-${input.campaignId}-${input.sequenceStepId}-${input.contactId}`;
+  // Remove any prior job for this (campaign, step, contact) so we don't end
+  // up with two firing at different times. `Job.remove` no-ops when the id
+  // isn't queued, which is the case for ETA-based sends or already-fired steps.
+  try {
+    const existing = await manualStepQueue.getJob(jobId);
+    if (existing) await existing.remove().catch(() => undefined);
+  } catch {
+    // Non-fatal — proceed to add the fresh job.
+  }
+  const delay = Math.max(0, input.fireAt.getTime() - Date.now());
+  try {
+    await manualStepQueue.add(
+      "send-manual-step",
+      {
+        campaignId: input.campaignId,
+        sequenceStepId: input.sequenceStepId,
+        contactId: input.contactId,
+        scheduledFor: input.fireAt.toISOString(),
+      },
+      {
+        delay,
+        jobId,
+        attempts: 3,
+        backoff: { type: "exponential", delay: 5 * 60 * 1000 },
+        removeOnComplete: 500,
+        removeOnFail: 500,
+      },
+    );
+  } catch (err) {
+    throw classifyRedisError(err);
+  }
+  await prisma.campaignContact.update({
+    where: {
+      campaignId_contactId: {
+        campaignId: input.campaignId,
+        contactId: input.contactId,
+      },
+    },
+    data: {
+      status: "SCHEDULED",
+      sequenceId: input.sequenceStepId,
+      nextSendAt: input.fireAt,
+    },
+  });
+  return { ok: true };
+}
+
+/**
  * Thrown when the manual scheduler can't reach BullMQ / Redis at all. Wraps
  * both the initial connection failure and mid-flight quota errors so the
  * campaigns route can return a specific 503 with a user-actionable message

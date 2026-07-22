@@ -61,18 +61,13 @@ export type PagedFeed = {
   pageSize: number;
 };
 
-function etaVisibilityWhere(workspaceId: string): Prisma.VesselETAWhereInput {
-  return {
-    OR: [
-      { workspaceId },
-      // Global (super-admin-authored) ETAs are visible to every workspace's
-      // Port Radar — that's what makes "admin ETA edits propagate to all
-      // users" actually work.
-      { workspaceId: null },
-      { vessel: { workspaceId } },
-      { vessel: { workspaceId: null } },
-    ],
-  };
+function etaVisibilityWhere(_workspaceId: string): Prisma.VesselETAWhereInput {
+  // ETAs and vessels are both global by design (see the 20260722010000 +
+  // 20260722020000 migrations). The former per-workspace visibility OR ran a
+  // nested `vessel: { workspaceId }` join that forced Postgres off the eta
+  // index and cost 3s+ on the port-radar feed, so it's now an empty clause.
+  // Kept as a function so callers don't have to change; the arg is unused.
+  return {};
 }
 
 function etaWindowUpper(window: string, now: Date) {

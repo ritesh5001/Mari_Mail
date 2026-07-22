@@ -103,13 +103,19 @@ export type SendNowResult = {
 export async function sendCampaignNow(
   campaignId: string,
   contactIds?: string[],
+  stepOrder?: number,
 ): Promise<SendNowResult> {
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
     include: { sequences: { orderBy: { stepOrder: "asc" } } },
   });
   if (!campaign) throw new Error("Campaign not found");
-  const sequence = campaign.sequences[0];
+  // Default to Step 1 (matches the campaign-level Send Now button), but let
+  // callers pick any step — the per-row Send-now on stale SCHEDULED rows
+  // fires exactly the step the row belongs to, not always Step 1.
+  const sequence = stepOrder
+    ? campaign.sequences.find((s) => s.stepOrder === stepOrder) ?? null
+    : campaign.sequences[0];
   if (!sequence) {
     return { total: 0, sent: 0, failed: 0, skipped: 0, errors: [], skippedDetails: [] };
   }

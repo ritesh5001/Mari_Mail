@@ -11,6 +11,7 @@ import {
   enrolAndScheduleManualContact,
   launchManualCampaign,
   ManualSchedulerUnavailableError,
+  rescheduleManualStep,
 } from "../services/campaign-manual-scheduler.js";
 import { sendCampaignNow } from "../services/campaign-send-now.js";
 import {
@@ -1493,6 +1494,10 @@ const testSendSchema = z.object({
  */
 const sendNowSchema = z.object({
   contactIds: z.array(z.string().min(1)).optional(),
+  // Which sequence step to fire. Defaults to Step 1 for the campaign-level
+  // Send Now button; the per-row action on stale SCHEDULED rows passes the
+  // row's own stepOrder so we send THAT step, not Step 1.
+  stepOrder: z.number().int().min(1).optional(),
 });
 
 campaignRouter.post("/:id/send-now", requireAuth, async (req, res, next) => {
@@ -1519,8 +1524,136 @@ campaignRouter.post("/:id/send-now", requireAuth, async (req, res, next) => {
       });
     }
 
-    const result = await sendCampaignNow(campaign.id, input.data.contactIds);
+    const result = await sendCampaignNow(campaign.id, input.data.contactIds, input.data.stepOrder);
     return sendData(res, result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Push an overdue SCHEDULED row to a new fire time. Used by the per-row
+ * "Reschedule" action on the campaign detail page — a mail whose send time
+ * is already in the past (campaign sat idle, timezone drift, whatever)
+ * can be moved forward without re-launching the whole campaign.
+ */
+const rescheduleSchema = z.object({
+  contactId: z.string().min(1),
+  stepOrder: z.number().int().min(1),
+  fireAt: z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), "fireAt must be a valid ISO timestamp"),
+});
+
+campaignRouter.post("/:id/reschedule", requireAuth, async (req, res, next) => {
+  try {
+    const input = rescheduleSchema.safeParse(req.body ?? {});
+    if (!input.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
+    }
+    const { workspaceId } = (req as AuthedRequest).auth;
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: req.params.id, workspaceId },
+      include: { sequences: { orderBy: { stepOrder: "asc" } } },
+    });
+    if (!campaign) return sendError(res, 404, "NOT_FOUND", "Campaign not found");
+    const sequence = campaign.sequences.find((s) => s.stepOrder === input.data.stepOrder);
+    if (!sequence) return sendError(res, 404, "NOT_FOUND", `No step ${input.data.stepOrder} on this campaign`);
+
+    const campaignContact = await prisma.campaignContact.findUnique({
+      where: {
+        campaignId_contactId: { campaignId: campaign.id, contactId: input.data.contactId },
+      },
+      select: { id: true, status: true },
+    });
+    if (!campaignContact) {
+      return sendError(res, 404, "NOT_FOUND", "Contact is not enrolled on this campaign");
+    }
+    if (["SENT", "REPLIED", "BOUNCED", "UNSUBSCRIBED"].includes(campaignContact.status)) {
+      return sendError(res, 409, "TERMINAL_STATUS", `Cannot reschedule — contact is already ${campaignContact.status}`);
+    }
+
+    const fireAt = new Date(input.data.fireAt);
+    try {
+      const result = await rescheduleManualStep({
+        campaignId: campaign.id,
+        sequenceStepId: sequence.id,
+        contactId: input.data.contactId,
+        fireAt,
+      });
+      if (!result.ok) {
+        return sendError(res, 503, "QUEUE_UNAVAILABLE", result.reason ?? "Reschedule queue unavailable");
+      }
+    } catch (err) {
+      if (err instanceof ManualSchedulerUnavailableError) {
+        return sendError(res, 503, "QUEUE_UNAVAILABLE", err.message);
+      }
+      throw err;
+    }
+    return sendData(res, { rescheduledFor: fireAt.toISOString() });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Mark a scheduled row as expired — moves the CampaignContact to FAILED so
+ * the scheduler won't ever fire it, and stamps a metadata reason so audit
+ * queries can distinguish "expired by user" from "delivery failed".
+ */
+const markExpiredSchema = z.object({
+  contactId: z.string().min(1),
+  stepOrder: z.number().int().min(1),
+});
+
+campaignRouter.post("/:id/mark-expired", requireAuth, async (req, res, next) => {
+  try {
+    const input = markExpiredSchema.safeParse(req.body ?? {});
+    if (!input.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
+    }
+    const { workspaceId } = (req as AuthedRequest).auth;
+    const campaign = await prisma.campaign.findFirst({
+      where: { id: req.params.id, workspaceId },
+      include: { sequences: { orderBy: { stepOrder: "asc" } } },
+    });
+    if (!campaign) return sendError(res, 404, "NOT_FOUND", "Campaign not found");
+    const sequence = campaign.sequences.find((s) => s.stepOrder === input.data.stepOrder);
+    if (!sequence) return sendError(res, 404, "NOT_FOUND", `No step ${input.data.stepOrder} on this campaign`);
+
+    const campaignContact = await prisma.campaignContact.findUnique({
+      where: {
+        campaignId_contactId: { campaignId: campaign.id, contactId: input.data.contactId },
+      },
+      select: { id: true, status: true, contactId: true },
+    });
+    if (!campaignContact) {
+      return sendError(res, 404, "NOT_FOUND", "Contact is not enrolled on this campaign");
+    }
+    if (["SENT", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "FAILED"].includes(campaignContact.status)) {
+      return sendError(res, 409, "TERMINAL_STATUS", `Cannot expire — contact is already ${campaignContact.status}`);
+    }
+
+    // Record an EmailEvent so the campaign audit trail keeps this decision
+    // instead of silently going to FAILED. metadata.reason=EXPIRED_BY_USER
+    // is how downstream analytics can filter these out of the "delivery
+    // failure" tally.
+    await prisma.$transaction([
+      prisma.campaignContact.update({
+        where: { id: campaignContact.id },
+        data: { status: "FAILED", nextSendAt: null, lastEventAt: new Date() },
+      }),
+      prisma.emailEvent.create({
+        data: {
+          workspaceId,
+          campaignId: campaign.id,
+          contactId: campaignContact.contactId,
+          sequenceId: sequence.id,
+          campaignContactId: campaignContact.id,
+          eventType: "FAILED",
+          metadata: { reason: "EXPIRED_BY_USER", stepOrder: sequence.stepOrder },
+        },
+      }),
+    ]);
+    return sendData(res, { expired: true });
   } catch (error) {
     return next(error);
   }

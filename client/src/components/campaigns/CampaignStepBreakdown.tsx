@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Clock, Mail, Ship } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { CalendarClock, ChevronRight, Clock, Loader2, Mail, Send, Ship, XCircle } from "lucide-react";
 import type { StepBreakdownRow, StepMailRow } from "@/lib/campaign-data";
+import { apiFetch } from "@/lib/browser-fetch";
 import { SentMessageViewer } from "./SentMessageViewer";
 
 function formatDate(value: string | null) {
@@ -36,6 +38,8 @@ function stateTone(state: StepMailRow["state"]) {
  * Every sequence step, always listed — each with its own to-go / sent / pending
  * counts, expanding to the individual mails and their send times.
  */
+type PendingAction = { key: string; action: "send" | "reschedule" | "expire" };
+
 export function CampaignStepBreakdown({
   steps,
   campaignId,
@@ -43,6 +47,7 @@ export function CampaignStepBreakdown({
   steps: StepBreakdownRow[];
   campaignId: string;
 }) {
+  const router = useRouter();
   // Step 1 open by default: it's the one with something happening on a fresh
   // campaign, and an all-collapsed list reads as an empty page.
   const [open, setOpen] = useState<Set<string>>(
@@ -56,6 +61,96 @@ export function CampaignStepBreakdown({
     recipientName: string;
     recipientEmail: string;
   } | null>(null);
+  // Which per-row action is in-flight — {key}=`${stepOrder}:${contactId}`,
+  // {action}=which of the three we're waiting on. Used to swap the button
+  // to a spinner and disable siblings so double-clicks can't fan out.
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  // Row-scoped inline error banner shown right under the action buttons.
+  const [rowError, setRowError] = useState<{ key: string; message: string } | null>(null);
+  // Which row's "Reschedule" datetime input is open. Only one at a time —
+  // opening another closes the previous. Keyed same as `pending`.
+  const [rescheduleOpen, setRescheduleOpen] = useState<string | null>(null);
+
+  const rowKey = (stepOrder: number, contactId: string) => `${stepOrder}:${contactId}`;
+
+  async function fireSendNow(stepOrder: number, contactId: string) {
+    const key = rowKey(stepOrder, contactId);
+    setPending({ key, action: "send" });
+    setRowError(null);
+    try {
+      const res = await apiFetch(`/api/campaigns/${campaignId}/send-now`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds: [contactId], stepOrder }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setRowError({ key, message: payload?.error?.message ?? `Send failed (${res.status})` });
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      setRowError({ key, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function fireReschedule(stepOrder: number, contactId: string, fireAtLocal: string) {
+    const key = rowKey(stepOrder, contactId);
+    const fireAt = new Date(fireAtLocal);
+    if (Number.isNaN(fireAt.getTime())) {
+      setRowError({ key, message: "Pick a valid date and time" });
+      return;
+    }
+    if (fireAt.getTime() < Date.now()) {
+      setRowError({ key, message: "New fire time must be in the future" });
+      return;
+    }
+    setPending({ key, action: "reschedule" });
+    setRowError(null);
+    try {
+      const res = await apiFetch(`/api/campaigns/${campaignId}/reschedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId, stepOrder, fireAt: fireAt.toISOString() }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setRowError({ key, message: payload?.error?.message ?? `Reschedule failed (${res.status})` });
+        return;
+      }
+      setRescheduleOpen(null);
+      router.refresh();
+    } catch (err) {
+      setRowError({ key, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function fireMarkExpired(stepOrder: number, contactId: string) {
+    const key = rowKey(stepOrder, contactId);
+    setPending({ key, action: "expire" });
+    setRowError(null);
+    try {
+      const res = await apiFetch(`/api/campaigns/${campaignId}/mark-expired`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactId, stepOrder }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setRowError({ key, message: payload?.error?.message ?? `Mark-expired failed (${res.status})` });
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      setRowError({ key, message: err instanceof Error ? err.message : "Network error" });
+    } finally {
+      setPending(null);
+    }
+  }
 
   function toggle(sequenceId: string) {
     setOpen((prev) => {
@@ -156,11 +251,24 @@ export function CampaignStepBreakdown({
                         {step.mails.map((mail) => {
                           const when = formatDate(mail.at);
                           const openable = mail.state === "SENT";
+                          // A SCHEDULED row whose fire time is in the past is
+                          // stuck — the scheduler won't automatically pull it
+                          // forward, and the send window may have moved on.
+                          // Surface it visibly and let the user Send / Reschedule /
+                          // Mark expired directly from the row.
+                          const isOverdue =
+                            mail.state === "SCHEDULED" &&
+                            mail.at != null &&
+                            new Date(mail.at).getTime() < Date.now();
+                          const key = rowKey(step.stepOrder, mail.contactId);
+                          const isRowBusy = pending?.key === key;
+                          const rowErrorMsg = rowError?.key === key ? rowError.message : null;
+                          const isRescheduling = rescheduleOpen === key;
                           return (
                             <tr
                               key={mail.contactId}
                               onClick={
-                                openable
+                                openable && !isOverdue
                                   ? () =>
                                       setViewing({
                                         contactId: mail.contactId,
@@ -170,9 +278,11 @@ export function CampaignStepBreakdown({
                                       })
                                   : undefined
                               }
-                              className={`border-t border-slate-100 align-top ${
-                                openable ? "cursor-pointer hover:bg-slate-50" : ""
-                              }`}
+                              className={`border-t align-top ${
+                                isOverdue
+                                  ? "border-red-100 bg-red-50/50"
+                                  : "border-slate-100"
+                              } ${openable && !isOverdue ? "cursor-pointer hover:bg-slate-50" : ""}`}
                             >
                               <td className="px-4 py-3">
                                 <p className="font-medium text-slate-950">{mail.name}</p>
@@ -186,7 +296,7 @@ export function CampaignStepBreakdown({
                                   <Mail className="h-3 w-3 shrink-0 text-slate-400" />
                                   <span className="truncate">{step.subject || "(no subject)"}</span>
                                 </p>
-                                {openable ? (
+                                {openable && !isOverdue ? (
                                   <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ocean">
                                     Click to open
                                   </p>
@@ -211,16 +321,24 @@ export function CampaignStepBreakdown({
                               </td>
                               <td className="px-4 py-3">
                                 <span
-                                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${stateTone(mail.state)}`}
+                                  className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    isOverdue ? "bg-red-100 text-red-700" : stateTone(mail.state)
+                                  }`}
                                 >
-                                  {mail.state}
+                                  {isOverdue ? "OVERDUE" : mail.state}
                                 </span>
                               </td>
                               <td className="whitespace-nowrap px-4 py-3 text-xs">
                                 {when ? (
                                   <>
                                     <span
-                                      className={mail.state === "SENT" ? "text-slate-600" : "text-amber-700"}
+                                      className={
+                                        isOverdue
+                                          ? "text-red-700 line-through"
+                                          : mail.state === "SENT"
+                                            ? "text-slate-600"
+                                            : "text-amber-700"
+                                      }
                                     >
                                       {when}
                                     </span>
@@ -231,6 +349,63 @@ export function CampaignStepBreakdown({
                                       >
                                         projected
                                       </span>
+                                    ) : null}
+                                    {isOverdue ? (
+                                      <div
+                                        className="mt-2 flex flex-col gap-1.5"
+                                        onClick={(event) => event.stopPropagation()}
+                                      >
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            disabled={isRowBusy}
+                                            onClick={() => fireSendNow(step.stepOrder, mail.contactId)}
+                                            className="inline-flex items-center gap-1 rounded-md bg-ocean px-2 py-1 text-[11px] font-semibold text-white hover:bg-ocean/90 disabled:opacity-50"
+                                          >
+                                            {pending?.key === key && pending.action === "send" ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <Send className="h-3 w-3" />
+                                            )}
+                                            Send now
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isRowBusy}
+                                            onClick={() => {
+                                              setRowError(null);
+                                              setRescheduleOpen((prev) => (prev === key ? null : key));
+                                            }}
+                                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:border-ocean/40 hover:text-ocean disabled:opacity-50"
+                                          >
+                                            <CalendarClock className="h-3 w-3" />
+                                            Reschedule
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isRowBusy}
+                                            onClick={() => fireMarkExpired(step.stepOrder, mail.contactId)}
+                                            className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                                          >
+                                            {pending?.key === key && pending.action === "expire" ? (
+                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                            ) : (
+                                              <XCircle className="h-3 w-3" />
+                                            )}
+                                            Mark expired
+                                          </button>
+                                        </div>
+                                        {isRescheduling ? (
+                                          <RescheduleBox
+                                            busy={pending?.key === key && pending.action === "reschedule"}
+                                            onSubmit={(value) => fireReschedule(step.stepOrder, mail.contactId, value)}
+                                            onCancel={() => setRescheduleOpen(null)}
+                                          />
+                                        ) : null}
+                                        {rowErrorMsg ? (
+                                          <p className="text-[11px] font-medium text-red-700">{rowErrorMsg}</p>
+                                        ) : null}
+                                      </div>
                                     ) : null}
                                   </>
                                 ) : (
@@ -251,6 +426,54 @@ export function CampaignStepBreakdown({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Inline datetime input rendered under an OVERDUE row's Reschedule button.
+ * Defaults to now+15min so a quick "just fire soon" retry is one Enter away.
+ */
+function RescheduleBox({
+  busy,
+  onSubmit,
+  onCancel,
+}: {
+  busy: boolean;
+  onSubmit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(() => {
+    // <input type=datetime-local> wants "YYYY-MM-DDTHH:mm" in local time.
+    const soon = new Date(Date.now() + 15 * 60 * 1000);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-slate-200 bg-white p-2">
+      <input
+        type="datetime-local"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        className="rounded border border-slate-200 px-2 py-1 text-[11px] text-slate-800 focus:border-ocean focus:outline-none"
+      />
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onSubmit(value)}
+        className="inline-flex items-center gap-1 rounded-md bg-ocean px-2 py-1 text-[11px] font-semibold text-white hover:bg-ocean/90 disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <CalendarClock className="h-3 w-3" />}
+        Save
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={busy}
+        className="rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50"
+      >
+        Cancel
+      </button>
     </div>
   );
 }

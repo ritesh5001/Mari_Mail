@@ -46,6 +46,9 @@ type TabState = {
   loaded: boolean;
   loading: boolean;
   error: boolean;
+  /** Human-readable failure reason surfaced in the error banner. Kept short
+   *  because it lands next to the Retry button. */
+  errorReason?: string;
 };
 
 /**
@@ -110,17 +113,35 @@ export function PortRadarTabs({
   };
 
   const fetchPage = useCallback(
-    async (which: PortRadarTabKey, page: number): Promise<FeedResponse | null> => {
+    async (which: PortRadarTabKey, page: number): Promise<
+      { ok: true; data: FeedResponse } | { ok: false; reason: string }
+    > => {
       try {
         const res = await postJson(TAB_ENDPOINT[which], {
           search: filterSearch(),
           page,
           pageSize,
         });
-        if (!res.ok) return null;
-        return (await res.json()) as FeedResponse;
-      } catch {
-        return null;
+        if (!res.ok) {
+          // 401 usually means the session cookie expired mid-page; other
+          // codes are server-side (Neon timeout, bad filter). Surface the
+          // status + a short body snippet so the banner is actionable.
+          const body = await res.text().catch(() => "");
+          const message =
+            res.status === 401
+              ? "Your session expired. Sign in again to keep the radar live."
+              : `Server returned ${res.status}${body ? `: ${body.slice(0, 120)}` : ""}`;
+          return { ok: false, reason: message };
+        }
+        const data = (await res.json()) as FeedResponse;
+        return { ok: true, data };
+      } catch (err) {
+        const reason = err instanceof DOMException && err.name === "AbortError"
+          ? "The radar feed didn't respond within 30 seconds. Retry, or narrow the filter."
+          : err instanceof Error
+            ? `Network error: ${err.message}`
+            : "Network error";
+        return { ok: false, reason };
       }
     },
     [pageSize],
@@ -165,8 +186,8 @@ export function PortRadarTabs({
       if ((next - 1) * pageSize >= count) return; // no next page
       const key = `${which}:${next}`;
       if (prefetch.current.has(key)) return;
-      const data = await fetchPage(which, next);
-      if (data) prefetch.current.set(key, data);
+      const result = await fetchPage(which, next);
+      if (result.ok) prefetch.current.set(key, result.data);
     },
     [fetchPage, pageSize],
   );
@@ -197,9 +218,13 @@ export function PortRadarTabs({
         return { ...prev, [which]: { ...t, loading: true } };
       });
       if (!shouldFetch) return;
-      const data = await fetchPage(which, 1);
-      if (data) applyPage(which, data);
-      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, loaded: true, error: true } }));
+      const result = await fetchPage(which, 1);
+      if (result.ok) applyPage(which, result.data);
+      else
+        setTabs((prev) => ({
+          ...prev,
+          [which]: { ...prev[which], loading: false, loaded: true, error: true, errorReason: result.reason },
+        }));
     },
     [fetchPage, applyPage],
   );
@@ -238,10 +263,14 @@ export function PortRadarTabs({
         applyPage(which, cached);
         return;
       }
-      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true, error: false } }));
-      const data = await fetchPage(which, page);
-      if (data) applyPage(which, data);
-      else setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: false, error: true } }));
+      setTabs((prev) => ({ ...prev, [which]: { ...prev[which], loading: true, error: false, errorReason: undefined } }));
+      const result = await fetchPage(which, page);
+      if (result.ok) applyPage(which, result.data);
+      else
+        setTabs((prev) => ({
+          ...prev,
+          [which]: { ...prev[which], loading: false, error: true, errorReason: result.reason },
+        }));
     },
     [fetchPage, applyPage],
   );
@@ -271,9 +300,13 @@ export function PortRadarTabs({
         return reset;
       });
       void (async () => {
-        const data = await fetchPage(active, 1);
-        if (data) applyPage(active, data);
-        else setTabs((prev) => ({ ...prev, [active]: { ...prev[active], loading: false, error: true } }));
+        const result = await fetchPage(active, 1);
+        if (result.ok) applyPage(active, result.data);
+        else
+          setTabs((prev) => ({
+            ...prev,
+            [active]: { ...prev[active], loading: false, error: true, errorReason: result.reason },
+          }));
       })();
     },
     [tab, fetchPage, applyPage],
@@ -346,7 +379,10 @@ export function PortRadarTabs({
 
         {state.error && state.rows.length === 0 ? (
           <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-dashed border-rose-200 bg-rose-50 p-8 text-center text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-            <p>Couldn&apos;t load arrivals — the request timed out or the server is busy.</p>
+            <p className="font-semibold">Couldn&apos;t load arrivals</p>
+            <p className="max-w-lg text-xs">
+              {state.errorReason ?? "The request timed out or the server is busy."}
+            </p>
             <button
               type="button"
               onClick={() => void goToPage(tab, 1)}
