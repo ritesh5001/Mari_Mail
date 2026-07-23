@@ -1,9 +1,12 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, Check, ExternalLink, Loader2, SlidersHorizontal } from "lucide-react";
+import { CalendarClock, ExternalLink, Loader2, SlidersHorizontal } from "lucide-react";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
+import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
+import { useColumnPreferences } from "@/hooks/useColumnPreferences";
+import { portRadarColumns } from "@/lib/table-columns";
 
 export type IndiaRadarEta = {
   id: string;
@@ -127,38 +130,12 @@ type ColumnKey =
   | "contacts"
   | "added";
 
-const COLUMN_DEFS: { key: ColumnKey; label: string }[] = [
-  { key: "flag", label: "Flag" },
-  { key: "imo", label: "IMO" },
-  { key: "type", label: "Type" },
-  { key: "etaUtc", label: "ETA (UTC)" },
-  { key: "destination", label: "Destination" },
-  { key: "eta", label: "ETA countdown" },
-  { key: "campaign", label: "Campaign" },
-  { key: "voyage", label: "Voyage" },
-  { key: "cargo", label: "Cargo" },
-  { key: "ais", label: "AIS" },
-  { key: "contacts", label: "Contacts" },
-  { key: "added", label: "Added" },
-];
-
-const COLUMN_STORAGE_KEY = "portRadar.visibleColumns";
-
-function loadVisibleColumns(): Set<ColumnKey> {
-  if (typeof window === "undefined") return new Set(COLUMN_DEFS.map((c) => c.key));
-  try {
-    const raw = window.localStorage.getItem(COLUMN_STORAGE_KEY);
-    if (!raw) return new Set(COLUMN_DEFS.map((c) => c.key));
-    const parsed = JSON.parse(raw) as string[];
-    const known = new Set<ColumnKey>();
-    for (const key of parsed) {
-      if (COLUMN_DEFS.some((c) => c.key === key)) known.add(key as ColumnKey);
-    }
-    return known.size > 0 ? known : new Set(COLUMN_DEFS.map((c) => c.key));
-  } catch {
-    return new Set(COLUMN_DEFS.map((c) => c.key));
-  }
-}
+// Column definitions live in @/lib/table-columns (portRadarColumns) and are
+// driven through the shared ColumnCustomizer drawer via useColumnPreferences,
+// same pattern as the Vessels and Contacts tables. The old localStorage key
+// (portRadar.visibleColumns) is superseded by the hook's own storage key
+// ("marimail-cols-port-radar") — legacy prefs are ignored and every column
+// simply starts visible on first load.
 
 export function PortRadarArrivals({
   etas,
@@ -196,42 +173,19 @@ export function PortRadarArrivals({
   const [editingEta, setEditingEta] = useState<EditEtaInitial | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() =>
-    new Set(COLUMN_DEFS.map((c) => c.key)),
-  );
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-  const customizeRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setVisibleColumns(loadVisibleColumns());
-  }, []);
-
-  useEffect(() => {
-    if (!customizeOpen) return;
-    function onClick(event: MouseEvent) {
-      if (customizeRef.current && !customizeRef.current.contains(event.target as Node)) {
-        setCustomizeOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [customizeOpen]);
-
-  function toggleColumn(key: ColumnKey) {
-    setVisibleColumns((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      try {
-        window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(Array.from(next)));
-      } catch {
-        // localStorage disabled / full — column state stays in-memory for this session.
-      }
-      return next;
-    });
-  }
-
-  const isVisible = (key: ColumnKey) => visibleColumns.has(key);
+  const [showCustomizer, setShowCustomizer] = useState(false);
+  // Shared column-prefs hook — same drawer + persistence flow the Vessels and
+  // Contacts tables use. `visibleIds` gates every optional <th>/<td> below.
+  const allColumns = useMemo(() => portRadarColumns(), []);
+  const {
+    columns: renderColumns,
+    orderedAll,
+    lockedColumns,
+    save: saveColumns,
+    reset: resetColumns,
+  } = useColumnPreferences("port-radar", allColumns);
+  const visibleIds = useMemo(() => new Set(renderColumns.map((c) => c.id)), [renderColumns]);
+  const isVisible = (key: ColumnKey) => visibleIds.has(key);
 
   // Render a sortable header when the parent supplied an onSort handler (server
   // sort); otherwise a plain header. Keeps the JSX below terse.
@@ -441,6 +395,16 @@ export function PortRadarArrivals({
       {editingEta && (
         <EditEtaModal initial={editingEta} onClose={() => setEditingEta(null)} />
       )}
+      {showCustomizer && (
+        <ColumnCustomizer
+          title="Customize arrival columns"
+          lockedColumns={lockedColumns}
+          orderedAll={orderedAll}
+          onClose={() => setShowCustomizer(false)}
+          onSave={saveColumns}
+          onReset={resetColumns}
+        />
+      )}
       {toast ? (
         <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">
           {toast}
@@ -457,38 +421,14 @@ export function PortRadarArrivals({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-            <div className="relative" ref={customizeRef}>
-              <button
-                type="button"
-                onClick={() => setCustomizeOpen((v) => !v)}
-                aria-expanded={customizeOpen}
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean"
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Customize
-              </button>
-              {customizeOpen ? (
-                <div className="absolute right-0 z-[60] mt-1 w-56 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                  <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Show columns
-                  </p>
-                  {COLUMN_DEFS.map((col) => {
-                    const on = isVisible(col.key);
-                    return (
-                      <button
-                        key={col.key}
-                        type="button"
-                        onClick={() => toggleColumn(col.key)}
-                        className="flex w-full items-center justify-between rounded px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                      >
-                        <span>{col.label}</span>
-                        {on ? <Check className="h-4 w-4 text-ocean" /> : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowCustomizer(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Customize
+            </button>
             <button
               type="button"
               onClick={() => selectedVesselIds.length > 0 && setShowVesselModal(true)}

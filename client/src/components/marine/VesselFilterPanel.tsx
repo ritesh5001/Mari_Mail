@@ -51,6 +51,13 @@ type FilterState = {
   verified: boolean;
   hasMmsi: boolean;
   hasEmail: boolean;
+  /**
+   * "Missed opportunity" filter — vessels arriving with no campaign trigger
+   * attached. Composes with the ETA-window chips: on its own it lists every
+   * campaign-less ETA; combined with a preset (e.g. Under 3d) it reproduces
+   * the old Missed Opportunities tab for any window the user cares about.
+   */
+  noCampaign: boolean;
 };
 
 function str(value: string | string[] | undefined): string {
@@ -97,6 +104,7 @@ function searchParamsToState(sp: SearchParams): FilterState {
     verified: isTrue(sp.verified),
     hasMmsi: isTrue(sp.hasMmsi),
     hasEmail: isTrue(sp.hasEmail),
+    noCampaign: isTrue(sp.noCampaign),
   };
 }
 
@@ -136,6 +144,7 @@ function stateToParams(state: FilterState): URLSearchParams {
   if (state.verified) params.set("verified", "1");
   if (state.hasMmsi) params.set("hasMmsi", "1");
   if (state.hasEmail) params.set("hasEmail", "1");
+  if (state.noCampaign) params.set("noCampaign", "1");
   return params;
 }
 
@@ -163,6 +172,7 @@ function countActive(state: FilterState): number {
   if (state.verified) n++;
   if (state.hasMmsi) n++;
   if (state.hasEmail) n++;
+  if (state.noCampaign) n++;
   return n;
 }
 
@@ -240,10 +250,18 @@ export function VesselFilterPanel({
   searchParams,
   basePath = "/dashboard/vessels",
   orientation = "vertical",
+  isSuperAdmin = false,
 }: {
   searchParams: SearchParams;
   basePath?: string;
   orientation?: "vertical" | "horizontal" | "modal";
+  /**
+   * Regular users are already server-scoped to their workspace's target
+   * country, so the "Destination country" picker is redundant for them and
+   * only clutters the panel. Super-admins (who see All countries) still get
+   * it. Default false to keep vessel-page callers narrow.
+   */
+  isSuperAdmin?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<FilterState>(() => searchParamsToState(searchParams));
@@ -377,10 +395,48 @@ export function VesselFilterPanel({
   const etaVoyageCount =
     (state.hasEta ? 1 : 0) +
     (state.etaFrom || state.etaTo ? 1 : 0) +
+    (state.noCampaign ? 1 : 0) +
     state.destCountry.length +
     state.destPort.length +
     state.etaConfidence.length +
     state.voyageStatus.length;
+
+  // ETA quick-window presets. Applying one sets etaFrom = today (yyyy-mm-dd)
+  // and etaTo = today + N days. "Any time" clears both. Uses the browser
+  // local date; the server treats the value as a UTC date literal, matching
+  // how the manual date pickers behave.
+  const quickWindows = [
+    { key: "any", label: "Any time", days: null as number | null },
+    { key: "1d", label: "Under 1d", days: 1 },
+    { key: "3d", label: "Under 3d", days: 3 },
+    { key: "7d", label: "Under 7d", days: 7 },
+    { key: "15d", label: "Under 15d", days: 15 },
+    { key: "30d", label: "Under 30d", days: 30 },
+  ];
+  const todayISO = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const addDaysISO = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const activeQuickWindow = (() => {
+    if (!state.etaFrom && !state.etaTo) return "any";
+    if (state.etaFrom !== todayISO()) return null;
+    const match = quickWindows.find((w) => w.days !== null && state.etaTo === addDaysISO(w.days));
+    return match?.key ?? null;
+  })();
+  function applyQuickWindow(days: number | null) {
+    if (days === null) {
+      patch({ etaFrom: "", etaTo: "" });
+    } else {
+      patch({ etaFrom: todayISO(), etaTo: addDaysISO(days) });
+    }
+  }
   const sizeCount =
     (state.dwtMin || state.dwtMax ? 1 : 0) +
     (state.gtMin || state.gtMax ? 1 : 0) +
@@ -396,24 +452,63 @@ export function VesselFilterPanel({
 
   const etaVoyageBody = (
     <>
-      <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
-        <input
-          type="checkbox"
-          checked={state.hasEta}
-          onChange={(e) => patch({ hasEta: e.target.checked })}
-          className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-        />
-        Only vessels with an upcoming ETA
-      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
+          <input
+            type="checkbox"
+            checked={state.hasEta}
+            onChange={(e) => patch({ hasEta: e.target.checked })}
+            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+          />
+          Only vessels with an upcoming ETA
+        </label>
+        <label
+          className={`flex cursor-pointer items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+            state.noCampaign
+              ? "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200"
+              : "border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:text-amber-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60"
+          }`}
+          title="Vessels arriving with no campaign trigger attached — pair with an ETA window to reproduce the old Missed Opportunities tab."
+        >
+          <input
+            type="checkbox"
+            checked={state.noCampaign}
+            onChange={(e) => patch({ noCampaign: e.target.checked })}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+          />
+          Missed opportunities (no campaign)
+        </label>
+      </div>
 
       <div>
         <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA window (UTC)</p>
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {quickWindows.map((w) => {
+            const on = activeQuickWindow === w.key;
+            return (
+              <button
+                key={w.key}
+                type="button"
+                onClick={() => applyQuickWindow(w.days)}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                  on
+                    ? "border-ocean bg-ocean text-white dark:border-accent-500 dark:bg-accent-600"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:border-accent-400"
+                }`}
+              >
+                {w.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <input type="date" value={state.etaFrom} onChange={(e) => patch({ etaFrom: e.target.value })} className={inputClass} />
           <input type="date" value={state.etaTo} onChange={(e) => patch({ etaTo: e.target.value })} className={inputClass} />
         </div>
       </div>
 
+      {isSuperAdmin ? (
+      <>
       <div>
         <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Destination country</p>
         <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
@@ -475,6 +570,8 @@ export function VesselFilterPanel({
           </div>
         )}
       </div>
+      </>
+      ) : null}
 
       <div>
         <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA confidence</p>

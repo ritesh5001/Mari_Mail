@@ -1,6 +1,5 @@
 import { prisma } from "@marimail/db";
 import {
-  getMissedOpportunityAlerts,
   getPortRadarTabCounts,
   listLatestBatchEtas,
   listPortRadarFeed,
@@ -40,16 +39,16 @@ export default async function PortRadarPage({
     }),
   ]);
 
-  // Default to the most urgent tab that has content: missed → newly → upcoming.
-  const initialTab: PortRadarTabKey =
-    counts.missed > 0 ? "missed" : counts.newly > 0 ? "newly" : "upcoming";
+  // Default to the most urgent tab that has content: newly → upcoming.
+  // (The old "missed opportunities" tab was folded into the filter panel as a
+  // chip — see VesselFilterPanel's ETA & voyage section — so it no longer
+  // competes for the default here.)
+  const initialTab: PortRadarTabKey = counts.newly > 0 ? "newly" : "upcoming";
 
   // Load ONLY the initial tab's first page server-side for a fast first paint.
   const pageSize = PORT_RADAR_DEFAULT_PAGE_SIZE;
   let initial: PagedFeed;
-  if (initialTab === "missed") {
-    initial = await getMissedOpportunityAlerts(workspaceId, countryScope, { page: 1, pageSize });
-  } else if (initialTab === "newly") {
+  if (initialTab === "newly") {
     initial = await listLatestBatchEtas(workspaceId, countryScope, searchParams, {
       includeAllCountries: isSuperAdmin,
       page: 1,
@@ -78,6 +77,7 @@ export default async function PortRadarPage({
         searchParams={searchParams}
         basePath="/dashboard/port-radar"
         orientation="modal"
+        isSuperAdmin={isSuperAdmin}
       />
 
       <PortRadarTabs

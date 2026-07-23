@@ -125,6 +125,11 @@ function parseDateParam(value: string | string[] | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function isTrue(value: string | string[] | undefined): boolean {
+  const v = (typeof value === "string" ? value : "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
 const ETA_CONFIDENCE_VALUES = new Set<string>(Object.values(ETAConfidence));
 const VOYAGE_STATUS_VALUES = new Set<string>(Object.values(VoyageStatus));
 
@@ -243,6 +248,14 @@ export async function listPortRadarFeed(
   );
   if (voyageStatuses.length) {
     etaClauses.push({ voyageStatus: { in: voyageStatuses as VoyageStatus[] } });
+  }
+
+  // "Missed opportunities" is now a filter chip, not a dedicated tab: ETAs
+  // with no campaign trigger attached. Combined with an ETA-window preset
+  // (e.g. `?noCampaign=1&etaTo=<today+2d>`) it reproduces the old
+  // Missed-Opportunities tab exactly, but any window works now.
+  if (isTrue(searchParams.noCampaign)) {
+    etaClauses.push({ triggers: { none: {} } });
   }
 
   if (q) {
@@ -495,26 +508,15 @@ export async function getPortRadarTabCounts(
   targetPortCountry: string | null,
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean } = {},
-): Promise<{ missed: number; newly: number; upcoming: number }> {
+): Promise<{ newly: number; upcoming: number }> {
   const now = new Date();
-  const in48h = new Date(now.getTime() + 48 * 3_600_000);
   const effectiveCountry = options.includeAllCountries ? null : targetPortCountry;
   const vesselClauses = buildVesselFilterClauses(searchParams);
   const vesselWhere: Prisma.VesselETAWhereInput =
     vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};
 
   try {
-    const [missed, upcoming, newly] = await Promise.all([
-      prisma.vesselETA.count({
-        where: {
-          AND: [
-            etaVisibilityWhere(workspaceId),
-            countryClause(effectiveCountry),
-            { eta: { gte: now, lte: in48h } },
-            { triggers: { none: {} } },
-          ],
-        },
-      }),
+    const [upcoming, newly] = await Promise.all([
       prisma.vesselETA.count({
         where: {
           AND: [
@@ -549,10 +551,10 @@ export async function getPortRadarTabCounts(
         });
       })(),
     ]);
-    return { missed, newly, upcoming };
+    return { newly, upcoming };
   } catch (err) {
     console.error("[eta] getPortRadarTabCounts failed:", err);
-    return { missed: 0, newly: 0, upcoming: 0 };
+    return { newly: 0, upcoming: 0 };
   }
 }
 
@@ -621,66 +623,10 @@ export async function getPortRadarSummary(workspaceId: string, targetPortCountry
   }
 }
 
-/**
- * Missed opportunities: ETAs arriving within 48h that have NO campaign
- * trigger assigned — the "act now" list. Returns the full RadarEta shape so
- * the same PortRadarArrivals table can render it (checkbox-select +
- * add-to-list included). Country-scoped like the main feed.
- */
-export async function getMissedOpportunityAlerts(
-  workspaceId: string,
-  targetPortCountry: string | null,
-  opts: { page?: number; pageSize?: number; sort?: string; dir?: string } = {},
-): Promise<PagedFeed> {
-  const now = new Date();
-  const in48h = new Date(now.getTime() + 48 * 3_600_000);
-  const pageSize = opts.pageSize ?? PORT_RADAR_DEFAULT_PAGE_SIZE;
-  const page = Math.max(1, opts.page ?? 1);
-  const where: Prisma.VesselETAWhereInput = {
-    AND: [
-      etaVisibilityWhere(workspaceId),
-      countryClause(targetPortCountry),
-      { eta: { gte: now, lte: in48h } },
-      { triggers: { none: {} } },
-    ],
-  };
-  try {
-    const [etas, count] = await Promise.all([
-      prisma.vesselETA.findMany({
-        where,
-        orderBy: radarOrderBy({ sort: opts.sort, dir: opts.dir }, { eta: "asc" }),
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          vessel: { include: associationVesselInclude },
-          port: {
-            select: {
-              portCode: true,
-              portName: true,
-              region: true,
-              country: true,
-              latitude: true,
-              longitude: true,
-            },
-          },
-          triggers: {
-            select: {
-              id: true,
-              status: true,
-              nextFireAt: true,
-              campaign: { select: { id: true, name: true } },
-            },
-          },
-        },
-      }),
-      prisma.vesselETA.count({ where }),
-    ]);
-    return { etas, count, page, pageSize };
-  } catch (err) {
-    console.error("[eta] getMissedOpportunityAlerts failed:", err);
-    return { etas: [], count: 0, page, pageSize };
-  }
-}
+// The old getMissedOpportunityAlerts helper (ETAs ≤48h with no campaign
+// trigger) was folded into listPortRadarFeed as the ?noCampaign=1 filter,
+// so the Missed Opportunities filter chip composes cleanly with any ETA
+// window instead of being a hard-coded 48h list.
 
 export async function listPorts() {
   return prisma.port.findMany({ orderBy: { portName: "asc" } });

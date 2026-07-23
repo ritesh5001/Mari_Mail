@@ -99,6 +99,30 @@ const MARINE_MATCH_COLUMNS: TableColumn[] = [
   { id: "confidence", label: "Confidence", group: "Match", sortable: false },
 ];
 
+/**
+ * Port Radar arrivals table columns — matches the ColumnKey union in
+ * PortRadarArrivals.tsx. VesselName is pinned as the row label (the checkbox
+ * + expand sit in un-customizable structural cells before it); everything
+ * else is toggleable via the shared ColumnCustomizer drawer.
+ */
+export function portRadarColumns(): TableColumn[] {
+  return [
+    { id: "vesselName", label: "Vessel Name", group: "Identity", locked: true, sortable: false },
+    { id: "flag", label: "Flag", group: "Identity", sortKey: "flag" },
+    { id: "imo", label: "IMO", group: "Identity", sortKey: "imo" },
+    { id: "type", label: "Type", group: "Identity", sortKey: "type" },
+    { id: "etaUtc", label: "ETA (UTC)", group: "Voyage", sortKey: "etaUtc" },
+    { id: "destination", label: "Destination", group: "Voyage", sortKey: "destination" },
+    { id: "eta", label: "ETA countdown", group: "Voyage", sortKey: "eta" },
+    { id: "campaign", label: "Campaign", group: "Voyage", sortable: false },
+    { id: "voyage", label: "Voyage", group: "Voyage", sortKey: "voyage" },
+    { id: "cargo", label: "Cargo", group: "Voyage", sortable: false },
+    { id: "ais", label: "AIS", group: "Voyage", sortable: false },
+    { id: "contacts", label: "Contacts", group: "Match", sortable: false },
+    { id: "added", label: "Added", group: "Voyage", sortKey: "added" },
+  ];
+}
+
 export function marineDbColumns(): TableColumn[] {
   return [
     { id: "associatedContacts", label: "Associated Contacts", group: "Match", locked: true, sortable: false },

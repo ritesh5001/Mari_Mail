@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { AlertTriangle, Radar, Ship } from "lucide-react";
+import { Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
 import type { SortState } from "@/hooks/useClientSort";
 
-export type PortRadarTabKey = "missed" | "newly" | "upcoming";
+// The old "missed opportunities" tab has been folded into the vessel filter
+// panel ("Missed opportunities (<48h, no campaign)" chip in ETA & voyage),
+// so it no longer appears as a top-level tab here. Missed is still available
+// as a filter — the tab was redundant with a filter chip that composes with
+// the rest of the ETA/voyage/vessel filters.
+export type PortRadarTabKey = "newly" | "upcoming";
 
 // These endpoints are Next.js route handlers on the SAME origin as the app — NOT
 // the Express backend. They must be called directly (same-origin, with cookies),
@@ -33,7 +38,6 @@ async function postJson(url: string, body: unknown): Promise<Response> {
 }
 
 const TAB_ENDPOINT: Record<PortRadarTabKey, string> = {
-  missed: "/api/port-radar/missed",
   newly: "/api/port-radar/newly",
   upcoming: "/api/port-radar/feed",
 };
@@ -72,7 +76,7 @@ export function PortRadarTabs({
   countryLabel: string;
   isSuperAdmin: boolean;
   portsWithCoordinates: string[];
-  counts: { missed: number; newly: number; upcoming: number };
+  counts: { newly: number; upcoming: number };
   initialTab: PortRadarTabKey;
   initialRows: IndiaRadarEta[];
   initialCount: number;
@@ -80,7 +84,6 @@ export function PortRadarTabs({
 }) {
   const [tab, setTab] = useState<PortRadarTabKey>(initialTab);
   const [tabs, setTabs] = useState<Record<PortRadarTabKey, TabState>>(() => ({
-    missed: emptyTab(),
     newly: emptyTab(),
     upcoming: emptyTab(),
     [initialTab]: { rows: initialRows, count: initialCount, page: 1, loaded: true, loading: false, error: false },
@@ -212,7 +215,7 @@ export function PortRadarTabs({
   // a half-updated state (the bug that produced a permanent "Loading arrivals…"
   // spinner: a stale response set loaded=true, so every later warmTab
   // short-circuited and nothing ever cleared loading).
-  const reqToken = useRef<Record<PortRadarTabKey, number>>({ missed: 0, newly: 0, upcoming: 0 });
+  const reqToken = useRef<Record<PortRadarTabKey, number>>({ newly: 0, upcoming: 0 });
 
   // Load a tab's first page unconditionally, superseding any in-flight request.
   const loadTab = useCallback(
@@ -261,7 +264,7 @@ export function PortRadarTabs({
       void prefetchNext(initialTab, seeded.page, seeded.count);
     }
     // Warm the inactive tabs that have content, so opening them is instant.
-    const others = (["missed", "newly", "upcoming"] as PortRadarTabKey[]).filter(
+    const others = (["newly", "upcoming"] as PortRadarTabKey[]).filter(
       (t) => t !== initialTab && counts[t] > 0,
     );
     for (const t of others) void warmTab(t);
@@ -305,12 +308,12 @@ export function PortRadarTabs({
     // cancelled fetch can't leave the tab stuck mid-load.
     prefetch.current.clear();
     const active = tabRef.current;
-    for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+    for (const t of ["newly", "upcoming"] as PortRadarTabKey[]) {
       if (t !== active) reqToken.current[t] += 1;
     }
     setTabs((prev) => {
       const reset: Record<PortRadarTabKey, TabState> = { ...prev };
-      for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+      for (const t of ["newly", "upcoming"] as PortRadarTabKey[]) {
         if (t !== active) {
           reset[t] = { rows: [], count: 0, page: 1, loaded: false, loading: false, error: false };
         }
@@ -387,12 +390,12 @@ export function PortRadarTabs({
       const active = tabRef.current;
       // Invalidate the inactive tabs (and cancel their in-flight fetches) so
       // they re-load in the new order when next opened.
-      for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+      for (const t of ["newly", "upcoming"] as PortRadarTabKey[]) {
         if (t !== active) reqToken.current[t] += 1;
       }
       setTabs((prev) => {
         const reset: Record<PortRadarTabKey, TabState> = { ...prev };
-        for (const t of ["missed", "newly", "upcoming"] as PortRadarTabKey[]) {
+        for (const t of ["newly", "upcoming"] as PortRadarTabKey[]) {
           if (t !== active) reset[t] = { ...prev[t], loaded: false, loading: false };
         }
         return reset;
@@ -413,16 +416,6 @@ export function PortRadarTabs({
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
       <div className="flex flex-wrap border-b border-slate-100 dark:border-white/[0.06]">
-        {badgeCount("missed") > 0 ? (
-          <TabButton
-            active={tab === "missed"}
-            onClick={() => void openTab("missed")}
-            icon={<AlertTriangle className="h-4 w-4" />}
-            label="Missed opportunities"
-            count={badgeCount("missed")}
-            tone="amber"
-          />
-        ) : null}
         {badgeCount("newly") > 0 ? (
           <TabButton
             active={tab === "newly"}
@@ -442,12 +435,6 @@ export function PortRadarTabs({
       </div>
 
       <div className="p-5">
-        {tab === "missed" ? (
-          <p className="mb-3 text-sm text-amber-800 dark:text-amber-200/80">
-            {badgeCount("missed")} vessel{badgeCount("missed") === 1 ? "" : "s"} arriving in &lt; 48h
-            with no campaign assigned — select any to add to a list.
-          </p>
-        ) : null}
         {tab === "newly" ? (
           <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
             {badgeCount("newly")} vessel{badgeCount("newly") === 1 ? "" : "s"} from the most recent
