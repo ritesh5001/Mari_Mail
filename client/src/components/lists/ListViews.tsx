@@ -173,7 +173,19 @@ export function ContactListDetail({
   // trigger an ETA campaign but would email no one, so they get their own tab
   // to work through — a vessel leaves it as soon as a matching contact lands.
   const newVessels = vessels.filter((vessel) => vessel.contactCount === 0);
-  const [tab, setTab] = useState<Tab>(companies.length > 0 ? "companies" : "contacts");
+  // Default to the leftmost tab that has content — matches the new visual
+  // order (New Vessels → Vessels → Contacts → Companies). "New Vessels" only
+  // exists for ETA lists AND only when there are vessels with no contacts
+  // yet, so it's the strongest signal of "something needs your attention".
+  const [tab, setTab] = useState<Tab>(
+    isEta && newVessels.length > 0
+      ? "newVessels"
+      : isEta && vessels.length > 0
+        ? "vessels"
+        : contacts.length > 0
+          ? "contacts"
+          : "companies",
+  );
   const [revealing, setRevealing] = useState<Record<string, "email" | "phone" | undefined>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -309,11 +321,9 @@ export function ContactListDetail({
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div className="flex border-b border-slate-100 dark:border-white/[0.06]">
-            <TabButton active={tab === "companies"} onClick={() => setTab("companies")} icon={<Building2 className="h-4 w-4" />} label="Companies" count={companies.length} />
-            <TabButton active={tab === "contacts"} onClick={() => setTab("contacts")} icon={<Users className="h-4 w-4" />} label="Contacts" count={contacts.length} />
-            {isEta ? (
-              <TabButton active={tab === "vessels"} onClick={() => setTab("vessels")} icon={<Ship className="h-4 w-4" />} label="Vessels" count={vessels.length} />
-            ) : null}
+            {/* Order: New Vessels → Vessels → Contacts → Companies. New/Vessels
+                only render for ETA lists; New Vessels only when there are
+                unmatched vessels to work through. */}
             {isEta && newVessels.length > 0 ? (
               <TabButton
                 active={tab === "newVessels"}
@@ -323,6 +333,11 @@ export function ContactListDetail({
                 count={newVessels.length}
               />
             ) : null}
+            {isEta ? (
+              <TabButton active={tab === "vessels"} onClick={() => setTab("vessels")} icon={<Ship className="h-4 w-4" />} label="Vessels" count={vessels.length} />
+            ) : null}
+            <TabButton active={tab === "contacts"} onClick={() => setTab("contacts")} icon={<Users className="h-4 w-4" />} label="Contacts" count={contacts.length} />
+            <TabButton active={tab === "companies"} onClick={() => setTab("companies")} icon={<Building2 className="h-4 w-4" />} label="Companies" count={companies.length} />
           </div>
 
           {/* Wrap each table so its own overflow-x scroll stays inside the

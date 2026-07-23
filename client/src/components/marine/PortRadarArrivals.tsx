@@ -654,7 +654,7 @@ export function PortRadarArrivals({
                   </tr>
                   {isOpen ? (
                     <tr key={`${eta.id}:contacts`} className="bg-slate-50/70">
-                      <td colSpan={3 + visibleColumns.size} className="px-3 py-3">
+                      <td colSpan={3 + visibleIds.size} className="px-3 py-3">
                         <div className="space-y-3">
                           <AssociatedContactsSubrow
                             vesselName={eta.vessel.vesselName}

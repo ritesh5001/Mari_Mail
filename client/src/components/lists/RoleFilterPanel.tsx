@@ -140,6 +140,7 @@ export function RoleFilterPanel({
           onFetchSuggestions={fetchTitleSuggestions}
           tone="include"
           disabled={disabled}
+          selectAllMode="clear-any"
         />
 
         <ChipInput
@@ -252,6 +253,7 @@ function ChipInput({
   tone,
   disabled,
   emptyHint,
+  selectAllMode = "select",
 }: {
   label: string;
   placeholder: string;
@@ -263,6 +265,15 @@ function ChipInput({
   disabled?: boolean;
   /** Text shown in the empty-state slot (draft empty, no suggestions yet). */
   emptyHint?: string;
+  /**
+   * How the "Select all" pill in the popover behaves.
+   *   - "select":     ticks every known suggestion into `values` (default).
+   *   - "clear-any":  clears `values` entirely. Used on Include titles, where
+   *                   an empty include list is Apollo's "return every title
+   *                   at these companies" mode — the fastest way to broaden
+   *                   the search is to ask for nothing specific.
+   */
+  selectAllMode?: "select" | "clear-any";
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -387,10 +398,13 @@ function ChipInput({
       return s.toLowerCase().includes(draftTrimmed.toLowerCase());
     });
 
-  // The pool "Select all" operates over — every distinct suggestion this input
-  // knows about (static + live + parent-provided), regardless of the current
-  // draft filter. Dedup case-insensitively so a static "Fleet Manager" and a
-  // live "fleet manager" don't both count.
+  // The pool "Select all" operates over in "select" mode — every distinct
+  // suggestion this input knows about (static + live + parent-provided),
+  // regardless of the current draft filter. Dedup case-insensitively so a
+  // static "Fleet Manager" and a live "fleet manager" don't both count.
+  //
+  // In "clear-any" mode the pool is meaningless (the button just empties
+  // `values`), but we still compute it so the pill can show a total.
   const selectAllPool = (() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -405,9 +419,19 @@ function ChipInput({
     return out;
   })();
   const allSelected =
-    selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
+    selectAllMode === "clear-any"
+      ? values.length === 0
+      : selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
 
   function toggleSelectAll() {
+    if (selectAllMode === "clear-any") {
+      // Empty include list ↔ "search every title at these companies" — Apollo
+      // returns everyone when no person_titles filter is sent. Clicking again
+      // is a no-op (already empty); we only clear here.
+      if (values.length > 0) onChange([]);
+      setPending(new Set());
+      return;
+    }
     if (allSelected) {
       // Remove every pool entry from the committed values.
       const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
@@ -489,11 +513,13 @@ function ChipInput({
       </div>
       {focused ? (
         <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
-          {/* Select-all pill — toggles the ENTIRE known pool (curated + live +
-              parent-provided suggestions), not just the currently filtered
-              subset. That's the scope the user picked: one click gets you
-              "every title we've ever heard of at these companies". */}
-          {selectAllPool.length > 0 ? (
+          {/* Select-all pill. Two flavours:
+                clear-any  → clears the include list so Apollo returns every
+                             title at these vessels' companies (checked = the
+                             list is currently empty).
+                select     → toggles the entire known pool (curated + live +
+                             parent-provided suggestions) into `values`. */}
+          {selectAllMode === "clear-any" || selectAllPool.length > 0 ? (
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
               <label
                 onMouseDown={(event) => event.preventDefault()}
@@ -510,12 +536,20 @@ function ChipInput({
                   className="h-3.5 w-3.5 rounded border-slate-300 text-ocean"
                 />
                 <span className="font-semibold uppercase tracking-wide">
-                  {allSelected ? "Deselect all" : "Select all"}
+                  {selectAllMode === "clear-any"
+                    ? allSelected
+                      ? "All titles (Apollo default)"
+                      : "Select all — every title at these companies"
+                    : allSelected
+                      ? "Deselect all"
+                      : "Select all"}
                 </span>
               </label>
-              <span className="text-slate-400 dark:text-white/40">
-                {selectAllPool.length} total
-              </span>
+              {selectAllMode === "select" ? (
+                <span className="text-slate-400 dark:text-white/40">
+                  {selectAllPool.length} total
+                </span>
+              ) : null}
             </div>
           ) : null}
           <div className="flex-1 overflow-y-auto">

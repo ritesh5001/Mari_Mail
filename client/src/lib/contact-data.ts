@@ -262,6 +262,10 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
     shipOwnerCompany: { select: { id: true, companyName: true } },
     ismManagerCompany: { select: { id: true, companyName: true } },
     commercialManagerCompany: { select: { id: true, companyName: true } },
+    // Latest ETA only — used to hide vessels whose scheduled arrival has
+    // already passed. `orderBy: eta desc, take: 1` limits this to one row per
+    // vessel so the join stays cheap on wide lists.
+    etas: { orderBy: { eta: "desc" as const }, take: 1, select: { eta: true } },
   };
 
   type VesselWithCompanies = Prisma.VesselGetPayload<{ include: typeof vesselInclude }>;
@@ -350,6 +354,27 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
   const vesselMap = new Map<string, VesselWithCompanies>(directVessels.map((v) => [v.id, v]));
   for (const v of companyVessels) vesselMap.set(v.id, v);
 
+  // Auto-drop past-ETA vessels from ETA lists: if the latest ETA on file is
+  // already in the past the vessel has "arrived" and shouldn't sit in an
+  // outreach queue. Vessels with no ETA at all are kept (they haven't been
+  // scheduled yet). Non-ETA lists don't use ETAs, so the filter is a no-op
+  // there. Same rule applies for every user of the list — the filter runs
+  // server-side before the payload is assembled.
+  //
+  // Kind detection mirrors the client-side listKindOf: honour the explicit
+  // filterConfig.kind marker when present; otherwise infer from the fact
+  // that the list holds any vessels at all.
+  const listKindConfig = (list.filterConfig as { kind?: string } | null | undefined)?.kind;
+  const isEtaList =
+    listKindConfig === "ETA" || (listKindConfig !== "CONTACT" && vesselMap.size > 0);
+  if (isEtaList) {
+    const now = new Date();
+    for (const [id, vessel] of vesselMap) {
+      const latest = vessel.etas[0]?.eta;
+      if (latest && latest < now) vesselMap.delete(id);
+    }
+  }
+
   // Companies come from two places: rows explicitly added to the list, and the
   // owner / ISM / commercial manager of every vessel on it. Without the second
   // source the Companies tab reads "No companies in this list yet" even for a
@@ -399,14 +424,21 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
   const allCompanyKeys = Array.from(allCompanyKeysMap.values());
 
   const [shipOwnerRows, ismManagerRows, commercialManagerRows, employeeGroups, shipOwnerVesselGroups, ismVesselGroups, cmVesselGroups] = await Promise.all([
+    // Company lookups run UNSCOPED — the ids come from either an explicit
+    // ListCompany link (list ownership is already gated upstream) or from a
+    // vessel already on the list (vessels legitimately cross workspaces after
+    // the global-ETA change, so their owner/manager companies may live in
+    // another workspace). Scoping here reintroduces "(unknown)" rows for
+    // cross-workspace vessels — the same class of bug the vessel lookup
+    // already avoids by dropping its scope for direct-membership rows.
     shipOwnerIds.length > 0
-      ? prisma.shipOwnerCompany.findMany({ where: { id: { in: shipOwnerIds }, ...scope(workspaceId) } })
+      ? prisma.shipOwnerCompany.findMany({ where: { id: { in: shipOwnerIds } } })
       : Promise.resolve([]),
     ismManagerIds.length > 0
-      ? prisma.iSMManagerCompany.findMany({ where: { id: { in: ismManagerIds }, ...scope(workspaceId) } })
+      ? prisma.iSMManagerCompany.findMany({ where: { id: { in: ismManagerIds } } })
       : Promise.resolve([]),
     commercialManagerIds.length > 0
-      ? prisma.commercialManagerCompany.findMany({ where: { id: { in: commercialManagerIds }, ...scope(workspaceId) } })
+      ? prisma.commercialManagerCompany.findMany({ where: { id: { in: commercialManagerIds } } })
       : Promise.resolve([]),
     allCompanyKeys.length > 0
       ? prisma.contact.groupBy({
