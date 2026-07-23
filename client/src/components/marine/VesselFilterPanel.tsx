@@ -554,37 +554,41 @@ export function VesselFilterPanel({
 
   const etaVoyageBody = (
     <>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700 dark:text-white/70">
-          <input
-            type="checkbox"
+      {/* -- Focus card: the two boolean toggles that scope the entire feed -- */}
+      <FilterCard title="Focus">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          <ToggleTile
             checked={state.hasEta}
-            onChange={(e) => patch({ hasEta: e.target.checked })}
-            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+            onChange={(v) => patch({ hasEta: v })}
+            title="Only vessels with an upcoming ETA"
+            description="Hide vessels that have no scheduled arrival on file."
           />
-          Only vessels with an upcoming ETA
-        </label>
-        <label
-          className={`flex cursor-pointer items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-            state.noCampaign
-              ? "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-200"
-              : "border-slate-200 bg-white text-slate-600 hover:border-amber-300 hover:text-amber-800 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60"
-          }`}
-          title="Vessels arriving with no campaign trigger attached — pair with an ETA window to reproduce the old Missed Opportunities tab."
-        >
-          <input
-            type="checkbox"
+          <ToggleTile
+            tone="amber"
             checked={state.noCampaign}
-            onChange={(e) => patch({ noCampaign: e.target.checked })}
-            className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+            onChange={(v) => patch({ noCampaign: v })}
+            title="Missed opportunities"
+            description="Arriving with no campaign trigger attached. Pair with a window below."
           />
-          Missed opportunities (no campaign)
-        </label>
-      </div>
+        </div>
+      </FilterCard>
 
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA window (UTC)</p>
-        <div className="mb-2 flex flex-wrap gap-1.5">
+      {/* -- ETA window: presets on top, manual date range below -- */}
+      <FilterCard
+        title="ETA window (UTC)"
+        action={
+          state.etaFrom || state.etaTo ? (
+            <button
+              type="button"
+              onClick={() => patch({ etaFrom: "", etaTo: "" })}
+              className="text-[11px] font-semibold uppercase tracking-wide text-ocean hover:underline dark:text-accent-300"
+            >
+              Clear
+            </button>
+          ) : null
+        }
+      >
+        <div className="flex flex-wrap gap-2">
           {quickWindows.map((w) => {
             const on = activeQuickWindow === w.key;
             return (
@@ -592,9 +596,9 @@ export function VesselFilterPanel({
                 key={w.key}
                 type="button"
                 onClick={() => applyQuickWindow(w.days)}
-                className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
                   on
-                    ? "border-ocean bg-ocean text-white dark:border-accent-500 dark:bg-accent-600"
+                    ? "border-ocean bg-ocean text-white shadow-sm dark:border-accent-500 dark:bg-accent-600"
                     : "border-slate-200 bg-white text-slate-600 hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/[0.03] dark:text-white/60 dark:hover:border-accent-400"
                 }`}
               >
@@ -603,116 +607,147 @@ export function VesselFilterPanel({
             );
           })}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <input type="date" value={state.etaFrom} onChange={(e) => patch({ etaFrom: e.target.value })} className={inputClass} />
-          <input type="date" value={state.etaTo} onChange={(e) => patch({ etaTo: e.target.value })} className={inputClass} />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/45">
+              From
+            </span>
+            <input
+              type="date"
+              value={state.etaFrom}
+              onChange={(e) => patch({ etaFrom: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/45">
+              To
+            </span>
+            <input
+              type="date"
+              value={state.etaTo}
+              onChange={(e) => patch({ etaTo: e.target.value })}
+              className={inputClass}
+            />
+          </label>
         </div>
-      </div>
+      </FilterCard>
 
       {isSuperAdmin ? (
-      <>
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Destination country</p>
-        <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
-          {countries.length === 0 ? (
-            <p className="px-1 py-1 text-xs text-slate-400">Loading…</p>
-          ) : (
-            countries.map((option) => (
-              <label
-                key={option.country}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-              >
-                <input
-                  type="checkbox"
-                  checked={state.destCountry.includes(option.country)}
-                  onChange={() => toggleListField("destCountry", option.country)}
-                  className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                />
-                <span className="min-w-0 truncate">
-                  {option.countryName}
-                  <span className="ml-1 text-xs text-slate-400">({option.country})</span>
-                </span>
-              </label>
-            ))
-          )}
-        </div>
-      </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <FilterCard title="Destination country" count={state.destCountry.length}>
+            <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+              {countries.length === 0 ? (
+                <p className="px-1 py-1 text-xs text-slate-400">Loading…</p>
+              ) : (
+                countries.map((option) => (
+                  <label
+                    key={option.country}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={state.destCountry.includes(option.country)}
+                      onChange={() => toggleListField("destCountry", option.country)}
+                      className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                    />
+                    <span className="min-w-0 truncate">
+                      {option.countryName}
+                      <span className="ml-1 text-xs text-slate-400">({option.country})</span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+          </FilterCard>
 
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Destination port</p>
-        {state.destCountry.length === 0 ? (
-          <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
-            Pick a country first to filter by specific ports.
-          </p>
-        ) : ports.length === 0 ? (
-          <p className="rounded-md border border-slate-200 px-2 py-2 text-xs text-slate-400 dark:border-white/10">
-            Loading ports…
-          </p>
-        ) : (
-          <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-white/10">
-            {ports.map((port) => (
-              <label
-                key={port.portCode}
-                className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-              >
-                <input
-                  type="checkbox"
-                  checked={state.destPort.includes(port.portCode)}
-                  onChange={() => toggleListField("destPort", port.portCode)}
-                  className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                />
-                <span className="min-w-0 truncate">
-                  {port.portName}
-                  <span className="ml-1 text-xs text-slate-400">
-                    ({port.portCode} · {port.country})
-                  </span>
-                </span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-      </>
+          <FilterCard title="Destination port" count={state.destPort.length}>
+            {state.destCountry.length === 0 ? (
+              <p className="rounded-md border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-400 dark:border-white/10">
+                Pick a country first to filter by specific ports.
+              </p>
+            ) : ports.length === 0 ? (
+              <p className="px-1 py-1 text-xs text-slate-400">Loading ports…</p>
+            ) : (
+              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                {ports.map((port) => (
+                  <label
+                    key={port.portCode}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={state.destPort.includes(port.portCode)}
+                      onChange={() => toggleListField("destPort", port.portCode)}
+                      className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                    />
+                    <span className="min-w-0 truncate">
+                      {port.portName}
+                      <span className="ml-1 text-xs text-slate-400">
+                        ({port.portCode} · {port.country})
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </FilterCard>
+        </div>
       ) : null}
 
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">ETA confidence</p>
-        <div className="flex flex-wrap gap-2">
-          {ETA_CONFIDENCES.map((value) => (
-            <label
-              key={value}
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
-            >
-              <input
-                type="checkbox"
-                checked={state.etaConfidence.includes(value)}
-                onChange={() => toggleListField("etaConfidence", value)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
-              />
-              {formatVesselEnum(value)}
-            </label>
-          ))}
-        </div>
-      </div>
+      {/* -- Confidence & voyage status side-by-side -- */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <FilterCard title="ETA confidence">
+          <div className="flex flex-wrap gap-2">
+            {ETA_CONFIDENCES.map((value) => {
+              const on = state.etaConfidence.includes(value);
+              return (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    on
+                      ? "border-ocean bg-ocean/10 text-ocean dark:border-accent-500 dark:bg-accent-500/15 dark:text-accent-200"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-ocean/60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggleListField("etaConfidence", value)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+                  />
+                  {formatVesselEnum(value)}
+                </label>
+              );
+            })}
+          </div>
+        </FilterCard>
 
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Voyage status</p>
-        <div className="flex flex-wrap gap-2">
-          {VOYAGE_STATUSES.map((value) => (
-            <label
-              key={value}
-              className="flex cursor-pointer items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.05]"
-            >
-              <input
-                type="checkbox"
-                checked={state.voyageStatus.includes(value)}
-                onChange={() => toggleListField("voyageStatus", value)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
-              />
-              {formatVesselEnum(value)}
-            </label>
-          ))}
-        </div>
+        <FilterCard title="Voyage status">
+          <div className="flex flex-wrap gap-2">
+            {VOYAGE_STATUSES.map((value) => {
+              const on = state.voyageStatus.includes(value);
+              return (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                    on
+                      ? "border-ocean bg-ocean/10 text-ocean dark:border-accent-500 dark:bg-accent-500/15 dark:text-accent-200"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-ocean/60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggleListField("voyageStatus", value)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
+                  />
+                  {formatVesselEnum(value)}
+                </label>
+              );
+            })}
+          </div>
+        </FilterCard>
       </div>
     </>
   );
@@ -1103,6 +1138,91 @@ export function VesselFilterPanel({
         </button>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Bordered card wrapper used to group related fields inside a filter section.
+ * Gives every subsection a title strip, an optional right-hand action slot
+ * (e.g. a "Clear" link), an optional count badge, and consistent padding.
+ * Cards visually separate what used to be flat stacked <div>s so the pane
+ * reads like a real form instead of a wall of labels.
+ */
+function FilterCard({
+  title,
+  count,
+  action,
+  children,
+}: {
+  title: string;
+  count?: number;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.02]">
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-white/10">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+            {title}
+          </span>
+          {count ? (
+            <span className="rounded-full bg-ocean/10 px-1.5 text-[10px] font-semibold text-ocean dark:bg-accent-500/15 dark:text-accent-200">
+              {count}
+            </span>
+          ) : null}
+        </div>
+        {action}
+      </div>
+      <div className="px-4 py-3.5">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Rich toggle tile — a bigger tap target than a bare checkbox, with a title
+ * and a helper description. Used for the two focus toggles at the top of the
+ * ETA & voyage pane so the primary controls read as clear, distinct choices
+ * rather than a compressed row of labels.
+ */
+function ToggleTile({
+  title,
+  description,
+  checked,
+  onChange,
+  tone = "ocean",
+}: {
+  title: string;
+  description: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  tone?: "ocean" | "amber";
+}) {
+  const activeBorder =
+    tone === "amber"
+      ? "border-amber-400 bg-amber-50 dark:border-amber-500/50 dark:bg-amber-500/10"
+      : "border-ocean bg-ocean/[0.06] dark:border-accent-500 dark:bg-accent-500/10";
+  const activeCheck =
+    tone === "amber" ? "text-amber-600 focus:ring-amber-500" : "text-ocean focus:ring-ocean";
+  return (
+    <label
+      className={`group flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
+        checked
+          ? activeBorder
+          : "border-slate-200 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20"
+      }`}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className={`mt-0.5 h-4 w-4 rounded border-slate-300 ${activeCheck}`}
+      />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-900 dark:text-white/90">{title}</p>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-white/50">{description}</p>
+      </div>
+    </label>
   );
 }
 
