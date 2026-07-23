@@ -53,16 +53,11 @@ const DEFAULT_TITLE_SUGGESTIONS = [
   "COO",
 ];
 
-const SENIORITY_OPTIONS: { value: string; label: string }[] = [
-  { value: "owner", label: "Owner" },
-  { value: "c_suite", label: "C-Suite" },
-  { value: "vp", label: "VP" },
-  { value: "director", label: "Director" },
-  { value: "manager", label: "Manager" },
-  { value: "senior", label: "Senior" },
-  { value: "entry", label: "Entry" },
-  { value: "intern", label: "Intern" },
-];
+// Seniority chips were removed from the UI on request — the filter surface
+// stayed too crowded and users weren't reaching for them. The `seniorities`
+// field is still on RoleFilter and still shipped to the server (Apollo can
+// filter by seniority when we ask), but nothing in this component sets it
+// anymore. Kept the type so old saved filters keep validating.
 
 export function RoleFilterPanel({
   value,
@@ -100,15 +95,6 @@ export function RoleFilterPanel({
 
   function patch(part: Partial<RoleFilter>) {
     onChange({ ...value, ...part });
-  }
-
-  function toggleSeniority(seniority: string) {
-    const has = value.seniorities.includes(seniority);
-    patch({
-      seniorities: has
-        ? value.seniorities.filter((s) => s !== seniority)
-        : [...value.seniorities, seniority],
-    });
   }
 
   function clearAll() {
@@ -179,31 +165,6 @@ export function RoleFilterPanel({
           />
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
-            Seniority
-          </label>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {SENIORITY_OPTIONS.map((option) => {
-              const active = value.seniorities.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => toggleSeniority(option.value)}
-                  disabled={disabled}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition ${
-                    active
-                      ? "border-ocean bg-ocean text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
-                  } disabled:opacity-50`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
@@ -217,10 +178,14 @@ export function RoleFilterPanel({
             Clear all
           </button>
         ) : null}
+        {/* Search is always enabled — an empty include-title list is the
+            "all titles at these companies" Apollo default, which is a real,
+            useful search on its own. Only the in-flight `disabled` prop
+            (parent-owned) can dim it. */}
         <button
           type="button"
           onClick={onApply}
-          disabled={disabled || totalActive === 0}
+          disabled={disabled}
           className="inline-flex items-center gap-1.5 rounded-md bg-ocean px-4 py-2 text-xs font-semibold text-white hover:bg-ocean/90 disabled:opacity-60"
         >
           <Search className="h-3.5 w-3.5" />
@@ -277,6 +242,14 @@ function ChipInput({
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
+  // clear-any-only: reflects whether the user has explicitly opted into the
+  // "all titles" state via the Select-all pill. Without this flag the pill
+  // would render as CHECKED on first paint (values.length === 0 is trivially
+  // true), which the user reads as "I've already picked something" — the
+  // opposite of the intended default. Toggling the pill on clears values and
+  // sets this to true; adding any title (via Enter or Add-selected) flips it
+  // off. Ignored in "select" mode.
+  const [userChoseAll, setUserChoseAll] = useState(false);
   // Tracks WHICH query produced the current live suggestions. Without the
   // `query` marker the previous search's results linger and get shown
   // (unfiltered) whenever the user starts typing a new query — that's the
@@ -348,6 +321,9 @@ function ChipInput({
     onChange([...values, value]);
     setDraft("");
     setPending(new Set());
+    // Adding a specific title contradicts "all titles" mode — flip the flag
+    // off so the pill goes back to unchecked. No-op in "select" mode.
+    setUserChoseAll(false);
   }
 
   function togglePending(suggestion: string) {
@@ -373,6 +349,20 @@ function ChipInput({
     onChange([...values, ...toAdd]);
     setDraft("");
     setPending(new Set());
+    setUserChoseAll(false);
+    // Reset the caret / popover explicitly. Without this the input keeps
+    // focus and holds the old (now-committed) draft in state briefly, so
+    // typing more characters produces the same query string as before —
+    // the debounced fetch effect early-returns and no new suggestions
+    // appear. Blurring closes the popover, and next time the user clicks
+    // in it's a fresh session with a clean draft.
+    inputRef.current?.blur();
+    setFocused(false);
+    // Live-suggestions cache from the previous draft is also stale for the
+    // NEXT session — clear it so opening the popover again doesn't briefly
+    // flash the results from before the commit while the new fetch is in
+    // flight.
+    setLiveSuggestions({ query: "", items: [] });
   }
 
   function removeAt(idx: number) {
@@ -420,15 +410,23 @@ function ChipInput({
   })();
   const allSelected =
     selectAllMode === "clear-any"
-      ? values.length === 0
+      ? // Only reflect "all titles" when the user has actively toggled it, not
+        // just because the field happens to be empty on first paint.
+        userChoseAll && values.length === 0
       : selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
 
   function toggleSelectAll() {
     if (selectAllMode === "clear-any") {
-      // Empty include list ↔ "search every title at these companies" — Apollo
-      // returns everyone when no person_titles filter is sent. Clicking again
-      // is a no-op (already empty); we only clear here.
-      if (values.length > 0) onChange([]);
+      // Toggle: turning it ON clears any typed values and marks the
+      // "all titles" mode explicit. Turning it OFF just drops the flag —
+      // there's nothing to remove because `values` is already empty when
+      // "all" is on.
+      if (userChoseAll) {
+        setUserChoseAll(false);
+      } else {
+        if (values.length > 0) onChange([]);
+        setUserChoseAll(true);
+      }
       setPending(new Set());
       return;
     }
