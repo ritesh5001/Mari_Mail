@@ -196,6 +196,26 @@ export function PortRadarArrivals({
       <th className="whitespace-nowrap px-4 py-3">{label}</th>
     );
   const selectedVesselIds = Array.from(selectedVessels);
+  // Page-level select-all state — reads the checkbox as "checked" only when
+  // every vessel on the current page is already in the selection set. Rows
+  // are keyed by ETA id (a vessel may recur across ETA rows within the same
+  // page); this collapses to the underlying vessel-id set.
+  const pageVesselIds = Array.from(new Set(etas.map((e) => e.vesselId)));
+  const allOnPageSelected =
+    pageVesselIds.length > 0 && pageVesselIds.every((id) => selectedVessels.has(id));
+  const someOnPageSelected =
+    !allOnPageSelected && pageVesselIds.some((id) => selectedVessels.has(id));
+  function toggleAllOnPage() {
+    setSelectedVessels((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        for (const id of pageVesselIds) next.delete(id);
+      } else {
+        for (const id of pageVesselIds) next.add(id);
+      }
+      return next;
+    });
+  }
 
   // `etas` is already just this page — the server applied skip/take.
   const totalPages = Math.max(1, Math.ceil(count / pageSize));
@@ -458,7 +478,23 @@ export function PortRadarArrivals({
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
             <tr>
-              <th className="sticky left-0 top-0 z-40 bg-slate-50 px-4 py-3" />
+              <th className="sticky left-0 top-0 z-40 bg-slate-50 px-4 py-3">
+                <input
+                  type="checkbox"
+                  aria-label={allOnPageSelected ? "Deselect all vessels on this page" : "Select all vessels on this page"}
+                  checked={allOnPageSelected}
+                  ref={(el) => {
+                    // Indeterminate is DOM-only, not a React prop — reflect
+                    // "some but not all rows on this page selected" as the
+                    // dashed checkbox state so the master control isn't
+                    // ambiguous when the user is mid-selection.
+                    if (el) el.indeterminate = someOnPageSelected;
+                  }}
+                  onChange={toggleAllOnPage}
+                  disabled={pageVesselIds.length === 0}
+                  className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                />
+              </th>
               {onSort ? (
                 <SortableHeader
                   label="Vessel Name"

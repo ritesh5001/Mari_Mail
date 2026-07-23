@@ -278,7 +278,10 @@ function Section({
   const [open, setOpen] = useState(variant === "card" ? false : defaultOpen);
 
   if (variant === "plain") {
-    return <div className="space-y-3">{children}</div>;
+    // Modal pane — sub-groups need more breathing room than the compact card
+    // / list variants use, otherwise "ETA confidence" and "Voyage status" run
+    // into each other and the whole pane reads as one wall of controls.
+    return <div className="space-y-5">{children}</div>;
   }
 
   if (variant === "card") {
@@ -486,11 +489,11 @@ export function VesselFilterPanel({
   // how the manual date pickers behave.
   const quickWindows = [
     { key: "any", label: "Any time", days: null as number | null },
-    { key: "1d", label: "Under 1d", days: 1 },
-    { key: "3d", label: "Under 3d", days: 3 },
-    { key: "7d", label: "Under 7d", days: 7 },
-    { key: "15d", label: "Under 15d", days: 15 },
-    { key: "30d", label: "Under 30d", days: 30 },
+    { key: "1d", label: "1d", days: 1 },
+    { key: "3d", label: "3d", days: 3 },
+    { key: "7d", label: "7d", days: 7 },
+    { key: "15d", label: "15d", days: 15 },
+    { key: "30d", label: "30d", days: 30 },
   ];
   const todayISO = () => {
     const d = new Date();
@@ -1323,7 +1326,7 @@ function FilterModalShell({
                 </ul>
               </nav>
 
-              <div key={activeSection?.key} className="flex-1 overflow-y-auto px-6 py-5 animate-in-fade">
+              <div key={activeSection?.key} className="flex-1 overflow-y-auto px-8 py-6 animate-in-fade">
                 <SectionVariantContext.Provider value="plain">
                   {activeSection?.body}
                 </SectionVariantContext.Provider>
