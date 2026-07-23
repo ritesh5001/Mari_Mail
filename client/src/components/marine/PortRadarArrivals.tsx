@@ -446,7 +446,7 @@ export function PortRadarArrivals({
           {toast}
         </div>
       ) : null}
-      <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-slate-950">Table view</p>
@@ -468,7 +468,7 @@ export function PortRadarArrivals({
                 Customize
               </button>
               {customizeOpen ? (
-                <div className="absolute right-0 z-30 mt-1 w-56 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+                <div className="absolute right-0 z-[60] mt-1 w-56 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
                   <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     Show columns
                   </p>
@@ -514,7 +514,7 @@ export function PortRadarArrivals({
             container's own horizontal scrollbar sits at its bottom edge,
             which is always on screen because the container is capped to
             the viewport height. */}
-        <div className="max-h-[calc(100vh-230px)] overflow-auto overscroll-x-contain">
+        <div className="max-h-[calc(100vh-230px)] overflow-auto overscroll-x-contain rounded-b-lg">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
             <tr>

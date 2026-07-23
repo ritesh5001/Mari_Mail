@@ -394,7 +394,7 @@ function ChipInput({
         />
       </div>
       {focused ? (
-        <div className="absolute left-0 right-0 z-20 mt-1 flex max-h-72 flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
+        <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
           <div className="flex-1 overflow-y-auto">
             {loadingSuggestions ? (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500 dark:text-white/60">
