@@ -100,24 +100,41 @@ workspaceRouter.post("/switch", requireAuth, async (req, res, next) => {
  * and the in-page country banner. Cached in Redis (or in-memory via the
  * token store) so the heavy distinct query only runs once per hour.
  */
+async function listPortCountries() {
+  const cached = await getToken(PORT_COUNTRIES_CACHE_KEY);
+  if (cached) return JSON.parse(cached) as Array<{ country: string; countryName: string }>;
+  const rows = await prisma.port.findMany({
+    distinct: ["country"],
+    select: { country: true, countryName: true },
+    orderBy: { countryName: "asc" },
+  });
+  const countries = rows
+    .map((row) => ({ country: row.country, countryName: row.countryName }))
+    .filter((row) => row.country && row.countryName);
+  await setToken(
+    PORT_COUNTRIES_CACHE_KEY,
+    JSON.stringify(countries),
+    PORT_COUNTRIES_TTL_SECONDS,
+  ).catch(() => undefined);
+  return countries;
+}
+
 workspaceRouter.get("/port-countries", requireAuth, async (_req, res, next) => {
   try {
-    const cached = await getToken(PORT_COUNTRIES_CACHE_KEY);
-    if (cached) {
-      return sendData(res, JSON.parse(cached));
-    }
-    const rows = await prisma.port.findMany({
-      distinct: ["country"],
-      select: { country: true, countryName: true },
-      orderBy: { countryName: "asc" },
-    });
-    const countries = rows
-      .map((row) => ({ country: row.country, countryName: row.countryName }))
-      .filter((row) => row.country && row.countryName);
-    await setToken(PORT_COUNTRIES_CACHE_KEY, JSON.stringify(countries), PORT_COUNTRIES_TTL_SECONDS).catch(
-      () => undefined,
-    );
-    return sendData(res, countries);
+    return sendData(res, await listPortCountries());
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Unauthenticated variant used by the registration form to populate the
+ * Target country dropdown. Same data, same cache — no session needed since
+ * the list is purely public reference data (country codes and display names).
+ */
+workspaceRouter.get("/port-countries/public", async (_req, res, next) => {
+  try {
+    return sendData(res, await listPortCountries());
   } catch (error) {
     return next(error);
   }

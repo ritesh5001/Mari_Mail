@@ -20,6 +20,17 @@ const registerSchema = z.object({
   password: z.string().min(10),
   workspaceName: z.string().trim().min(2).optional(),
   termsAccepted: z.preprocess((value) => value === true || value === "true" || value === "on", z.literal(true)),
+  // Optional workspace bootstrap fields — folded into registration so a fresh
+  // signup lands directly on /dashboard instead of a two-step wizard. Both
+  // legacy clients (that omit these) and the new form (that sends them) are
+  // supported: absent values fall back to schema defaults ("UTC", null).
+  timezone: z.string().trim().min(2).optional(),
+  targetPortCountry: z
+    .string()
+    .trim()
+    .length(2)
+    .transform((value) => value.toUpperCase())
+    .optional(),
 });
 
 const loginSchema = z.object({
@@ -98,6 +109,12 @@ function registerRetryUrl(body: Record<string, unknown>, message: string) {
   });
   if (body.termsAccepted === "on" || body.termsAccepted === true || body.termsAccepted === "true") {
     params.set("termsAccepted", "on");
+  }
+  if (typeof body.timezone === "string" && body.timezone.length > 0) {
+    params.set("timezone", body.timezone);
+  }
+  if (typeof body.targetPortCountry === "string" && body.targetPortCountry.length > 0) {
+    params.set("targetPortCountry", body.targetPortCountry);
   }
   return appUrl(`/register?${params.toString()}`);
 }
@@ -283,6 +300,18 @@ authRouter.post("/register", async (req, res, next) => {
           name: workspaceName,
           slug,
           ownerId: createdUser.id,
+          // Seed the workspace with the values the register form collected;
+          // omit fields fall back to the Prisma schema default ("UTC", null).
+          ...(input.data.timezone ? { timezone: input.data.timezone } : {}),
+          ...(input.data.targetPortCountry
+            ? { targetPortCountry: input.data.targetPortCountry }
+            : {}),
+          // Skip the /onboarding wizard when the register form already
+          // gathered the workspace basics. Login sees onboardedAt !== null
+          // and routes straight to /dashboard.
+          ...(input.data.targetPortCountry && input.data.timezone
+            ? { onboardedAt: new Date() }
+            : {}),
         },
       });
 

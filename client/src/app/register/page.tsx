@@ -13,6 +13,9 @@ export default function RegisterPage({
     email: typeof searchParams.email === "string" ? searchParams.email : "",
     workspaceName: typeof searchParams.workspaceName === "string" ? searchParams.workspaceName : "",
     termsAccepted: searchParams.termsAccepted === "on" || searchParams.termsAccepted === "true",
+    timezone: typeof searchParams.timezone === "string" ? searchParams.timezone : "",
+    targetPortCountry:
+      typeof searchParams.targetPortCountry === "string" ? searchParams.targetPortCountry : "",
   };
 
   return (
