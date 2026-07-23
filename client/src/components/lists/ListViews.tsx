@@ -1023,32 +1023,15 @@ export function CampaignByRolePanel({
     }
   }
 
-  // Reset search back to idle whenever the user clears the whole filter —
-  // no facets means no meaningful Apollo query.
-  useEffect(() => {
-    const hasFacets =
-      filter.includeTitles.length > 0 ||
-      filter.excludeTitles.length > 0 ||
-      filter.includeCompanies.length > 0 ||
-      filter.excludeCompanies.length > 0 ||
-      filter.seniorities.length > 0;
-    if (!hasFacets) {
-      setState({ status: "idle" });
-      setSelected(new Set());
-    }
-  }, [filter]);
+  // The old "reset to idle when the filter is empty" auto-effect was
+  // removed: an empty filter is now a legitimate "return everyone at these
+  // companies" Apollo query, so wiping results the moment the user clears
+  // a chip would fight the new Search-anytime affordance.
 
   async function runSearch(active: RoleFilter) {
-    const hasFacets =
-      active.includeTitles.length > 0 ||
-      active.excludeTitles.length > 0 ||
-      active.includeCompanies.length > 0 ||
-      active.excludeCompanies.length > 0 ||
-      active.seniorities.length > 0;
-    if (!hasFacets) {
-      setState({ status: "idle" });
-      return;
-    }
+    // No `hasFacets` guard here anymore — an empty filter is a real search
+    // (Apollo's default: every title at these vessels' companies). If the
+    // parent doesn't want empty-filter calls, it can disable the button.
     setState({ status: "loading" });
     setSelected(new Set());
     try {
