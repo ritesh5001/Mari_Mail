@@ -67,6 +67,8 @@ export function RoleFilterPanel({
   companySuggestionsFromResults,
   fetchTitleSuggestions,
   fetchCompanySuggestions,
+  fetchAllTitles,
+  fetchAllCompanies,
   disabled,
 }: {
   value: RoleFilter;
@@ -84,6 +86,11 @@ export function RoleFilterPanel({
   // Live-suggestions loader for the company pickers. Optional — without it,
   // suggestions fall back to `companySuggestionsFromResults` filtered locally.
   fetchCompanySuggestions?: SuggestFn;
+  // Select-all loaders. Fetch every title / every company Apollo has for
+  // these vessels' companies, in one shot. Powers the Select-all pill on
+  // the Include-titles / Include-companies chip inputs.
+  fetchAllTitles?: () => Promise<string[]>;
+  fetchAllCompanies?: () => Promise<string[]>;
   disabled?: boolean;
 }) {
   const totalActive =
@@ -124,9 +131,9 @@ export function RoleFilterPanel({
           onChange={(next) => patch({ includeTitles: next })}
           suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
           onFetchSuggestions={fetchTitleSuggestions}
+          onFetchAllForSelectAll={fetchAllTitles}
           tone="include"
           disabled={disabled}
-          selectAllMode="clear-any"
         />
 
         <ChipInput
@@ -148,6 +155,7 @@ export function RoleFilterPanel({
             onChange={(next) => patch({ includeCompanies: next })}
             suggestions={companySuggestionsFromResults ?? []}
             onFetchSuggestions={fetchCompanySuggestions}
+            onFetchAllForSelectAll={fetchAllCompanies}
             tone="include"
             disabled={disabled}
             emptyHint="Type a company name to filter results."
@@ -218,7 +226,7 @@ function ChipInput({
   tone,
   disabled,
   emptyHint,
-  selectAllMode = "select",
+  onFetchAllForSelectAll,
 }: {
   label: string;
   placeholder: string;
@@ -231,25 +239,21 @@ function ChipInput({
   /** Text shown in the empty-state slot (draft empty, no suggestions yet). */
   emptyHint?: string;
   /**
-   * How the "Select all" pill in the popover behaves.
-   *   - "select":     ticks every known suggestion into `values` (default).
-   *   - "clear-any":  clears `values` entirely. Used on Include titles, where
-   *                   an empty include list is Apollo's "return every title
-   *                   at these companies" mode — the fastest way to broaden
-   *                   the search is to ask for nothing specific.
+   * Optional loader invoked when the user clicks Select-all. Should return
+   * every distinct entry the field's data source knows about (e.g. every
+   * title Apollo has at these vessels' companies). When present, Select-all
+   * awaits this fetch and merges the returned pool into `values` — the pill
+   * populates the field with the full universe, not just the 17 curated
+   * fallbacks. Without this callback Select-all falls back to whatever is
+   * already in the local pool (curated defaults + live-typed results).
    */
-  selectAllMode?: "select" | "clear-any";
+  onFetchAllForSelectAll?: () => Promise<string[]>;
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
-  // clear-any-only: reflects whether the user has explicitly opted into the
-  // "all titles" state via the Select-all pill. Without this flag the pill
-  // would render as CHECKED on first paint (values.length === 0 is trivially
-  // true), which the user reads as "I've already picked something" — the
-  // opposite of the intended default. Toggling the pill on clears values and
-  // sets this to true; adding any title (via Enter or Add-selected) flips it
-  // off. Ignored in "select" mode.
-  const [userChoseAll, setUserChoseAll] = useState(false);
+  // Set while Select-all is fetching the full pool via onFetchAllForSelectAll,
+  // so we can show a spinner on the pill and prevent double-clicks racing.
+  const [selectAllLoading, setSelectAllLoading] = useState(false);
   // Tracks WHICH query produced the current live suggestions. Without the
   // `query` marker the previous search's results linger and get shown
   // (unfiltered) whenever the user starts typing a new query — that's the
@@ -321,9 +325,6 @@ function ChipInput({
     onChange([...values, value]);
     setDraft("");
     setPending(new Set());
-    // Adding a specific title contradicts "all titles" mode — flip the flag
-    // off so the pill goes back to unchecked. No-op in "select" mode.
-    setUserChoseAll(false);
   }
 
   function togglePending(suggestion: string) {
@@ -349,7 +350,6 @@ function ChipInput({
     onChange([...values, ...toAdd]);
     setDraft("");
     setPending(new Set());
-    setUserChoseAll(false);
     // Reset the caret / popover explicitly. Without this the input keeps
     // focus and holds the old (now-committed) draft in state briefly, so
     // typing more characters produces the same query string as before —
@@ -388,13 +388,14 @@ function ChipInput({
       return s.toLowerCase().includes(draftTrimmed.toLowerCase());
     });
 
-  // The pool "Select all" operates over in "select" mode — every distinct
-  // suggestion this input knows about (static + live + parent-provided),
-  // regardless of the current draft filter. Dedup case-insensitively so a
-  // static "Fleet Manager" and a live "fleet manager" don't both count.
-  //
-  // In "clear-any" mode the pool is meaningless (the button just empties
-  // `values`), but we still compute it so the pill can show a total.
+  // The pool Select-all operates over — every distinct suggestion this input
+  // already knows about (curated + live-typed + parent-provided), regardless
+  // of the current draft filter. When `onFetchAllForSelectAll` is provided,
+  // that pool is a MINIMUM: the click also fetches the full universe from
+  // Apollo and merges it in, so a fresh page load (where the pool is just
+  // the 17 fallback titles) still fills the field with everything Apollo has
+  // at these companies. Dedup case-insensitively so "Fleet Manager" (static)
+  // and "fleet manager" (live) don't both count.
   const selectAllPool = (() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -409,42 +410,53 @@ function ChipInput({
     return out;
   })();
   const allSelected =
-    selectAllMode === "clear-any"
-      ? // Only reflect "all titles" when the user has actively toggled it, not
-        // just because the field happens to be empty on first paint.
-        userChoseAll && values.length === 0
-      : selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
+    selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
 
-  function toggleSelectAll() {
-    if (selectAllMode === "clear-any") {
-      // Toggle: turning it ON clears any typed values and marks the
-      // "all titles" mode explicit. Turning it OFF just drops the flag —
-      // there's nothing to remove because `values` is already empty when
-      // "all" is on.
-      if (userChoseAll) {
-        setUserChoseAll(false);
-      } else {
-        if (values.length > 0) onChange([]);
-        setUserChoseAll(true);
-      }
+  async function toggleSelectAll() {
+    if (allSelected) {
+      // Deselect: remove every pool entry from the committed values. No fetch
+      // needed — we're only touching what's already in view.
+      const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
+      onChange(values.filter((v) => !poolKeys.has(v.toLowerCase())));
       setPending(new Set());
       return;
     }
-    if (allSelected) {
-      // Remove every pool entry from the committed values.
-      const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
-      onChange(values.filter((v) => !poolKeys.has(v.toLowerCase())));
-    } else {
-      const seen = new Set(values.map((v) => v.toLowerCase()));
-      const toAdd: string[] = [];
-      for (const s of selectAllPool) {
-        const key = s.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        toAdd.push(s);
+
+    // Select: start from the local pool, then (if the caller supplied a
+    // fetcher) enrich with the full Apollo universe before committing. The
+    // fetch is awaited so the user sees the chip field fill up in one
+    // atomic write — not "17 static, then 50 more a moment later".
+    let fullPool = selectAllPool;
+    if (onFetchAllForSelectAll) {
+      setSelectAllLoading(true);
+      try {
+        const fetched = await onFetchAllForSelectAll();
+        const seen = new Set(selectAllPool.map((s) => s.toLowerCase()));
+        for (const item of fetched) {
+          const trimmed = item.trim();
+          if (!trimmed) continue;
+          const key = trimmed.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          fullPool = [...fullPool, trimmed];
+        }
+      } catch {
+        // Fetch failure falls back to whatever's in the local pool — better
+        // to add SOMETHING than to swallow the click silently.
+      } finally {
+        setSelectAllLoading(false);
       }
-      if (toAdd.length > 0) onChange([...values, ...toAdd]);
     }
+
+    const seen = new Set(values.map((v) => v.toLowerCase()));
+    const toAdd: string[] = [];
+    for (const s of fullPool) {
+      const key = s.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      toAdd.push(s);
+    }
+    if (toAdd.length > 0) onChange([...values, ...toAdd]);
     setPending(new Set());
   }
 
@@ -517,33 +529,37 @@ function ChipInput({
                              list is currently empty).
                 select     → toggles the entire known pool (curated + live +
                              parent-provided suggestions) into `values`. */}
-          {selectAllMode === "clear-any" || selectAllPool.length > 0 ? (
+          {selectAllPool.length > 0 || onFetchAllForSelectAll ? (
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
               <label
                 onMouseDown={(event) => event.preventDefault()}
-                className="flex cursor-pointer items-center gap-2 text-slate-600 dark:text-white/70"
+                className={`flex items-center gap-2 text-slate-600 dark:text-white/70 ${
+                  selectAllLoading ? "cursor-progress" : "cursor-pointer"
+                }`}
               >
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    toggleSelectAll();
-                  }}
-                  readOnly
-                  className="h-3.5 w-3.5 rounded border-slate-300 text-ocean"
-                />
+                {selectAllLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-ocean" />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      if (!selectAllLoading) void toggleSelectAll();
+                    }}
+                    readOnly
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean"
+                  />
+                )}
                 <span className="font-semibold uppercase tracking-wide">
-                  {selectAllMode === "clear-any"
-                    ? allSelected
-                      ? "All titles (Apollo default)"
-                      : "Select all — every title at these companies"
+                  {selectAllLoading
+                    ? "Loading every title…"
                     : allSelected
                       ? "Deselect all"
                       : "Select all"}
                 </span>
               </label>
-              {selectAllMode === "select" ? (
+              {!selectAllLoading && selectAllPool.length > 0 ? (
                 <span className="text-slate-400 dark:text-white/40">
                   {selectAllPool.length} total
                 </span>

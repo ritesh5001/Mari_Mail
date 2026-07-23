@@ -1232,6 +1232,61 @@ export function CampaignByRolePanel({
     [listId, vesselKey],
   );
 
+  // Select-all loaders. Both hit the same list-scoped Apollo search endpoint
+  // with no query, then return every distinct title / company Apollo knows
+  // about at these vessels' companies. The result is used to bulk-populate
+  // the Include-titles / Include-companies chip fields. Empty on failure —
+  // the caller falls back to the local pool.
+  const fetchAllTitles = useCallback(async (): Promise<string[]> => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      for (const id of vesselIds ?? []) params.append("vesselId", id);
+      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      if (!res.ok) return [];
+      const payload = (await res.json()) as ApolloListResponse;
+      const histogram = payload.data?.titleHistogram ?? [];
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const entry of histogram) {
+        const key = entry.title.trim();
+        if (!key) continue;
+        const lower = key.toLowerCase();
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        out.push(key);
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }, [listId, vesselKey]);
+
+  const fetchAllCompanies = useCallback(async (): Promise<string[]> => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      for (const id of vesselIds ?? []) params.append("vesselId", id);
+      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      if (!res.ok) return [];
+      const payload = (await res.json()) as ApolloListResponse;
+      const rows = payload.data?.rows ?? [];
+      const seen = new Set<string>();
+      const out: string[] = [];
+      for (const row of rows) {
+        const key = (row.companyName ?? "").trim();
+        if (!key) continue;
+        const lower = key.toLowerCase();
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        out.push(key);
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }, [listId, vesselKey]);
+
   return (
     <div className="space-y-4">
       {/* Credit balance banner. Rendered above the filter so the user can
@@ -1265,6 +1320,8 @@ export function CampaignByRolePanel({
         suggestionsFromResults={suggestionsFromResults}
         companySuggestionsFromResults={companySuggestionsFromResults}
         fetchTitleSuggestions={fetchTitleSuggestions}
+        fetchAllTitles={fetchAllTitles}
+        fetchAllCompanies={fetchAllCompanies}
         disabled={state.status === "loading"}
       />
 
