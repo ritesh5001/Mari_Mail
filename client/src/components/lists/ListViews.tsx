@@ -775,6 +775,8 @@ function buildRoleQuery(filter: RoleFilter, vesselIds?: string[]): URLSearchPara
   const params = new URLSearchParams();
   for (const t of filter.includeTitles) params.append("includeTitle", t);
   for (const t of filter.excludeTitles) params.append("excludeTitle", t);
+  for (const c of filter.includeCompanies) params.append("includeCompany", c);
+  for (const c of filter.excludeCompanies) params.append("excludeCompany", c);
   for (const s of filter.seniorities) params.append("seniority", s);
   // Scopes the Apollo search (and the title suggestions built from it) to just
   // these vessels' companies. Omitted = every vessel on the list.
@@ -786,6 +788,8 @@ function summarizeFilter(filter: RoleFilter): string {
   const parts: string[] = [];
   if (filter.includeTitles.length) parts.push(`include: ${filter.includeTitles.join(", ")}`);
   if (filter.excludeTitles.length) parts.push(`exclude: ${filter.excludeTitles.join(", ")}`);
+  if (filter.includeCompanies.length) parts.push(`at: ${filter.includeCompanies.join(", ")}`);
+  if (filter.excludeCompanies.length) parts.push(`not at: ${filter.excludeCompanies.join(", ")}`);
   if (filter.seniorities.length) parts.push(`seniority: ${filter.seniorities.join(", ")}`);
   return parts.join(" · ") || "any role";
 }
@@ -1008,7 +1012,11 @@ export function CampaignByRolePanel({
   // no facets means no meaningful Apollo query.
   useEffect(() => {
     const hasFacets =
-      filter.includeTitles.length > 0 || filter.excludeTitles.length > 0 || filter.seniorities.length > 0;
+      filter.includeTitles.length > 0 ||
+      filter.excludeTitles.length > 0 ||
+      filter.includeCompanies.length > 0 ||
+      filter.excludeCompanies.length > 0 ||
+      filter.seniorities.length > 0;
     if (!hasFacets) {
       setState({ status: "idle" });
       setSelected(new Set());
@@ -1017,7 +1025,11 @@ export function CampaignByRolePanel({
 
   async function runSearch(active: RoleFilter) {
     const hasFacets =
-      active.includeTitles.length > 0 || active.excludeTitles.length > 0 || active.seniorities.length > 0;
+      active.includeTitles.length > 0 ||
+      active.excludeTitles.length > 0 ||
+      active.includeCompanies.length > 0 ||
+      active.excludeCompanies.length > 0 ||
+      active.seniorities.length > 0;
     if (!hasFacets) {
       setState({ status: "idle" });
       return;
@@ -1159,6 +1171,18 @@ export function CampaignByRolePanel({
         ),
       )
     : [];
+  // Distinct company names from the latest results, feeding the include /
+  // exclude company autocomplete. Sorted by first appearance so the most-
+  // frequent companies from the top of the result set surface first.
+  const companySuggestionsFromResults = loaded
+    ? Array.from(
+        new Set(
+          loaded.allRows
+            .map((r) => (r.companyName ?? "").trim())
+            .filter((c): c is string => Boolean(c)),
+        ),
+      )
+    : [];
 
   // Live title lookups for the Include-titles chip input. Reuses the same
   // list-scoped search endpoint the main "Search" button uses — server
@@ -1241,6 +1265,7 @@ export function CampaignByRolePanel({
         onChange={setFilter}
         onApply={() => void runSearch(filter)}
         suggestionsFromResults={suggestionsFromResults}
+        companySuggestionsFromResults={companySuggestionsFromResults}
         fetchTitleSuggestions={fetchTitleSuggestions}
         disabled={state.status === "loading"}
       />

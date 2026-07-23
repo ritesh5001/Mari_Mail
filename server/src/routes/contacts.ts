@@ -838,9 +838,25 @@ contactRouter.get("/external-by-list/:listId", requireAuth, async (req, res, nex
       .flatMap((val) => (Array.isArray(val) ? val : [val]));
     const requestedTitles = new Set(requestedTitlesRaw.filter(Boolean));
 
-    const filteredRows = requestedTitles.size > 0
-      ? apolloRows.filter((row) => row.title && requestedTitles.has(row.title))
-      : apolloRows;
+    // Company-name filters run AFTER Apollo returns. Apollo doesn't expose an
+    // "exclude company name" query parameter, so we filter here on the row's
+    // reported `companyName`. Case-insensitive substring match — a chip like
+    // "V.Group" catches "V.Group Ltd", "V.Group India", etc.
+    const includeCompanies = readList(req.query.includeCompany).map((c) => c.toLowerCase());
+    const excludeCompanies = readList(req.query.excludeCompany).map((c) => c.toLowerCase());
+    const matchesCompany = (name: string | null | undefined, needles: string[]) => {
+      if (needles.length === 0) return false;
+      const n = (name ?? "").toLowerCase();
+      if (!n) return false;
+      return needles.some((needle) => n.includes(needle));
+    };
+
+    const filteredRows = apolloRows.filter((row) => {
+      if (requestedTitles.size > 0 && (!row.title || !requestedTitles.has(row.title))) return false;
+      if (includeCompanies.length > 0 && !matchesCompany(row.companyName, includeCompanies)) return false;
+      if (excludeCompanies.length > 0 && matchesCompany(row.companyName, excludeCompanies)) return false;
+      return true;
+    });
 
     // Every row's vessels are already known from the domain whose search
     // returned it (see the per-domain loop above), so this is just a lookup.

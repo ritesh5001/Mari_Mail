@@ -11,6 +11,8 @@ import { Filter, Loader2, Search, X } from "lucide-react";
 export type RoleFilter = {
   includeTitles: string[];
   excludeTitles: string[];
+  includeCompanies: string[];
+  excludeCompanies: string[];
   seniorities: string[];
 };
 
@@ -20,6 +22,8 @@ type SuggestFn = (draft: string) => Promise<string[]>;
 export const EMPTY_ROLE_FILTER: RoleFilter = {
   includeTitles: [],
   excludeTitles: [],
+  includeCompanies: [],
+  excludeCompanies: [],
   seniorities: [],
 };
 
@@ -65,7 +69,9 @@ export function RoleFilterPanel({
   onChange,
   onApply,
   suggestionsFromResults,
+  companySuggestionsFromResults,
   fetchTitleSuggestions,
+  fetchCompanySuggestions,
   disabled,
 }: {
   value: RoleFilter;
@@ -74,13 +80,23 @@ export function RoleFilterPanel({
   // Titles that showed up in the last set of results — merged into the
   // dropdown so the user can pick a title they just saw instead of guessing.
   suggestionsFromResults?: string[];
+  // Same idea for companies — feed distinct company names from the latest
+  // Apollo rows so the exclude/include-company pickers show real matches.
+  companySuggestionsFromResults?: string[];
   // Live-suggestions loader for the include-title input. Called with the
   // typed draft (debounced by the ChipInput) — return top-N matching titles.
   fetchTitleSuggestions?: SuggestFn;
+  // Live-suggestions loader for the company pickers. Optional — without it,
+  // suggestions fall back to `companySuggestionsFromResults` filtered locally.
+  fetchCompanySuggestions?: SuggestFn;
   disabled?: boolean;
 }) {
   const totalActive =
-    value.includeTitles.length + value.excludeTitles.length + value.seniorities.length;
+    value.includeTitles.length +
+    value.excludeTitles.length +
+    value.includeCompanies.length +
+    value.excludeCompanies.length +
+    value.seniorities.length;
 
   function patch(part: Partial<RoleFilter>) {
     onChange({ ...value, ...part });
@@ -125,6 +141,42 @@ export function RoleFilterPanel({
           tone="include"
           disabled={disabled}
         />
+
+        <ChipInput
+          label="Exclude job titles"
+          placeholder="e.g. Intern, Trainee"
+          values={value.excludeTitles}
+          onChange={(next) => patch({ excludeTitles: next })}
+          suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
+          onFetchSuggestions={fetchTitleSuggestions}
+          tone="exclude"
+          disabled={disabled}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <ChipInput
+            label="Include companies"
+            placeholder="e.g. V.Group, Anglo-Eastern"
+            values={value.includeCompanies}
+            onChange={(next) => patch({ includeCompanies: next })}
+            suggestions={companySuggestionsFromResults ?? []}
+            onFetchSuggestions={fetchCompanySuggestions}
+            tone="include"
+            disabled={disabled}
+            emptyHint="Type a company name to filter results."
+          />
+          <ChipInput
+            label="Exclude companies"
+            placeholder="e.g. Third-party surveyors"
+            values={value.excludeCompanies}
+            onChange={(next) => patch({ excludeCompanies: next })}
+            suggestions={companySuggestionsFromResults ?? []}
+            onFetchSuggestions={fetchCompanySuggestions}
+            tone="exclude"
+            disabled={disabled}
+            emptyHint="Type a company name to hide its rows."
+          />
+        </div>
 
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
@@ -199,6 +251,7 @@ function ChipInput({
   onFetchSuggestions,
   tone,
   disabled,
+  emptyHint,
 }: {
   label: string;
   placeholder: string;
@@ -208,6 +261,8 @@ function ChipInput({
   onFetchSuggestions?: SuggestFn;
   tone: "include" | "exclude";
   disabled?: boolean;
+  /** Text shown in the empty-state slot (draft empty, no suggestions yet). */
+  emptyHint?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
@@ -332,6 +387,45 @@ function ChipInput({
       return s.toLowerCase().includes(draftTrimmed.toLowerCase());
     });
 
+  // The pool "Select all" operates over — every distinct suggestion this input
+  // knows about (static + live + parent-provided), regardless of the current
+  // draft filter. Dedup case-insensitively so a static "Fleet Manager" and a
+  // live "fleet manager" don't both count.
+  const selectAllPool = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const s of [...suggestions, ...liveSuggestions.items]) {
+      const trimmed = s.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(trimmed);
+    }
+    return out;
+  })();
+  const allSelected =
+    selectAllPool.length > 0 && selectAllPool.every((s) => chosen.has(s.toLowerCase()));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      // Remove every pool entry from the committed values.
+      const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
+      onChange(values.filter((v) => !poolKeys.has(v.toLowerCase())));
+    } else {
+      const seen = new Set(values.map((v) => v.toLowerCase()));
+      const toAdd: string[] = [];
+      for (const s of selectAllPool) {
+        const key = s.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        toAdd.push(s);
+      }
+      if (toAdd.length > 0) onChange([...values, ...toAdd]);
+    }
+    setPending(new Set());
+  }
+
   const chipClass =
     tone === "include"
       ? "border-ocean/40 bg-ocean/10 text-ocean"
@@ -395,6 +489,35 @@ function ChipInput({
       </div>
       {focused ? (
         <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
+          {/* Select-all pill — toggles the ENTIRE known pool (curated + live +
+              parent-provided suggestions), not just the currently filtered
+              subset. That's the scope the user picked: one click gets you
+              "every title we've ever heard of at these companies". */}
+          {selectAllPool.length > 0 ? (
+            <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
+              <label
+                onMouseDown={(event) => event.preventDefault()}
+                className="flex cursor-pointer items-center gap-2 text-slate-600 dark:text-white/70"
+              >
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    toggleSelectAll();
+                  }}
+                  readOnly
+                  className="h-3.5 w-3.5 rounded border-slate-300 text-ocean"
+                />
+                <span className="font-semibold uppercase tracking-wide">
+                  {allSelected ? "Deselect all" : "Select all"}
+                </span>
+              </label>
+              <span className="text-slate-400 dark:text-white/40">
+                {selectAllPool.length} total
+              </span>
+            </div>
+          ) : null}
           <div className="flex-1 overflow-y-auto">
             {loadingSuggestions ? (
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500 dark:text-white/60">
@@ -418,7 +541,7 @@ function ChipInput({
                 </button>
               ) : (
                 <p className="px-3 py-2 text-xs text-slate-400 dark:text-white/40">
-                  Start typing to see live title suggestions.
+                  {emptyHint ?? "Start typing to see live title suggestions."}
                 </p>
               )
             ) : (
