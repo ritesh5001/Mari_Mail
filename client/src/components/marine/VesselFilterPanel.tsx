@@ -58,6 +58,31 @@ type FilterState = {
    * the old Missed Opportunities tab for any window the user cares about.
    */
   noCampaign: boolean;
+
+  // --- Extended fields (matches server whitelist in buildVesselFilterClauses) ---
+  // Identity
+  mmsi: string;
+  callsign: string;
+  // Size / capacity
+  netTonMin: string;
+  netTonMax: string;
+  teuMin: string;
+  teuMax: string;
+  beamMin: string;
+  beamMax: string;
+  // AIS / position
+  globalArea: string;
+  navStatus: string;
+  currentPortCountry: string;
+  // Extended ownership / management
+  registeredOwner: string;
+  beneficialOwner: string;
+  technicalManager: string;
+  pAndIClub: string;
+  // Builders & class
+  classSociety: string;
+  shipBuilder: string;
+  engineBuilder: string;
 };
 
 function str(value: string | string[] | undefined): string {
@@ -105,6 +130,25 @@ function searchParamsToState(sp: SearchParams): FilterState {
     hasMmsi: isTrue(sp.hasMmsi),
     hasEmail: isTrue(sp.hasEmail),
     noCampaign: isTrue(sp.noCampaign),
+
+    mmsi: str(sp.mmsi),
+    callsign: str(sp.callsign),
+    netTonMin: str(sp.netTonMin),
+    netTonMax: str(sp.netTonMax),
+    teuMin: str(sp.teuMin),
+    teuMax: str(sp.teuMax),
+    beamMin: str(sp.beamMin),
+    beamMax: str(sp.beamMax),
+    globalArea: str(sp.globalArea),
+    navStatus: str(sp.navStatus),
+    currentPortCountry: str(sp.currentPortCountry),
+    registeredOwner: str(sp.registeredOwner),
+    beneficialOwner: str(sp.beneficialOwner),
+    technicalManager: str(sp.technicalManager),
+    pAndIClub: str(sp.pAndIClub),
+    classSociety: str(sp.classSociety),
+    shipBuilder: str(sp.shipBuilder),
+    engineBuilder: str(sp.engineBuilder),
   };
 }
 
@@ -145,6 +189,25 @@ function stateToParams(state: FilterState): URLSearchParams {
   if (state.hasMmsi) params.set("hasMmsi", "1");
   if (state.hasEmail) params.set("hasEmail", "1");
   if (state.noCampaign) params.set("noCampaign", "1");
+
+  setStr("mmsi", state.mmsi);
+  setStr("callsign", state.callsign);
+  setStr("netTonMin", state.netTonMin);
+  setStr("netTonMax", state.netTonMax);
+  setStr("teuMin", state.teuMin);
+  setStr("teuMax", state.teuMax);
+  setStr("beamMin", state.beamMin);
+  setStr("beamMax", state.beamMax);
+  setStr("globalArea", state.globalArea);
+  setStr("navStatus", state.navStatus);
+  setStr("currentPortCountry", state.currentPortCountry);
+  setStr("registeredOwner", state.registeredOwner);
+  setStr("beneficialOwner", state.beneficialOwner);
+  setStr("technicalManager", state.technicalManager);
+  setStr("pAndIClub", state.pAndIClub);
+  setStr("classSociety", state.classSociety);
+  setStr("shipBuilder", state.shipBuilder);
+  setStr("engineBuilder", state.engineBuilder);
   return params;
 }
 
@@ -173,6 +236,22 @@ function countActive(state: FilterState): number {
   if (state.hasMmsi) n++;
   if (state.hasEmail) n++;
   if (state.noCampaign) n++;
+
+  if (state.mmsi.trim()) n++;
+  if (state.callsign.trim()) n++;
+  if (state.netTonMin.trim() || state.netTonMax.trim()) n++;
+  if (state.teuMin.trim() || state.teuMax.trim()) n++;
+  if (state.beamMin.trim() || state.beamMax.trim()) n++;
+  if (state.globalArea.trim()) n++;
+  if (state.navStatus.trim()) n++;
+  if (state.currentPortCountry.trim()) n++;
+  if (state.registeredOwner.trim()) n++;
+  if (state.beneficialOwner.trim()) n++;
+  if (state.technicalManager.trim()) n++;
+  if (state.pAndIClub.trim()) n++;
+  if (state.classSociety.trim()) n++;
+  if (state.shipBuilder.trim()) n++;
+  if (state.engineBuilder.trim()) n++;
   return n;
 }
 
@@ -440,15 +519,35 @@ export function VesselFilterPanel({
   const sizeCount =
     (state.dwtMin || state.dwtMax ? 1 : 0) +
     (state.gtMin || state.gtMax ? 1 : 0) +
+    (state.netTonMin || state.netTonMax ? 1 : 0) +
     (state.builtMin || state.builtMax ? 1 : 0) +
-    (state.loaMin || state.loaMax ? 1 : 0);
+    (state.loaMin || state.loaMax ? 1 : 0) +
+    (state.beamMin || state.beamMax ? 1 : 0) +
+    (state.teuMin || state.teuMax ? 1 : 0);
   const ownerCount =
     (state.owner.trim() ? 1 : 0) +
+    (state.registeredOwner.trim() ? 1 : 0) +
+    (state.beneficialOwner.trim() ? 1 : 0) +
     (state.manager.trim() ? 1 : 0) +
+    (state.technicalManager.trim() ? 1 : 0) +
     (state.operator.trim() ? 1 : 0);
-  const cargoCount = (state.market.trim() ? 1 : 0) + (state.sizeClass.trim() ? 1 : 0);
+  const cargoCount =
+    (state.market.trim() ? 1 : 0) +
+    (state.sizeClass.trim() ? 1 : 0) +
+    (state.pAndIClub.trim() ? 1 : 0);
   const qualityCount = (state.verified ? 1 : 0) + (state.hasMmsi ? 1 : 0) + (state.hasEmail ? 1 : 0);
-  const identityCount = state.flag.trim() ? 1 : 0;
+  const identityCount =
+    (state.flag.trim() ? 1 : 0) +
+    (state.mmsi.trim() ? 1 : 0) +
+    (state.callsign.trim() ? 1 : 0);
+  const aisCount =
+    (state.globalArea.trim() ? 1 : 0) +
+    (state.navStatus.trim() ? 1 : 0) +
+    (state.currentPortCountry.trim() ? 1 : 0);
+  const buildersCount =
+    (state.classSociety.trim() ? 1 : 0) +
+    (state.shipBuilder.trim() ? 1 : 0) +
+    (state.engineBuilder.trim() ? 1 : 0);
 
   const etaVoyageBody = (
     <>
@@ -666,13 +765,35 @@ export function VesselFilterPanel({
 
   const identityBody = (
     <>
-      <input
-        value={state.flag}
-        onChange={(e) => patch({ flag: e.target.value.toUpperCase() })}
-        placeholder="Flag states, e.g. LR, PA, MH"
-        className={`${inputClass} uppercase`}
-      />
-      <p className="text-xs text-slate-400 dark:text-white/35">Comma-separate multiple flag codes.</p>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Flag states</p>
+        <input
+          value={state.flag}
+          onChange={(e) => patch({ flag: e.target.value.toUpperCase() })}
+          placeholder="Flag states, e.g. LR, PA, MH"
+          className={`${inputClass} uppercase`}
+        />
+        <p className="text-xs text-slate-400 dark:text-white/35">Comma-separate multiple flag codes.</p>
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">MMSI</p>
+        <input
+          value={state.mmsi}
+          onChange={(e) => patch({ mmsi: e.target.value })}
+          placeholder="e.g. 636000123"
+          inputMode="numeric"
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Callsign</p>
+        <input
+          value={state.callsign}
+          onChange={(e) => patch({ callsign: e.target.value.toUpperCase() })}
+          placeholder="e.g. 9V1234"
+          className={`${inputClass} uppercase`}
+        />
+      </div>
     </>
   );
 
@@ -699,15 +820,21 @@ export function VesselFilterPanel({
     <>
       <RangeRow label="DWT" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
       <RangeRow label="Gross tonnage" min={state.gtMin} max={state.gtMax} onMin={(v) => patch({ gtMin: v })} onMax={(v) => patch({ gtMax: v })} />
+      <RangeRow label="Net tonnage" min={state.netTonMin} max={state.netTonMax} onMin={(v) => patch({ netTonMin: v })} onMax={(v) => patch({ netTonMax: v })} />
       <RangeRow label="Built year" min={state.builtMin} max={state.builtMax} onMin={(v) => patch({ builtMin: v })} onMax={(v) => patch({ builtMax: v })} />
       <RangeRow label="Length (LOA)" min={state.loaMin} max={state.loaMax} onMin={(v) => patch({ loaMin: v })} onMax={(v) => patch({ loaMax: v })} />
+      <RangeRow label="Beam (m)" min={state.beamMin} max={state.beamMax} onMin={(v) => patch({ beamMin: v })} onMax={(v) => patch({ beamMax: v })} />
+      <RangeRow label="TEU" min={state.teuMin} max={state.teuMax} onMin={(v) => patch({ teuMin: v })} onMax={(v) => patch({ teuMax: v })} />
     </>
   );
 
   const ownerBody = (
     <>
       <input value={state.owner} onChange={(e) => patch({ owner: e.target.value })} placeholder="Owner (registered / beneficial / company)" className={inputClass} />
+      <input value={state.registeredOwner} onChange={(e) => patch({ registeredOwner: e.target.value })} placeholder="Registered owner (specific)" className={inputClass} />
+      <input value={state.beneficialOwner} onChange={(e) => patch({ beneficialOwner: e.target.value })} placeholder="Beneficial owner (specific)" className={inputClass} />
       <input value={state.manager} onChange={(e) => patch({ manager: e.target.value })} placeholder="Manager (ISM / commercial / technical)" className={inputClass} />
+      <input value={state.technicalManager} onChange={(e) => patch({ technicalManager: e.target.value })} placeholder="Technical manager (specific)" className={inputClass} />
       <input value={state.operator} onChange={(e) => patch({ operator: e.target.value })} placeholder="Operator" className={inputClass} />
     </>
   );
@@ -724,6 +851,67 @@ export function VesselFilterPanel({
         value={state.sizeClass}
         onChange={(e) => patch({ sizeClass: e.target.value })}
         placeholder="Size class, e.g. Aframax, Panamax"
+        className={inputClass}
+      />
+      <input
+        value={state.pAndIClub}
+        onChange={(e) => patch({ pAndIClub: e.target.value })}
+        placeholder="P&I Club, e.g. Gard, UK P&I"
+        className={inputClass}
+      />
+    </>
+  );
+
+  const aisBody = (
+    <>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Global area</p>
+        <input
+          value={state.globalArea}
+          onChange={(e) => patch({ globalArea: e.target.value })}
+          placeholder="e.g. Arabian Gulf, Persian Gulf"
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Navigational status</p>
+        <input
+          value={state.navStatus}
+          onChange={(e) => patch({ navStatus: e.target.value })}
+          placeholder="e.g. Under way, At anchor"
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-white/45">Current port country</p>
+        <input
+          value={state.currentPortCountry}
+          onChange={(e) => patch({ currentPortCountry: e.target.value })}
+          placeholder="e.g. Singapore"
+          className={inputClass}
+        />
+      </div>
+    </>
+  );
+
+  const buildersBody = (
+    <>
+      <input
+        value={state.classSociety}
+        onChange={(e) => patch({ classSociety: e.target.value })}
+        placeholder="Class society, e.g. Lloyd's Register, DNV"
+        className={inputClass}
+      />
+      <input
+        value={state.shipBuilder}
+        onChange={(e) => patch({ shipBuilder: e.target.value })}
+        placeholder="Ship builder, e.g. Hyundai HI, Samsung HI"
+        className={inputClass}
+      />
+      <input
+        value={state.engineBuilder}
+        onChange={(e) => patch({ engineBuilder: e.target.value })}
+        placeholder="Engine builder, e.g. MAN, Wärtsilä"
         className={inputClass}
       />
     </>
@@ -767,7 +955,9 @@ export function VesselFilterPanel({
     { key: "identity", title: "Identity", count: identityCount, body: identityBody },
     { key: "status", title: "Status", count: state.status.length, body: statusBody },
     { key: "size", title: "Size & specs", count: sizeCount, body: sizeSpecsBody },
+    { key: "ais", title: "AIS & position", count: aisCount, body: aisBody },
     { key: "owner", title: "Owner & manager", count: ownerCount, body: ownerBody },
+    { key: "builders", title: "Builders & class", count: buildersCount, body: buildersBody },
     { key: "cargo", title: "Cargo & market", count: cargoCount, body: cargoBody },
     { key: "quality", title: "Data quality", count: qualityCount, body: qualityBody },
   ];

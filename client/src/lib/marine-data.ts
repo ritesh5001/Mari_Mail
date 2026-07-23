@@ -106,6 +106,68 @@ export function buildVesselFilterClauses(searchParams: SearchParams): Prisma.Ves
   const operator = str(searchParams.operator);
   if (operator) clauses.push({ operatorName: { contains: operator, mode: "insensitive" } });
 
+  // Identity — exact-ish match on AIS identifiers. MMSI / callsign are short
+  // codes users copy-paste, so `contains` is closer to what they mean than
+  // strict equality (a leading zero mis-paste still hits).
+  const mmsi = str(searchParams.mmsi);
+  if (mmsi) clauses.push({ mmsi: { contains: mmsi, mode: "insensitive" } });
+  const callsign = str(searchParams.callsign);
+  if (callsign) clauses.push({ callsign: { contains: callsign, mode: "insensitive" } });
+
+  // Size / capacity — extra ranges beyond DWT/GT/Built/LOA already handled above.
+  const netTonnage = rangeWhere(searchParams.netTonMin, searchParams.netTonMax);
+  if (netTonnage) clauses.push({ netTonnage });
+  const teu = rangeWhere(searchParams.teuMin, searchParams.teuMax);
+  if (teu) clauses.push({ capacityTeu: teu });
+  const beam = rangeWhere(searchParams.beamMin, searchParams.beamMax);
+  if (beam) {
+    // Beam is stored in two overlapping columns depending on source dataset.
+    // Match either — the vessel is one physical ship, so a match on either
+    // column is a real match.
+    clauses.push({ OR: [{ width: beam }, { breadth: beam }] });
+  }
+
+  // AIS / position context — free-text on the fields Port Radar surfaces.
+  const globalArea = str(searchParams.globalArea);
+  if (globalArea) clauses.push({ globalArea: { contains: globalArea, mode: "insensitive" } });
+  const navStatus = str(searchParams.navStatus);
+  if (navStatus) clauses.push({ navigationalStatus: { contains: navStatus, mode: "insensitive" } });
+  const currentPortCountry = str(searchParams.currentPortCountry);
+  if (currentPortCountry) {
+    clauses.push({ currentPortCountry: { contains: currentPortCountry, mode: "insensitive" } });
+  }
+
+  // Ownership / management — extra parties beyond the existing owner/manager
+  // pair. Each is a free-text substring — same shape as `owner`/`manager`.
+  const registeredOwner = str(searchParams.registeredOwner);
+  if (registeredOwner) {
+    clauses.push({ registeredOwnerName: { contains: registeredOwner, mode: "insensitive" } });
+  }
+  const beneficialOwner = str(searchParams.beneficialOwner);
+  if (beneficialOwner) {
+    clauses.push({ beneficialOwnerName: { contains: beneficialOwner, mode: "insensitive" } });
+  }
+  const technicalManager = str(searchParams.technicalManager);
+  if (technicalManager) {
+    clauses.push({ technicalManagerName: { contains: technicalManager, mode: "insensitive" } });
+  }
+  const pAndIClub = str(searchParams.pAndIClub);
+  if (pAndIClub) clauses.push({ pAndIClubName: { contains: pAndIClub, mode: "insensitive" } });
+
+  // Builders & class — free-text on the fields the classification / build data.
+  const classSociety = str(searchParams.classSociety);
+  if (classSociety) {
+    clauses.push({ classSocietyName: { contains: classSociety, mode: "insensitive" } });
+  }
+  const shipBuilder = str(searchParams.shipBuilder);
+  if (shipBuilder) {
+    clauses.push({ shipBuilderName: { contains: shipBuilder, mode: "insensitive" } });
+  }
+  const engineBuilder = str(searchParams.engineBuilder);
+  if (engineBuilder) {
+    clauses.push({ engineBuilderName: { contains: engineBuilder, mode: "insensitive" } });
+  }
+
   // --- ETA & voyage filters (applied to upcoming ETAs only) ---
   const now = new Date();
   const etaConditions: Prisma.VesselETAWhereInput[] = [{ eta: { gte: now } }];
