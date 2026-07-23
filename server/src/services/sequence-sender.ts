@@ -21,6 +21,7 @@ import {
   resolveFromAddress,
 } from "./email-account.service.js";
 import { getToken, incrementToken } from "./token-store.js";
+import { nextSendSlot } from "./campaign-manual-scheduler.js";
 
 /**
  * Shared sending core used by BOTH the ETA-triggered worker and the manual
@@ -243,10 +244,59 @@ type CampaignSendFields = Pick<
   | "trackOpens"
   | "trackClicks"
   | "dailyLimit"
+  // Sending window — needed so a job that hits a daily cap can be deferred
+  // to the next allowed slot instead of being marked FAILED. Every Campaign
+  // row has these (Prisma defaults: [1..5], 9, 17, "UTC"), so pulling them
+  // through doesn't require a schema change.
+  | "scheduleDays"
+  | "scheduleHourStart"
+  | "scheduleHourEnd"
+  | "timezone"
 >;
 
 function campaignDailyCounterKey(campaignId: string) {
   return `campaign:${campaignId}:sent:${new Date().toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Milliseconds from `now` until the start of the next calendar day at UTC
+ * midnight. Used when either the campaign's daily counter OR the chosen
+ * inbox's daily counter is already at its cap — the daily counters
+ * (`campaign:*:sent:YYYY-MM-DD` and `inbox:*:sent:YYYY-MM-DD`) roll over at
+ * UTC-00:00, so deferring the job past that boundary is what "try again
+ * tomorrow" actually means for the counters. We add a 60s cushion so the
+ * clock is unambiguously past the boundary when the worker re-fires.
+ */
+function msUntilNextUtcDay(from: number): number {
+  const d = new Date(from);
+  const tomorrow = Date.UTC(
+    d.getUTCFullYear(),
+    d.getUTCMonth(),
+    d.getUTCDate() + 1,
+    0,
+    0,
+    60,
+  );
+  return Math.max(60_000, tomorrow - from);
+}
+
+/**
+ * Compute the retry delay for a job whose campaign or chosen inbox is at
+ * its per-day cap. First rolls the clock to just past UTC midnight (so
+ * counters reset), then honours the campaign's allowed weekdays + sending
+ * hour window (so e.g. a weekend-off campaign doesn't fire at Saturday
+ * 00:01). `nextSendSlot` is the same helper the manual scheduler uses at
+ * enrolment, so scheduling stays consistent across code paths.
+ */
+function retryAfterMsForDailyCap(now: number, campaign: CampaignSendFields): number {
+  const rolloverAt = now + msUntilNextUtcDay(now);
+  const slot = nextSendSlot(new Date(rolloverAt), {
+    scheduleDays: campaign.scheduleDays,
+    hourStart: campaign.scheduleHourStart,
+    hourEnd: campaign.scheduleHourEnd,
+    timeZone: campaign.timezone,
+  });
+  return Math.max(60_000, slot.getTime() - now);
 }
 
 // Picks a fresh random gap (ms) in [min, max] seconds for human-like pacing —
@@ -287,7 +337,16 @@ export async function sendSequenceStep(args: {
     (await getToken(campaignDailyCounterKey(campaign.id))) ?? 0,
   );
   if (campaignSent >= campaign.dailyLimit) {
-    throw new Error("Campaign daily sending limit reached");
+    // Campaign has hit its daily cap. Push to tomorrow's window instead of
+    // marking the contact FAILED. The `reservedSlotAt` from any earlier
+    // gap-reservation for this job is intentionally NOT passed forward —
+    // when we retry tomorrow we want a fresh reservation on whichever inbox
+    // is picked then, not the stale slot from today.
+    return {
+      deferred: true,
+      retryAfterMs: retryAfterMsForDailyCap(Date.now(), campaign),
+      reservedSlotAt: null,
+    } as const;
   }
 
   const inbox = await selectInbox(
@@ -296,7 +355,16 @@ export async function sendSequenceStep(args: {
     campaign.rotationStrategy,
   );
   if (!inbox) {
-    throw new Error("No active sending inbox available");
+    // Every configured inbox is either at its per-inbox daily cap or offline.
+    // Same story as the campaign-cap branch above: defer to tomorrow's
+    // window so the contact keeps its SCHEDULED status and fires when
+    // counters roll over. Marking FAILED here was the source of dropped
+    // contacts in the "70 mails on a 40-cap inbox" scenario.
+    return {
+      deferred: true,
+      retryAfterMs: retryAfterMsForDailyCap(Date.now(), campaign),
+      reservedSlotAt: null,
+    } as const;
   }
 
   // Per-inbox send-gap: enforce at least a randomized [min,max]s cooldown between
