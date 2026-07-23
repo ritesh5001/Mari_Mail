@@ -14,10 +14,10 @@ import {
 import { createSignedToken, randomToken } from "@marimail/utils";
 import {
   buildTransport,
-  getInboxLastSentAt,
   getTodaySent,
   incrementTodaySent,
   markInboxSent,
+  reserveInboxSendSlot,
   resolveFromAddress,
 } from "./email-account.service.js";
 import { getToken, incrementToken } from "./token-store.js";
@@ -272,6 +272,15 @@ export async function sendSequenceStep(args: {
   campaignContactId: string;
   eta?: EtaSendContext | null;
   scheduledFor: string;
+  /**
+   * Reservation slot carried across defers. When present, this job has
+   * already claimed a spot on the target inbox's send queue and the
+   * reservation MUST NOT be re-taken (each re-take advances the counter and
+   * pushes every subsequent worker further out — a runaway seen in the
+   * gap-test simulation). We only wait until `now >= reservedSlotAt` and
+   * then send. Absent → this is the first attempt; run a fresh reservation.
+   */
+  reservedSlotAt?: number | null;
 }) {
   const { campaign, sequence, contact, campaignContactId } = args;
   const campaignSent = Number(
@@ -293,23 +302,37 @@ export async function sendSequenceStep(args: {
   // Per-inbox send-gap: enforce at least a randomized [min,max]s cooldown between
   // two consecutive sends from THIS mailbox. Rotation picks the inbox here at
   // send time, so this send-time lock is the only place that can guarantee the
-  // real spacing regardless of which campaign queued the job. If the chosen
-  // inbox is still cooling down, we defer the job — the worker re-queues it with
-  // the remaining delay rather than sending now or failing.
+  // real spacing regardless of which campaign queued the job.
+  //
+  // Correctness fix: the previous version was a read-then-check-then-send
+  // sequence. When two workers pulled jobs for the same inbox in the same
+  // tick they BOTH read the old lastSentAt, both saw the gap had elapsed,
+  // and both proceeded — producing two mails at the same timestamp. See the
+  // report showing "Hongpeng Liu" and "Gaskell Chan" both sent at 01:08 pm.
+  //
+  // Now we atomically RESERVE the next available slot for this inbox in one
+  // Redis round-trip: the second reservation is forced to sit `gap` seconds
+  // after the first, regardless of how tightly the workers are racing.
+  // `reserveInboxSendSlot` returns the ms-timestamp at which this job may
+  // send. If it's in the future we defer the job to fire again at that time.
   if (inbox.sendGapMinSeconds > 0 || inbox.sendGapMaxSeconds > 0) {
-    const lastSentAt = await getInboxLastSentAt(inbox.id);
-    if (lastSentAt !== null) {
-      const requiredGapMs = randomGapMs(
-        inbox.sendGapMinSeconds,
-        inbox.sendGapMaxSeconds,
-      );
-      const elapsed = Date.now() - lastSentAt;
-      if (elapsed < requiredGapMs) {
-        return {
-          deferred: true,
-          retryAfterMs: requiredGapMs - elapsed,
-        } as const;
-      }
+    let sendAt: number;
+    if (typeof args.reservedSlotAt === "number" && Number.isFinite(args.reservedSlotAt)) {
+      // Retry — reuse the slot the first attempt already claimed. Skipping
+      // reserveInboxSendSlot here is what prevents the "each retry eats
+      // another slot" cascade the initial simulation exposed.
+      sendAt = args.reservedSlotAt;
+    } else {
+      const gapMs = randomGapMs(inbox.sendGapMinSeconds, inbox.sendGapMaxSeconds);
+      sendAt = await reserveInboxSendSlot(inbox.id, gapMs / 1000);
+    }
+    const waitMs = sendAt - Date.now();
+    if (waitMs > 0) {
+      return {
+        deferred: true,
+        retryAfterMs: waitMs,
+        reservedSlotAt: sendAt,
+      } as const;
     }
   }
 

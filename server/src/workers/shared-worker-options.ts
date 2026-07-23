@@ -22,12 +22,13 @@ export async function deferJob(
   job: Job,
   token: string | undefined,
   retryAfterMs: number,
+  extra: Record<string, unknown> = {},
 ): Promise<DelayedError | null> {
   const deferCount = ((job.data?.__deferCount as number) ?? 0) + 1;
   if (deferCount > MAX_DEFERS || !token) {
     return null;
   }
-  await job.updateData({ ...job.data, __deferCount: deferCount });
+  await job.updateData({ ...job.data, ...extra, __deferCount: deferCount });
   await job.moveToDelayed(Date.now() + Math.max(1_000, Math.ceil(retryAfterMs)), token);
   return new DelayedError();
 }

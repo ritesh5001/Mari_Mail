@@ -9,6 +9,9 @@ type EtaStepJob = {
   sequenceStepId: string;
   contactId: string;
   scheduledFor: string;
+  /** Stamped by deferJob when the inbox is cooling down; carries the claimed
+   *  send slot across retries so we don't advance the gap counter each time. */
+  reservedSlotAt?: number;
 };
 
 async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
@@ -81,6 +84,14 @@ async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
   }
 
   try {
+    // Carry a previously-claimed inbox reservation across defers so the
+    // second attempt doesn't consume another slot on the send-gap counter.
+    // Without this the counter runs away under concurrency (proven by the
+    // gap-test simulation).
+    const reservedSlotAt =
+      typeof (job.data as { reservedSlotAt?: number }).reservedSlotAt === "number"
+        ? (job.data as { reservedSlotAt: number }).reservedSlotAt
+        : null;
     const result = await sendSequenceStep({
       campaign: trigger.campaign,
       sequence,
@@ -88,11 +99,14 @@ async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
       campaignContactId: campaignContact.id,
       eta: trigger.vesselEta,
       scheduledFor: job.data.scheduledFor,
+      reservedSlotAt,
     });
     // Chosen inbox is cooling down (per-inbox send gap): re-delay in place so
     // the contact stays SCHEDULED and fires once the gap has elapsed.
     if ("deferred" in result && result.deferred) {
-      const delayed = await deferJob(job, token, result.retryAfterMs);
+      const delayed = await deferJob(job, token, result.retryAfterMs, {
+        reservedSlotAt: result.reservedSlotAt,
+      });
       if (delayed) throw delayed;
       return { deferred: true, giveUp: true };
     }

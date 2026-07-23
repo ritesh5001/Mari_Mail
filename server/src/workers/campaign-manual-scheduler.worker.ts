@@ -62,6 +62,12 @@ async function processManualStep(job: Job<ManualStepJob>, token?: string) {
   }
 
   try {
+    // Same as the ETA worker: on retry, reuse the slot the first attempt
+    // already claimed so we don't consume a fresh gap position each defer.
+    const reservedSlotAt =
+      typeof (job.data as { reservedSlotAt?: number }).reservedSlotAt === "number"
+        ? (job.data as { reservedSlotAt: number }).reservedSlotAt
+        : null;
     const result = await sendSequenceStep({
       campaign,
       sequence,
@@ -69,12 +75,15 @@ async function processManualStep(job: Job<ManualStepJob>, token?: string) {
       campaignContactId: campaignContact.id,
       eta: null,
       scheduledFor: job.data.scheduledFor,
+      reservedSlotAt,
     });
     // The chosen inbox is still cooling down (per-inbox send gap). Re-delay this
     // job in place instead of sending now or failing, so the contact stays
     // SCHEDULED and fires once the gap has elapsed.
     if ("deferred" in result && result.deferred) {
-      const delayed = await deferJob(job, token, result.retryAfterMs);
+      const delayed = await deferJob(job, token, result.retryAfterMs, {
+        reservedSlotAt: result.reservedSlotAt,
+      });
       if (delayed) throw delayed;
       return { deferred: true, giveUp: true };
     }

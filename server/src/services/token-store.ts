@@ -35,6 +35,17 @@ async function getRedis() {
   }
 }
 
+/**
+ * Escape hatch for callers that need to run commands the wrapper helpers
+ * don't expose (Lua eval, MULTI, etc.). Returns null when Redis is disabled
+ * or has been marked unhealthy — callers must handle the in-memory case
+ * themselves. Wrapping unusual commands here keeps the connection-lifecycle
+ * and disable-on-failure logic in one place.
+ */
+export async function getRedisClient() {
+  return getRedis();
+}
+
 export async function checkRedisHealth() {
   const client = await getRedis();
   if (!client) return false;

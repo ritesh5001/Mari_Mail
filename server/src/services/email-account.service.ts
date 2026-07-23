@@ -7,7 +7,7 @@ import {
 } from "@marimail/utils";
 import { google } from "googleapis";
 import nodemailer from "nodemailer";
-import { getToken, incrementToken, setToken } from "./token-store.js";
+import { getRedisClient, getToken, incrementToken, setToken } from "./token-store.js";
 import { buildSesTransport, type SesCredentials } from "./transports/ses.js";
 import {
   buildPostmarkHttpTransport,
@@ -83,6 +83,85 @@ export async function markInboxSent(accountId: string, at = Date.now()) {
   // TTL comfortably longer than any gap (max gap is 86_400s = 24h) so the lock
   // never expires mid-cooldown.
   await setToken(inboxGapKey(accountId), String(at), 25 * 60 * 60);
+}
+
+/**
+ * Key holding this inbox's earliest-next-send timestamp (ms since epoch).
+ * Separate from `inboxGapKey` (last-sent) so reservation state can't be
+ * confused with historical "when did we last send" bookkeeping — a
+ * reservation is a claim on a FUTURE slot, not a record of a past event.
+ */
+function inboxNextSlotKey(accountId: string) {
+  return `inbox:${accountId}:nextSlotAt`;
+}
+
+// In-memory fallback used when Redis is disabled (single-process, dev).
+// Guarded by a simple JS promise chain — same-process concurrency is
+// serialized by the event loop as long as we don't await in the middle of
+// the read-modify-write sequence.
+const memoryNextSlot = new Map<string, number>();
+
+// Atomic Lua reservation for the Redis path. Reads the current nextSlotAt,
+// clamps `max(now, current) + gap` as this job's send time, writes it back,
+// and returns the timestamp the caller may send at. All in one round-trip
+// so two workers observing "the inbox is free" can't both claim the same
+// slot — the second worker's `current` will be the first worker's write.
+const RESERVE_SLOT_LUA = `
+local now = tonumber(ARGV[1])
+local gap = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local existing = tonumber(redis.call('GET', KEYS[1]) or '0')
+local base = math.max(now, existing)
+local slot = base + gap
+redis.call('SET', KEYS[1], slot, 'EX', ttl)
+return tostring(base)
+`;
+
+/**
+ * Reserve the next send slot for this inbox. Returns the timestamp (ms) at
+ * which the caller is authorised to send. If the returned time is > now the
+ * caller must wait (or defer the job) until then; if it's <= now the caller
+ * may send immediately. The gap is added ATOMICALLY so two concurrent
+ * reservations always produce two distinct slots at least `gapSeconds`
+ * apart — this is what fixes the "two mails sent in the same second"
+ * regression the read-then-write pattern couldn't prevent.
+ *
+ * `gapSeconds` is the caller's chosen gap (already randomized between
+ * min/max upstream). Callers that don't need a gap should skip this helper
+ * entirely.
+ */
+export async function reserveInboxSendSlot(accountId: string, gapSeconds: number) {
+  const now = Date.now();
+  const gapMs = Math.max(0, Math.floor(gapSeconds * 1000));
+  const ttlSeconds = 25 * 60 * 60; // matches inboxGapKey TTL — > max 24h gap
+
+  const client = await getRedisClient();
+  if (client) {
+    try {
+      const raw = await client.eval(
+        RESERVE_SLOT_LUA,
+        1,
+        inboxNextSlotKey(accountId),
+        String(now),
+        String(gapMs),
+        String(ttlSeconds),
+      );
+      // eval() returns unknown; the script guarantees a string ms-timestamp.
+      const base = typeof raw === "string" ? Number(raw) : Number(raw as number);
+      if (Number.isFinite(base)) return base;
+    } catch (err) {
+      console.warn(
+        `[email-account] redis reserve failed, falling back to memory: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  // Memory fallback — single process, so a synchronous read/write between
+  // awaits is race-free. When Redis is available this branch never runs.
+  const existing = memoryNextSlot.get(accountId) ?? 0;
+  const base = Math.max(now, existing);
+  memoryNextSlot.set(accountId, base + gapMs);
+  return base;
 }
 
 export async function getTodaySent(accountId: string) {

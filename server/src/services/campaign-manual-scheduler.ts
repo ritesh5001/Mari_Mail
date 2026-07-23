@@ -8,6 +8,9 @@ export type ManualStepJob = {
   sequenceStepId: string;
   contactId: string;
   scheduledFor: string;
+  /** Stamped by deferJob when the inbox is cooling down; carries the claimed
+   *  send slot across retries so we don't advance the gap counter each time. */
+  reservedSlotAt?: number;
 };
 
 const redisUrl = process.env.REDIS_URL;
