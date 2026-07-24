@@ -164,6 +164,56 @@ export async function reserveInboxSendSlot(accountId: string, gapSeconds: number
   return base;
 }
 
+/**
+ * Same atomic reservation, but keyed per CAMPAIGN. Enforces the campaign's
+ * own send-gap on top of the per-inbox gap: without this, a campaign
+ * rotating across N inboxes could fire N mails at the same instant (each
+ * inbox is "fresh" from the reservation's point of view) — which is exactly
+ * the bug seen in the "Shoukath Ali + Veerababu Bonda both sent at 05:39pm"
+ * report. Now every send in the campaign waits for its own campaign slot
+ * before even asking an inbox for its slot.
+ *
+ * Key namespace is deliberately different from the inbox reservation so
+ * that a campaign that only ever uses one inbox stacks gaps ADDITIVELY —
+ * both invariants must hold, whichever is stricter wins in wall time.
+ */
+function campaignNextSlotKey(campaignId: string) {
+  return `campaign:${campaignId}:nextSlotAt`;
+}
+
+const memoryCampaignNextSlot = new Map<string, number>();
+
+export async function reserveCampaignSendSlot(campaignId: string, gapSeconds: number) {
+  const now = Date.now();
+  const gapMs = Math.max(0, Math.floor(gapSeconds * 1000));
+  const ttlSeconds = 25 * 60 * 60;
+
+  const client = await getRedisClient();
+  if (client) {
+    try {
+      const raw = await client.eval(
+        RESERVE_SLOT_LUA,
+        1,
+        campaignNextSlotKey(campaignId),
+        String(now),
+        String(gapMs),
+        String(ttlSeconds),
+      );
+      const base = typeof raw === "string" ? Number(raw) : Number(raw as number);
+      if (Number.isFinite(base)) return base;
+    } catch (err) {
+      console.warn(
+        `[email-account] redis campaign-reserve failed, falling back to memory: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  const existing = memoryCampaignNextSlot.get(campaignId) ?? 0;
+  const base = Math.max(now, existing);
+  memoryCampaignNextSlot.set(campaignId, base + gapMs);
+  return base;
+}
+
 export async function getTodaySent(accountId: string) {
   const value = await getToken(inboxCounterKey(accountId));
   return Number(value ?? 0);

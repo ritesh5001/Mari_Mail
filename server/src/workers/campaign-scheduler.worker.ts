@@ -12,6 +12,9 @@ type EtaStepJob = {
   /** Stamped by deferJob when the inbox is cooling down; carries the claimed
    *  send slot across retries so we don't advance the gap counter each time. */
   reservedSlotAt?: number;
+  /** Same idea for the campaign-level gap: preserved across defers so the
+   *  campaign counter isn't re-taken on every retry. */
+  reservedCampaignSlotAt?: number;
 };
 
 async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
@@ -84,13 +87,19 @@ async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
   }
 
   try {
-    // Carry a previously-claimed inbox reservation across defers so the
-    // second attempt doesn't consume another slot on the send-gap counter.
-    // Without this the counter runs away under concurrency (proven by the
-    // gap-test simulation).
+    // Carry both reservations (inbox + campaign) across defers so retries
+    // don't consume fresh slots on either counter. Under concurrency,
+    // re-taking any slot on retry causes the counter to run away — proven
+    // by the gap-test simulation.
+    const jobData = job.data as {
+      reservedSlotAt?: number;
+      reservedCampaignSlotAt?: number;
+    };
     const reservedSlotAt =
-      typeof (job.data as { reservedSlotAt?: number }).reservedSlotAt === "number"
-        ? (job.data as { reservedSlotAt: number }).reservedSlotAt
+      typeof jobData.reservedSlotAt === "number" ? jobData.reservedSlotAt : null;
+    const reservedCampaignSlotAt =
+      typeof jobData.reservedCampaignSlotAt === "number"
+        ? jobData.reservedCampaignSlotAt
         : null;
     const result = await sendSequenceStep({
       campaign: trigger.campaign,
@@ -100,12 +109,14 @@ async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
       eta: trigger.vesselEta,
       scheduledFor: job.data.scheduledFor,
       reservedSlotAt,
+      reservedCampaignSlotAt,
     });
-    // Chosen inbox is cooling down (per-inbox send gap): re-delay in place so
+    // Chosen inbox or campaign gap is cooling down: re-delay in place so
     // the contact stays SCHEDULED and fires once the gap has elapsed.
     if ("deferred" in result && result.deferred) {
       const delayed = await deferJob(job, token, result.retryAfterMs, {
         reservedSlotAt: result.reservedSlotAt,
+        reservedCampaignSlotAt: result.reservedCampaignSlotAt,
       });
       if (delayed) throw delayed;
       return { deferred: true, giveUp: true };

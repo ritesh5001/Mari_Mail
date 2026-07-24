@@ -17,6 +17,7 @@ import {
   getTodaySent,
   incrementTodaySent,
   markInboxSent,
+  reserveCampaignSendSlot,
   reserveInboxSendSlot,
   resolveFromAddress,
 } from "./email-account.service.js";
@@ -252,6 +253,13 @@ type CampaignSendFields = Pick<
   | "scheduleHourStart"
   | "scheduleHourEnd"
   | "timezone"
+  // Per-campaign send gap. Enforced BEFORE inbox rotation so a campaign
+  // fanning out across N inboxes still spaces its sends by the campaign
+  // gap — the per-inbox gap alone can't help there (each inbox has an
+  // independent counter). Both invariants stack: whichever is stricter
+  // wins.
+  | "sendGapSeconds"
+  | "sendGapMaxSeconds"
 >;
 
 function campaignDailyCounterKey(campaignId: string) {
@@ -323,14 +331,23 @@ export async function sendSequenceStep(args: {
   eta?: EtaSendContext | null;
   scheduledFor: string;
   /**
-   * Reservation slot carried across defers. When present, this job has
-   * already claimed a spot on the target inbox's send queue and the
-   * reservation MUST NOT be re-taken (each re-take advances the counter and
-   * pushes every subsequent worker further out — a runaway seen in the
-   * gap-test simulation). We only wait until `now >= reservedSlotAt` and
-   * then send. Absent → this is the first attempt; run a fresh reservation.
+   * Per-inbox reservation slot carried across defers. When present, this
+   * job has already claimed a spot on the target inbox's send queue and
+   * the reservation MUST NOT be re-taken (each re-take advances the
+   * counter and pushes every subsequent worker further out — a runaway
+   * seen in the gap-test simulation). We only wait until `now >=
+   * reservedSlotAt` and then send. Absent → this is the first attempt;
+   * run a fresh reservation.
    */
   reservedSlotAt?: number | null;
+  /**
+   * Per-campaign reservation slot carried across defers. Analogous to
+   * `reservedSlotAt` but keyed by campaign. When rotation picks a fresh
+   * inbox every send, only this slot keeps consecutive sends from the
+   * same campaign spaced by `campaign.sendGapSeconds` — the per-inbox
+   * gap alone can't (each inbox is independently "fresh").
+   */
+  reservedCampaignSlotAt?: number | null;
 }) {
   const { campaign, sequence, contact, campaignContactId } = args;
   const campaignSent = Number(
@@ -346,7 +363,39 @@ export async function sendSequenceStep(args: {
       deferred: true,
       retryAfterMs: retryAfterMsForDailyCap(Date.now(), campaign),
       reservedSlotAt: null,
+      reservedCampaignSlotAt: null,
     } as const;
+  }
+
+  // Per-campaign send-gap: enforced BEFORE inbox selection so it holds no
+  // matter which mailbox rotation eventually picks. Two contacts on the
+  // same campaign going to different inboxes still sit ≥ `sendGapSeconds`
+  // apart in wall-clock time — the fix for the report where Shoukath Ali
+  // and Veerababu Bonda both went out at 05:39 pm despite the configured
+  // gap. Skipped when both min and max are 0 (campaign opted out of any
+  // campaign-level pacing).
+  const cGapMin = campaign.sendGapSeconds;
+  const cGapMax = Math.max(campaign.sendGapMaxSeconds, cGapMin);
+  if (cGapMax > 0) {
+    let campaignSendAt: number;
+    if (
+      typeof args.reservedCampaignSlotAt === "number" &&
+      Number.isFinite(args.reservedCampaignSlotAt)
+    ) {
+      campaignSendAt = args.reservedCampaignSlotAt;
+    } else {
+      const gapMs = randomGapMs(cGapMin, cGapMax);
+      campaignSendAt = await reserveCampaignSendSlot(campaign.id, gapMs / 1000);
+    }
+    const waitMs = campaignSendAt - Date.now();
+    if (waitMs > 0) {
+      return {
+        deferred: true,
+        retryAfterMs: waitMs,
+        reservedSlotAt: args.reservedSlotAt ?? null,
+        reservedCampaignSlotAt: campaignSendAt,
+      } as const;
+    }
   }
 
   const inbox = await selectInbox(
@@ -364,6 +413,7 @@ export async function sendSequenceStep(args: {
       deferred: true,
       retryAfterMs: retryAfterMsForDailyCap(Date.now(), campaign),
       reservedSlotAt: null,
+      reservedCampaignSlotAt: null,
     } as const;
   }
 
@@ -400,6 +450,10 @@ export async function sendSequenceStep(args: {
         deferred: true,
         retryAfterMs: waitMs,
         reservedSlotAt: sendAt,
+        // Preserve any campaign slot the earlier branch claimed — we still
+        // hold that reservation and reusing it on the retry is what keeps
+        // the campaign-level gap correct across defers.
+        reservedCampaignSlotAt: args.reservedCampaignSlotAt ?? null,
       } as const;
     }
   }

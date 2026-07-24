@@ -11,6 +11,8 @@ export type ManualStepJob = {
   /** Stamped by deferJob when the inbox is cooling down; carries the claimed
    *  send slot across retries so we don't advance the gap counter each time. */
   reservedSlotAt?: number;
+  /** Same idea for the campaign-level gap. */
+  reservedCampaignSlotAt?: number;
 };
 
 const redisUrl = process.env.REDIS_URL;
