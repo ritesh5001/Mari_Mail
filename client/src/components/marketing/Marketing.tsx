@@ -1,5 +1,4 @@
-import { MarketingNav } from "./MarketingNav";
-import { Hero } from "./Hero";
+import { HeroSection } from "@/components/ui/hero-section-1";
 import { StatsStrip } from "./StatsStrip";
 import { PainPoints } from "./PainPoints";
 import { Pillars } from "./Pillars";
@@ -17,8 +16,7 @@ export function Marketing() {
       data-marketing-root
       className="marketing-root relative min-h-screen overflow-x-clip bg-black text-white"
     >
-      <MarketingNav />
-      <Hero />
+      <HeroSection />
       <StatsStrip />
       <PainPoints />
       <Pillars />
