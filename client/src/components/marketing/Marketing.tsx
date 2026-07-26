@@ -9,6 +9,7 @@ import { Pricing } from "./Pricing";
 import { Faq } from "./Faq";
 import { FinalCta } from "./FinalCta";
 import { MarketingFooter } from "./MarketingFooter";
+import { Testimonials } from "@/components/ui/testimonial-v2";
 
 export function Marketing() {
   return (
@@ -24,6 +25,7 @@ export function Marketing() {
       <HowItWorks />
       <Integrations />
       <Pricing />
+      <Testimonials />
       <Faq />
       <FinalCta />
       <MarketingFooter />
