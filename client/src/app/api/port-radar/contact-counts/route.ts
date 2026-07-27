@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
-import {
-  associationVesselInclude,
-  countAssociatedContactsForVessels,
-} from "@/lib/association-data";
+import { countAssociatedContactsForVesselIds } from "@/lib/association-data";
 
 export const dynamic = "force-dynamic";
 
@@ -28,14 +24,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ counts: {} });
   }
 
-  // Vessel lookup is unscoped: global (admin-authored) ETAs on Port Radar can
-  // reference vessels from any workspace. The count itself is workspace-filtered
-  // downstream (only this workspace's contacts are matched), so nothing leaks.
-  const vessels = await prisma.vessel.findMany({
-    where: { id: { in: vesselIds } },
-    include: associationVesselInclude,
-  });
-
-  const counts = await countAssociatedContactsForVessels(workspaceId, vessels);
-  return NextResponse.json({ counts: Object.fromEntries(counts.entries()) });
+  // Cached (workspace + vessel-id set, 60s TTL). Vessel lookup inside is
+  // unscoped — global (admin-authored) ETAs can reference vessels from any
+  // workspace — but the count is workspace-filtered downstream (only this
+  // workspace's contacts are matched), so nothing leaks.
+  const counts = await countAssociatedContactsForVesselIds(workspaceId, vesselIds);
+  return NextResponse.json({ counts });
 }

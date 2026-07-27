@@ -85,21 +85,34 @@ function buildQTextClause(q: string): Prisma.VesselWhereInput | null {
   };
 }
 
-// Workspace-wide totals across the entire filtered dataset (not just the visible
-// page). Loads vessels with the lite `vesselInclude` (no etas), builds match
-// signals, runs ONE targeted contact query, then runs the matcher to count
-// distinct contactIds and matchedValues. Tractable for ~100k vessels because the
-// per-row projection is small.
+// Cap on how many vessels we materialize for the workspace-wide totals. Above
+// this, loading every matching vessel + its 3 company relations into memory and
+// running the O(vessels × contacts) matcher in JS is the multi-second stall we
+// saw on broad filters over the 120k-IMO dataset. We cap the scan and mark the
+// totals as an estimate (see `matchedIsEstimate`) — the visible page is always
+// exact; only the aggregate badge is sampled when the filter is huge.
+const MARINE_TOTALS_SCAN_CAP = 2000;
+
+// Workspace-wide totals across the filtered dataset (not just the visible page).
+// Loads vessels with the lite `vesselInclude` (no etas), builds match signals,
+// runs ONE targeted contact query, then runs the matcher to count distinct
+// contactIds and matchedValues. Bounded by MARINE_TOTALS_SCAN_CAP.
 async function computeMarineTotals(
   workspaceId: string,
   where: Prisma.VesselWhereInput,
-): Promise<{ contactsMatched: number; matchValues: number }> {
+): Promise<{ contactsMatched: number; matchValues: number; estimate: boolean }> {
   try {
-    const vessels = await prisma.vessel.findMany({ where, include: vesselInclude });
-    if (vessels.length === 0) return { contactsMatched: 0, matchValues: 0 };
+    const vessels = await prisma.vessel.findMany({
+      where,
+      include: vesselInclude,
+      take: MARINE_TOTALS_SCAN_CAP + 1, // +1 so we can detect "there were more"
+    });
+    if (vessels.length === 0) return { contactsMatched: 0, matchValues: 0, estimate: false };
+    const estimate = vessels.length > MARINE_TOTALS_SCAN_CAP;
+    if (estimate) vessels.length = MARINE_TOTALS_SCAN_CAP;
 
     const contacts = await listContactsForVessels(workspaceId, vessels);
-    if (contacts.length === 0) return { contactsMatched: 0, matchValues: 0 };
+    if (contacts.length === 0) return { contactsMatched: 0, matchValues: 0, estimate };
 
     const contactIndex = buildContactMatchIndex(contacts);
     const contactIds = new Set<string>();
@@ -111,10 +124,10 @@ async function computeMarineTotals(
         matchedValues.add(m.matchedValue);
       }
     }
-    return { contactsMatched: contactIds.size, matchValues: matchedValues.size };
+    return { contactsMatched: contactIds.size, matchValues: matchedValues.size, estimate };
   } catch (err) {
     console.error("[marine-db] computeMarineTotals failed:", err);
-    return { contactsMatched: 0, matchValues: 0 };
+    return { contactsMatched: 0, matchValues: 0, estimate: false };
   }
 }
 

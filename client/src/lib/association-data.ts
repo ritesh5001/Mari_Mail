@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { Prisma, prisma } from "@marimail/db";
 import type { ContactModel } from "@/lib/contact-data";
 import type { AssociatedVesselView } from "@/lib/marine-row-views";
@@ -139,6 +140,16 @@ export function collectVesselSignals(vessels: AssociationVessel[]) {
   return { domains, companyNames, emails };
 }
 
+// Bounds on the association contact query. Each `endsWith`/`contains` clause
+// is a case-insensitive ILIKE that can't use a btree index, so the cost scales
+// with the number of DISTINCT domains. Past DOMAIN_ILIKE_CAP we keep the cheap
+// indexed matchers (companyName IN, exact-email equals) and drop the ILIKE
+// domain scans — a huge filter still returns fast, just relying on the exact
+// signals. RESULT_CAP stops one query from loading an unbounded contact set
+// into memory for the in-JS matcher.
+const DOMAIN_ILIKE_CAP = 60;
+const ASSOCIATION_RESULT_CAP = 5000;
+
 export async function listContactsForVessels(
   workspaceId: string,
   vessels: AssociationVessel[],
@@ -147,12 +158,19 @@ export async function listContactsForVessels(
   const { domains, companyNames, emails } = collectVesselSignals(vessels);
 
   const or: Prisma.ContactWhereInput[] = [];
+  // companyName IN uses the @@index([workspaceId, companyName]) index — cheap.
   if (companyNames.size > 0) or.push({ companyName: { in: Array.from(companyNames) } });
+  // Exact-email equality is selective (email is uniquely indexed per workspace).
   for (const email of emails) {
     or.push({ email: { equals: email, mode: "insensitive" } });
     or.push({ secondaryEmail: { equals: email, mode: "insensitive" } });
   }
+  // Domain ILIKE scans are the expensive part — cap how many we emit so a
+  // broad filter can't build a multi-thousand-clause seq-scan.
+  let domainCount = 0;
   for (const domain of domains) {
+    if (domainCount >= DOMAIN_ILIKE_CAP) break;
+    domainCount += 1;
     const suffix = `@${domain}`;
     or.push({ email: { endsWith: suffix, mode: "insensitive" } });
     or.push({ secondaryEmail: { endsWith: suffix, mode: "insensitive" } });
@@ -163,6 +181,7 @@ export async function listContactsForVessels(
   return prisma.contact.findMany({
     where: { AND: [workspaceScope(workspaceId), { OR: or }] },
     orderBy: [{ companyName: "asc" }, { lastName: "asc" }, { firstName: "asc" }],
+    take: ASSOCIATION_RESULT_CAP,
   });
 }
 
@@ -188,9 +207,43 @@ export function associatedContactRowsForVessels(vessels: AssociationVessel[], co
 }
 
 export async function countAssociatedContactsForVessels(workspaceId: string, vessels: AssociationVessel[]) {
-  const contacts = await listContactsForVessels(workspaceId, vessels);
-  const rowsByVessel = associatedContactRowsForVessels(vessels, contacts);
+  const rowsByVessel = associatedContactRowsForVessels(
+    vessels,
+    await listContactsForVessels(workspaceId, vessels),
+  );
   return new Map(vessels.map((vessel) => [vessel.id, rowsByVessel.get(vessel.id)?.length ?? 0]));
+}
+
+/**
+ * Cached wrapper around the contact-count computation. Keyed by workspace +
+ * the sorted set of vessel ids, so the lazy Port Radar / Vessels "Contacts"
+ * badge fetch — and any repeat page load of the same rows — reuses the result
+ * instead of re-running the ILIKE contact query + in-JS matcher every time.
+ *
+ * `unstable_cache` can't serialize a Map or full vessel objects, so this takes
+ * only the ids (the stable cache key), re-loads the lite vessel rows inside,
+ * and returns a plain id→count object. 60s TTL keeps counts fresh enough for
+ * a live board while absorbing the common "reload / paginate back" traffic.
+ */
+export async function countAssociatedContactsForVesselIds(
+  workspaceId: string,
+  vesselIds: string[],
+): Promise<Record<string, number>> {
+  const ids = Array.from(new Set(vesselIds)).sort();
+  if (ids.length === 0) return {};
+  const cached = unstable_cache(
+    async (wsId: string, sortedIds: string[]): Promise<Record<string, number>> => {
+      const vessels = await prisma.vessel.findMany({
+        where: { id: { in: sortedIds } },
+        include: associationVesselInclude,
+      });
+      const counts = await countAssociatedContactsForVessels(wsId, vessels);
+      return Object.fromEntries(counts.entries());
+    },
+    ["assoc-contact-counts", workspaceId, ids.join(",")],
+    { revalidate: 60, tags: ["assoc-contact-counts"] },
+  );
+  return cached(workspaceId, ids);
 }
 
 export async function listAssociatedContactsForVessel(
