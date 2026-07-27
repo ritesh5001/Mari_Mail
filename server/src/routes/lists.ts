@@ -202,6 +202,15 @@ const apolloPreviewSchema = z.object({
   personLinkedinUrl: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
   seniority: z.string().nullable().optional(),
+  // Vessel IDs the SEARCH already attributed this person to (from the
+  // per-domain query that surfaced them). This is the authoritative link:
+  // the search knows exactly which vessel's owner/manager domain returned
+  // each contact. Forwarding it here avoids the lossy re-derivation below —
+  // Apollo bridges related domains (yousee.dk ↔ a parent org) that
+  // `matchContactToVessel` can't reconnect from the persisted contact,
+  // which is why some Apollo-added contacts ended up with no vessel and
+  // stuck at PENDING forever.
+  matchedVesselIds: z.array(z.string().min(1)).optional(),
 });
 
 listRouter.post("/:id/apollo-contacts", requireAuth, async (req, res, next) => {
@@ -235,7 +244,24 @@ listRouter.post("/:id/apollo-contacts", requireAuth, async (req, res, next) => {
       },
     });
 
+    // Only vessel IDs that are actually on THIS list are valid pins — guards
+    // against a stale/foreign id in the client payload.
+    const listVesselIds = new Set(listVessels.map((vessel) => vessel.id));
+
     const matchedVesselIdsFor = (row: (typeof input.data.apolloRows)[number]): string[] => {
+      // Authoritative path: the search already attributed this person to one
+      // or more vessels (via the per-domain query that returned them). Trust
+      // it — filtered to vessels that are still on the list. This is what
+      // fixes the "Apollo-added contact has no vessel and sits at PENDING"
+      // bug: the search knew the vessel; we were throwing it away and
+      // re-guessing from the domain, which fails when Apollo bridged a
+      // related domain the text matcher can't reconnect.
+      const fromSearch = (row.matchedVesselIds ?? []).filter((id) => listVesselIds.has(id));
+      if (fromSearch.length > 0) return fromSearch;
+
+      // Fallback (legacy clients that don't forward matchedVesselIds, or a
+      // row the search couldn't attribute): re-derive from the domain/company
+      // signal. Same behaviour as before.
       const websiteSignal = [row.website, row.companyDomain]
         .filter((value): value is string => Boolean(value))
         .join(", ");

@@ -3,6 +3,7 @@ import { Redis } from "ioredis";
 import { prisma, type CampaignSequence } from "@marimail/db";
 import { matchContactToVessel } from "@marimail/utils";
 import { resolveCampaignContacts, stagedContactIds } from "./campaign-targets.js";
+import { createETATriggers, matchCampaignsToETA } from "./campaign-matcher.js";
 
 type StepFireTime = {
   stepOrder: number;
@@ -248,4 +249,45 @@ export async function scheduleEtaTrigger(etaTriggerId: string) {
 export async function rescheduleEtaTrigger(etaTriggerId: string) {
   await cancelEtaTriggerJobs(etaTriggerId);
   return scheduleEtaTrigger(etaTriggerId);
+}
+
+/**
+ * Create + schedule ETA triggers for a campaign against the upcoming ETAs of
+ * a set of vessels. Shared by /staged/confirm (promoting reviewed contacts)
+ * and the list reconciler's self-heal (attaching a contact that just gained
+ * a vessel pin). Both need the identical "backscan pending ETAs → create
+ * triggers → schedule them" sequence, so it lives here once.
+ *
+ * Only ETAs strictly in the future are considered — a vessel that already
+ * arrived can't be a send target. Returns the number of step jobs scheduled.
+ */
+export async function scheduleUpcomingEtasForCampaignVessels(
+  campaignId: string,
+  vesselIds: string[],
+): Promise<number> {
+  const uniqueVesselIds = Array.from(new Set(vesselIds.filter(Boolean)));
+  if (uniqueVesselIds.length === 0) return 0;
+
+  const pendingEtas = await prisma.vesselETA.findMany({
+    where: { vesselId: { in: uniqueVesselIds }, eta: { gt: new Date() } },
+    select: { id: true },
+  });
+
+  let scheduled = 0;
+  for (const eta of pendingEtas) {
+    try {
+      const matches = await matchCampaignsToETA(eta.id);
+      // Only schedule when THIS campaign is an auto-enrol match for the ETA —
+      // otherwise we'd fire a campaign against a vessel it never targeted.
+      if (!matches.some((m) => m.autoEnroll && m.campaignId === campaignId)) continue;
+      const triggers = await createETATriggers(eta.id, [campaignId]);
+      const results = await Promise.all(triggers.map((trigger) => scheduleEtaTrigger(trigger.id)));
+      scheduled += results.reduce((sum, result) => sum + result.scheduled, 0);
+    } catch (err) {
+      console.warn(
+        `[campaign-scheduler] backscan failed campaign=${campaignId} eta=${eta.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+  return scheduled;
 }

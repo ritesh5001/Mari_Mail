@@ -4,7 +4,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, requireSuperAdmin, type AuthedRequest } from "../auth/middleware.js";
 import { sendData, sendError } from "../lib/http.js";
-import { scheduleEtaTrigger } from "../services/campaign-scheduler.js";
+import {
+  scheduleEtaTrigger,
+  scheduleUpcomingEtasForCampaignVessels,
+} from "../services/campaign-scheduler.js";
 import { createETATriggers, matchCampaignsToETA } from "../services/campaign-matcher.js";
 import {
   cancelManualJobsForCampaign,
@@ -1410,34 +1413,12 @@ campaignRouter.post("/:id/staged/confirm", requireAuth, async (req, res, next) =
 
     // Backscan deliberately lives here rather than in the reconciler: creating
     // triggers at add-time would fire them against staged contacts, and the
-    // trigger would never be re-scheduled after confirm.
+    // trigger would never be re-scheduled after confirm. Shared helper — same
+    // logic the reconciler's self-heal uses.
     const vesselIds = Array.from(
       new Set(confirmable.map((row) => row.vesselId).filter((id): id is string => Boolean(id))),
     );
-    let scheduled = 0;
-    if (vesselIds.length) {
-      const pendingEtas = await prisma.vesselETA.findMany({
-        where: { vesselId: { in: vesselIds }, eta: { gt: new Date() } },
-        select: { id: true },
-      });
-      for (const eta of pendingEtas) {
-        try {
-          const matches = await matchCampaignsToETA(eta.id);
-          if (!matches.some((m) => m.autoEnroll && m.campaignId === campaign.id)) continue;
-          // createETATriggers upserts and returns pre-existing rows, so an ETA
-          // that already had a trigger still gets re-scheduled here.
-          const triggers = await createETATriggers(eta.id, [campaign.id]);
-          const results = await Promise.all(
-            triggers.map((trigger) => scheduleEtaTrigger(trigger.id)),
-          );
-          scheduled += results.reduce((sum, result) => sum + result.scheduled, 0);
-        } catch (err) {
-          console.warn(
-            `[campaign-staged-confirm] eta-backscan failed eta=${eta.id}: ${(err as Error).message}`,
-          );
-        }
-      }
-    }
+    const scheduled = await scheduleUpcomingEtasForCampaignVessels(campaign.id, vesselIds);
 
     return sendData(res, { confirmed: confirmable.length, scheduled, warnings });
   } catch (error) {

@@ -961,6 +961,13 @@ export function CampaignByRolePanel({
               companyDomain: r.companyDomain ?? null,
               personLinkedinUrl: r.personLinkedinUrl ?? null,
               country: r.country,
+              // Forward the vessel attribution the SEARCH already computed for
+              // this row. This is the authoritative link (from the per-domain
+              // query that surfaced them); without it the server re-guesses
+              // from the domain and misses contacts Apollo bridged from a
+              // related domain — those ended up with no vessel and stuck at
+              // PENDING.
+              matchedVesselIds: (r.matchedVessels ?? []).map((v) => v.id),
             })),
           }),
         });

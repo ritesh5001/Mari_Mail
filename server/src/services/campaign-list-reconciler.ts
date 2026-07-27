@@ -2,6 +2,7 @@ import { prisma, type Contact, type Prisma } from "@marimail/db";
 import { matchContactToVessel } from "@marimail/utils";
 import { resolveCampaignContacts } from "./campaign-targets.js";
 import { enrolAndScheduleManualContact } from "./campaign-manual-scheduler.js";
+import { scheduleUpcomingEtasForCampaignVessels } from "./campaign-scheduler.js";
 
 const listVesselInclude = {
   shipOwnerCompany: true,
@@ -73,6 +74,21 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
       });
       const known = new Set(existing.map((row) => row.contactId));
       const newcomers = contacts.filter((contact) => !known.has(contact.id));
+
+      // Self-heal, ETA campaigns only: a contact already enrolled but with no
+      // vessel attribution (vesselId = null) never gets scheduled — an ETA
+      // fires against ONE vessel and the scheduler skips contacts it can't
+      // tie to that vessel, so they sit at PENDING forever. This was the
+      // "Apollo contact added, then stuck, never scheduled" bug. Now, on
+      // every list change, we re-check those stranded rows: if the contact
+      // has since gained a vessel link (its customFields.matchedVesselIds
+      // healed on re-add, or the domain matcher now hits), attribute it and
+      // schedule its vessel's upcoming ETAs. Runs BEFORE the newcomer
+      // early-return below, because a stranded contact is never a newcomer.
+      if (campaign.triggerType !== "MANUAL") {
+        await healStrandedEtaContacts(campaign.id, contacts, listVessels);
+      }
+
       if (!newcomers.length) continue;
 
       if (campaign.triggerType === "MANUAL") {
@@ -163,6 +179,61 @@ function pinnedVesselIds(contact: { customFields?: unknown }): string[] {
   if (!fields || typeof fields !== "object") return [];
   const ids = (fields as Record<string, unknown>).matchedVesselIds;
   return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+}
+
+/**
+ * Attach and schedule ETA-campaign contacts that are enrolled but stranded:
+ * status PENDING/SCHEDULED with vesselId = null. If such a contact now
+ * resolves to a vessel on the list (its matchedVesselIds pin healed, or the
+ * domain matcher now hits), we write the vesselId and schedule that vessel's
+ * upcoming ETAs. Contacts that still can't be attributed are left untouched —
+ * they genuinely have no vessel to fire against, and forcing a schedule would
+ * be wrong.
+ */
+async function healStrandedEtaContacts(
+  campaignId: string,
+  resolvedContacts: Contact[],
+  listVessels: ListVesselWithCompanies[],
+): Promise<void> {
+  const contactById = new Map(resolvedContacts.map((c) => [c.id, c]));
+
+  // Only rows that are enrolled, not yet sent/terminal, and missing a vessel.
+  const stranded = await prisma.campaignContact.findMany({
+    where: {
+      campaignId,
+      vesselId: null,
+      status: { in: ["PENDING", "SCHEDULED"] },
+      contactId: { in: resolvedContacts.map((c) => c.id) },
+    },
+    select: { id: true, contactId: true },
+  });
+  if (stranded.length === 0) return;
+
+  const healedVesselIds = new Set<string>();
+  for (const row of stranded) {
+    const contact = contactById.get(row.contactId);
+    if (!contact) continue;
+    const pinned = pinnedVesselIds(contact);
+    const hit = listVessels.find(
+      (vessel) => matchContactToVessel(contact, vessel) !== null || pinned.includes(vessel.id),
+    );
+    if (!hit) continue; // still unattributable — leave as-is
+    await prisma.campaignContact.update({
+      where: { id: row.id },
+      data: { vesselId: hit.id },
+    });
+    healedVesselIds.add(hit.id);
+  }
+
+  if (healedVesselIds.size === 0) return;
+
+  const scheduled = await scheduleUpcomingEtasForCampaignVessels(
+    campaignId,
+    Array.from(healedVesselIds),
+  );
+  console.log(
+    `[list-reconciler] self-heal: attributed ${healedVesselIds.size} vessel(s) to stranded ETA contacts on campaign=${campaignId} · scheduled ${scheduled} step(s).`,
+  );
 }
 
 function targetsList(targetConfig: Prisma.JsonValue, listId: string): boolean {
