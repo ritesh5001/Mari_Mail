@@ -382,6 +382,13 @@ html:not(.light) [data-marketing-root] .from-black {
 html:not(.light) [data-marketing-root] [class*="#000_75%"] {
   background: radial-gradient(125% 125% at 50% 100%, transparent 0%, #060814 75%) !important;
 }
+/* The dashboard-mock bottom-fade overlay uses `to-black`. In dark mode fade
+   it to the hero's navy base (#060814), not harsh pure black — a white mock
+   fading into pure black looked muddy. This blends the mock cleanly into the
+   section instead. (Light mode fades to #EEF1FB via the rule further down.) */
+html:not(.light) [data-marketing-root] .to-black {
+  --tw-gradient-to: #060814 var(--tw-gradient-to-position);
+}
 
 html.light [data-marketing-root] {
   background:

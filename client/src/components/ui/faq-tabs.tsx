@@ -95,11 +95,14 @@ const FAQTabs: React.FC<{
         className={cn(
           "relative overflow-hidden whitespace-nowrap rounded-md border px-3.5 py-1.5 text-sm font-medium transition-colors duration-500",
           selected === key
-            ? "border-accent-500 text-white"
-            : "border-slate-200 bg-transparent text-slate-500 hover:text-slate-900 dark:border-white/15 dark:text-white/55 dark:hover:text-white",
+            ? // Active pill sits on the blue gradient — force white via an
+              // arbitrary value so the marketing `.text-white → dark ink`
+              // light-mode override can't flip it.
+              "border-accent-500 text-[#ffffff]"
+            : "border-slate-300 bg-transparent text-slate-600 hover:text-slate-900 dark:border-white/15 dark:text-white/70 dark:hover:text-white",
         )}
       >
-        <span className="relative z-10">{label}</span>
+        <span className="relative z-10 text-inherit">{label}</span>
         <AnimatePresence>
           {selected === key && (
             <motion.span
@@ -224,6 +227,11 @@ const faqData: FaqData = {
       answer:
         "MariMail blends your workspace data with a vessel DBMS (IMO records, owner/ISM/commercial managers, port intelligence) and an Apollo-backed people search scoped to your vessels' companies — so you can qualify accounts and find the right decision-makers before you write a word.",
     },
+    {
+      question: "Do I need any technical setup to get going?",
+      answer:
+        "No. Connect a mailbox with one click, tell the AI which vessels or ports you're targeting in plain language, and MariMail handles the matching, scheduling, and sending. There's nothing to install and no servers to manage on your side.",
+    },
   ],
   grow: [
     {
@@ -245,6 +253,11 @@ const faqData: FaqData = {
       question: "Do I need a big list to get value?",
       answer:
         "No. Start with the vessels arriving at your ports this week. Port Radar surfaces them, the role search finds the people at their owner/manager companies, and campaigns handle the follow-up — you grow from live arrivals, not a stale spreadsheet.",
+    },
+    {
+      question: "How quickly can I see results?",
+      answer:
+        "As soon as vessels are arriving at your target ports. Connect an inbox, pick your ports, and MariMail surfaces this week's arrivals with the right contacts — your first timed outreach can go out the same day, and replies start landing in your own inbox.",
     },
   ],
   sending: [
@@ -268,6 +281,11 @@ const faqData: FaqData = {
       answer:
         "For live campaigns, newly added contacts are enrolled and scheduled on the same sequence automatically — they don't get missed, and they still respect your send window, gaps, and daily limits.",
     },
+    {
+      question: "Do you rotate across multiple inboxes safely?",
+      answer:
+        "Yes. Volume is spread across every connected mailbox, each with its own daily cap and cooldown, and a campaign-level gap sits on top so two sends never fire at the same instant. That keeps per-inbox reputation healthy while you scale total volume.",
+    },
   ],
   data: [
     {
@@ -284,6 +302,11 @@ const faqData: FaqData = {
       question: "Do you support roles and single sign-on?",
       answer:
         "Role-based access is available so teammates get the right permissions, and SSO is available on the Fleet plan for larger brokerages and shipping desks.",
+    },
+    {
+      question: "Do you honour unsubscribes and compliance rules?",
+      answer:
+        "Yes. Unsubscribes are auto-suppressed across your whole workspace, hard bounces are removed from future sends, and every contact carries an audit trail — so your outreach stays permission-based and compliant as it scales.",
     },
   ],
   company: [
@@ -306,6 +329,11 @@ const faqData: FaqData = {
       question: "How do I get started?",
       answer:
         "Book a demo or start free from the top of the page. Connect an inbox, pick your target ports, and MariMail starts surfacing the vessels arriving that you can reach today.",
+    },
+    {
+      question: "Can I upgrade, downgrade, or cancel anytime?",
+      answer:
+        "Yes. Plans are flexible — move between Starter, Pro, and Fleet as your needs change, with no long-term lock-in. During early access everything is free, so you can explore the full platform before choosing a plan.",
     },
   ],
 };

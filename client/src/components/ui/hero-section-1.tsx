@@ -183,7 +183,7 @@ export function HeroSection() {
               <div className="relative mt-8 overflow-hidden px-2 sm:mt-12 md:mt-20">
                 <div
                   aria-hidden
-                  className="absolute inset-0 z-10 bg-gradient-to-b from-transparent from-55% to-black"
+                  className="absolute inset-0 z-10 bg-gradient-to-b from-transparent from-75% to-black"
                 />
                 <div className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-2 shadow-shell ring-1 ring-white/10 sm:p-4">
                   <DashboardMock />
