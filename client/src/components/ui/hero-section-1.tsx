@@ -4,11 +4,17 @@ import React from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  Anchor,
   Calendar,
   ChevronRight,
   LogIn,
+  Mail,
   Menu,
+  Radar,
+  Send,
+  Ship,
   Star,
+  TrendingUp,
   X,
 } from "lucide-react";
 import type { Variants } from "framer-motion";
@@ -174,31 +180,13 @@ export function HeroSection() {
                 ...transitionVariants,
               }}
             >
-              <div className="relative mt-8 -mr-56 overflow-hidden px-2 sm:mr-0 sm:mt-12 md:mt-20">
+              <div className="relative mt-8 overflow-hidden px-2 sm:mt-12 md:mt-20">
                 <div
                   aria-hidden
-                  className="absolute inset-0 z-10 bg-gradient-to-b from-transparent from-35% to-black"
+                  className="absolute inset-0 z-10 bg-gradient-to-b from-transparent from-55% to-black"
                 />
-                <div className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-4 shadow-shell ring-1 ring-black/50">
-                  {/* Placeholder screenshot — swap for /hero-screenshot.png once available. */}
-                  <div className="relative aspect-[15/8] w-full overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-ink-800 via-ink-700 to-ink-800">
-                    <img
-                      src="/hero-screenshot.png"
-                      alt="MariMail app preview"
-                      width={2700}
-                      height={1440}
-                      className="h-full w-full object-cover opacity-90"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).style.display =
-                          "none";
-                      }}
-                    />
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                      <div className="rounded-full border border-white/15 bg-black/40 px-4 py-1.5 text-xs font-medium uppercase tracking-[0.2em] text-white/55 backdrop-blur">
-                        Product preview
-                      </div>
-                    </div>
-                  </div>
+                <div className="relative mx-auto max-w-6xl overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02] p-2 shadow-shell ring-1 ring-black/50 sm:p-4">
+                  <DashboardMock />
                 </div>
               </div>
             </AnimatedGroup>
@@ -238,6 +226,154 @@ export function HeroSection() {
         </section>
       </main>
     </>
+  );
+}
+
+/**
+ * Static product mock used as the hero visual — a faithful, hand-built
+ * rendering of the real Port Radar dashboard (KPI row + upcoming-arrivals
+ * table) rather than a screenshot image. Numbers are credible-but-fixed so
+ * the section stays consistent and loads instantly (no image request, no
+ * layout shift). Rendered on a light surface so it reads like a captured
+ * screenshot regardless of the hero's dark backdrop, and it self-scales on
+ * mobile via the wrapping container. Kept in this file because it's purely
+ * presentational and only ever used here.
+ */
+function DashboardMock() {
+  const stats = [
+    { label: "Vessels Tracked", value: "12,480", detail: "+18% MoM", icon: Ship },
+    { label: "Active Campaigns", value: "24", detail: "6 new this month", icon: Send },
+    { label: "Emails Sent (30d)", value: "38,910", detail: "+27% vs prior", icon: Mail },
+    { label: "Avg Reply Rate", value: "11.4%", detail: "+2.3% vs prior", icon: TrendingUp },
+  ];
+
+  type Tone = "today" | "soon" | "later";
+  const arrivals: {
+    vessel: string;
+    imo: string;
+    type: string;
+    flag: string;
+    port: string;
+    eta: string;
+    countdown: string;
+    tone: Tone;
+    campaign: boolean;
+  }[] = [
+    { vessel: "PACIFIC EAGLE", imo: "9781234", type: "Bulk Carrier", flag: "PA", port: "Singapore", eta: "14 Jun, 06:00", countdown: "Today", tone: "today", campaign: true },
+    { vessel: "NORDIC AURORA", imo: "9654820", type: "Tanker", flag: "NO", port: "Rotterdam", eta: "15 Jun, 11:30", countdown: "In 1 day", tone: "soon", campaign: true },
+    { vessel: "GULF SENTINEL", imo: "9512077", type: "Container", flag: "LR", port: "Jebel Ali", eta: "16 Jun, 03:15", countdown: "In 2 days", tone: "soon", campaign: false },
+    { vessel: "MED HARMONY", imo: "9488311", type: "Chemical", flag: "MT", port: "Piraeus", eta: "18 Jun, 22:45", countdown: "In 4 days", tone: "later", campaign: true },
+    { vessel: "ATLANTIC CREST", imo: "9723560", type: "Bulk Carrier", flag: "MH", port: "Santos", eta: "19 Jun, 09:00", countdown: "In 5 days", tone: "later", campaign: false },
+    { vessel: "ORIENT PIONEER", imo: "9601445", type: "Container", flag: "HK", port: "Busan", eta: "21 Jun, 17:20", countdown: "In 7 days", tone: "later", campaign: true },
+  ];
+
+  const countdownTone: Record<Tone, string> = {
+    today: "bg-rose-50 text-rose-600 ring-1 ring-rose-200",
+    soon: "bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200",
+    later: "bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200",
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left text-slate-900 shadow-2xl">
+      {/* Browser chrome */}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
+        <span className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
+        <div className="ml-3 flex min-w-0 items-center gap-1.5 rounded-md bg-white px-3 py-1 text-[11px] text-slate-400 ring-1 ring-slate-200">
+          <span className="truncate">app.marimail.ai/dashboard/port-radar</span>
+        </div>
+      </div>
+
+      <div className="p-4 sm:p-5">
+        {/* Page heading */}
+        <div className="mb-4 flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-[#4F6DFF]/10 text-[#4F6DFF]">
+            <Radar className="h-4 w-4" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold leading-none text-slate-900">Port Radar</p>
+            <p className="mt-1 text-[11px] leading-none text-slate-400">
+              Upcoming arrivals · sorted by ETA
+            </p>
+          </div>
+          <span className="ml-auto hidden items-center gap-1 rounded-full bg-[#4F6DFF]/10 px-2.5 py-1 text-[11px] font-semibold text-[#4F6DFF] sm:inline-flex">
+            <Anchor className="h-3 w-3" /> 277 arriving this week
+          </span>
+        </div>
+
+        {/* KPI row */}
+        <div className="mb-4 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                  {s.label}
+                </span>
+                <s.icon className="h-3.5 w-3.5 text-[#4F6DFF]" />
+              </div>
+              <p className="mt-1.5 text-xl font-semibold text-slate-900 sm:text-2xl">{s.value}</p>
+              <p className="mt-0.5 text-[10px] font-medium text-emerald-600">{s.detail}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Arrivals table */}
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <table className="w-full border-collapse text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                <th className="px-3 py-2">Vessel</th>
+                <th className="hidden px-3 py-2 sm:table-cell">Type</th>
+                <th className="hidden px-3 py-2 md:table-cell">Destination</th>
+                <th className="px-3 py-2">ETA</th>
+                <th className="px-3 py-2">Campaign</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {arrivals.map((row) => (
+                <tr key={row.imo} className="text-xs">
+                  <td className="px-3 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="grid h-6 w-6 shrink-0 place-items-center rounded bg-[#4F6DFF]/10 text-[9px] font-bold text-[#4F6DFF]">
+                        {row.flag}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-900">{row.vessel}</p>
+                        <p className="text-[10px] text-slate-400">IMO {row.imo}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="hidden px-3 py-2.5 text-slate-500 sm:table-cell">{row.type}</td>
+                  <td className="hidden px-3 py-2.5 text-slate-500 md:table-cell">{row.port}</td>
+                  <td className="px-3 py-2.5">
+                    <span
+                      className={cn(
+                        "inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        countdownTone[row.tone],
+                      )}
+                    >
+                      {row.countdown}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {row.campaign ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#4F6DFF]/10 px-2 py-0.5 text-[10px] font-semibold text-[#4F6DFF]">
+                        <Send className="h-2.5 w-2.5" /> Active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-600 ring-1 ring-amber-200">
+                        No campaign
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
