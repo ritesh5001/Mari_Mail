@@ -55,7 +55,7 @@ export function SidebarCustomizePanel({
 
       {open && (
         <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/40 backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <div
