@@ -4,7 +4,7 @@ import { PainPoints } from "./PainPoints";
 import { Pillars } from "./Pillars";
 import { HowItWorks } from "./HowItWorks";
 import { Integrations } from "./Integrations";
-import { Pricing } from "./Pricing";
+import { PricingCard } from "@/components/ui/pricing-card";
 import { Faq } from "./Faq";
 import { FinalCta } from "./FinalCta";
 import { MarketingFooter } from "./MarketingFooter";
@@ -22,7 +22,7 @@ export function Marketing() {
       <Pillars />
       <HowItWorks />
       <Integrations />
-      <Pricing />
+      <PricingCard />
       <Testimonials />
       <Faq />
       <FinalCta />
