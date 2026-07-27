@@ -68,30 +68,35 @@ textarea {
 
 /* Starfield background (subtle dots like Reachinbox hero) */
 .starfield {
+  /* Faint brand-blue stars instead of pure white, so the ambient field
+     reads as part of the bluish palette rather than neutral. */
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.4), transparent 50%),
-    radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.35), transparent 50%),
-    radial-gradient(1px 1px at 40% 70%, rgba(255,255,255,0.3), transparent 50%),
-    radial-gradient(1px 1px at 65% 85%, rgba(255,255,255,0.45), transparent 50%),
-    radial-gradient(1px 1px at 15% 90%, rgba(255,255,255,0.25), transparent 50%),
-    radial-gradient(1.5px 1.5px at 90% 60%, rgba(255,255,255,0.5), transparent 50%),
-    radial-gradient(1px 1px at 35% 15%, rgba(255,255,255,0.3), transparent 50%),
-    radial-gradient(1px 1px at 55% 45%, rgba(255,255,255,0.25), transparent 50%),
-    radial-gradient(1px 1px at 75% 75%, rgba(255,255,255,0.4), transparent 50%);
+    radial-gradient(1px 1px at 20% 30%, rgba(180,197,255,0.42), transparent 50%),
+    radial-gradient(1px 1px at 80% 20%, rgba(123,144,255,0.36), transparent 50%),
+    radial-gradient(1px 1px at 40% 70%, rgba(180,197,255,0.30), transparent 50%),
+    radial-gradient(1px 1px at 65% 85%, rgba(123,144,255,0.46), transparent 50%),
+    radial-gradient(1px 1px at 15% 90%, rgba(180,197,255,0.26), transparent 50%),
+    radial-gradient(1.5px 1.5px at 90% 60%, rgba(180,197,255,0.5), transparent 50%),
+    radial-gradient(1px 1px at 35% 15%, rgba(123,144,255,0.30), transparent 50%),
+    radial-gradient(1px 1px at 55% 45%, rgba(180,197,255,0.26), transparent 50%),
+    radial-gradient(1px 1px at 75% 75%, rgba(123,144,255,0.4), transparent 50%);
   background-size: 100% 100%;
 }
 
 .hero-aurora {
+  /* Brand royal-blue (#4F6DFF / #3B4FE6 / #2A38B8) rather than the old
+     teal — this is the "bluish color of the website" the hero should glow,
+     matching the violet-accent headline gradient. */
   background:
-    radial-gradient(60% 50% at 50% 100%, rgba(7, 89, 133, 0.28) 0%, transparent 70%),
-    radial-gradient(42% 32% at 18% 22%, rgba(3, 105, 161, 0.16) 0%, transparent 72%),
-    radial-gradient(42% 32% at 86% 28%, rgba(12, 74, 110, 0.16) 0%, transparent 72%);
+    radial-gradient(60% 50% at 50% 100%, rgba(79, 109, 255, 0.30) 0%, transparent 70%),
+    radial-gradient(42% 32% at 18% 22%, rgba(59, 79, 230, 0.20) 0%, transparent 72%),
+    radial-gradient(42% 32% at 86% 28%, rgba(42, 56, 184, 0.20) 0%, transparent 72%);
 }
 
 .premium-aurora {
   background:
-    radial-gradient(70% 48% at 50% 12%, rgba(7, 89, 133, 0.24), transparent 68%),
-    linear-gradient(115deg, transparent 0%, rgba(3, 105, 161, 0.08) 38%, rgba(15, 23, 42, 0.08) 55%, transparent 78%);
+    radial-gradient(70% 48% at 50% 12%, rgba(79, 109, 255, 0.26), transparent 68%),
+    linear-gradient(115deg, transparent 0%, rgba(59, 79, 230, 0.12) 38%, rgba(42, 56, 184, 0.10) 55%, transparent 78%);
   background-size: 130% 130%, 180% 180%;
 }
 
@@ -194,29 +199,30 @@ textarea {
 }
 
 html.light .starfield {
+  /* Brand indigo (#4F6DFF / #3B4FE6) stars, matching the dark-mode retune. */
   background-image:
-    radial-gradient(1px 1px at 20% 30%, rgba(2,132,199,0.22), transparent 50%),
-    radial-gradient(1px 1px at 80% 20%, rgba(14,165,233,0.18), transparent 50%),
-    radial-gradient(1px 1px at 40% 70%, rgba(14,165,233,0.16), transparent 50%),
-    radial-gradient(1px 1px at 65% 85%, rgba(15,23,42,0.16), transparent 50%),
-    radial-gradient(1px 1px at 15% 90%, rgba(2,132,199,0.12), transparent 50%),
-    radial-gradient(1.5px 1.5px at 90% 60%, rgba(14,165,233,0.18), transparent 50%),
-    radial-gradient(1px 1px at 35% 15%, rgba(14,165,233,0.14), transparent 50%),
-    radial-gradient(1px 1px at 55% 45%, rgba(15,23,42,0.1), transparent 50%),
-    radial-gradient(1px 1px at 75% 75%, rgba(2,132,199,0.16), transparent 50%);
+    radial-gradient(1px 1px at 20% 30%, rgba(59,79,230,0.24), transparent 50%),
+    radial-gradient(1px 1px at 80% 20%, rgba(79,109,255,0.20), transparent 50%),
+    radial-gradient(1px 1px at 40% 70%, rgba(79,109,255,0.18), transparent 50%),
+    radial-gradient(1px 1px at 65% 85%, rgba(42,56,184,0.16), transparent 50%),
+    radial-gradient(1px 1px at 15% 90%, rgba(59,79,230,0.14), transparent 50%),
+    radial-gradient(1.5px 1.5px at 90% 60%, rgba(79,109,255,0.20), transparent 50%),
+    radial-gradient(1px 1px at 35% 15%, rgba(79,109,255,0.16), transparent 50%),
+    radial-gradient(1px 1px at 55% 45%, rgba(42,56,184,0.12), transparent 50%),
+    radial-gradient(1px 1px at 75% 75%, rgba(59,79,230,0.18), transparent 50%);
 }
 
 html.light .hero-aurora {
   background:
-    radial-gradient(58% 44% at 50% 92%, rgba(14, 165, 233, 0.16) 0%, transparent 70%),
-    radial-gradient(42% 32% at 18% 22%, rgba(56, 189, 248, 0.12) 0%, transparent 72%),
-    radial-gradient(42% 32% at 86% 28%, rgba(2, 132, 199, 0.12) 0%, transparent 72%);
+    radial-gradient(58% 44% at 50% 92%, rgba(79, 109, 255, 0.18) 0%, transparent 70%),
+    radial-gradient(42% 32% at 18% 22%, rgba(123, 144, 255, 0.14) 0%, transparent 72%),
+    radial-gradient(42% 32% at 86% 28%, rgba(59, 79, 230, 0.14) 0%, transparent 72%);
 }
 
 html.light .premium-aurora {
   background:
-    radial-gradient(70% 48% at 50% 12%, rgba(14, 165, 233, 0.14), transparent 68%),
-    linear-gradient(115deg, transparent 0%, rgba(2, 132, 199, 0.08) 38%, rgba(56, 189, 248, 0.06) 55%, transparent 78%);
+    radial-gradient(70% 48% at 50% 12%, rgba(79, 109, 255, 0.16), transparent 68%),
+    linear-gradient(115deg, transparent 0%, rgba(59, 79, 230, 0.10) 38%, rgba(123, 144, 255, 0.08) 55%, transparent 78%);
 }
 
 html.light .glass-shell {
@@ -356,10 +362,31 @@ html.light .bg-slate-100 { background-color: #f8fafc; color: #0F172A; }
 html.light .divide-slate-200 > * + * { border-color: #e2e8f0; }
 
 /* Marketing light-mode bridge for existing dark utility classes. */
+/* Dark mode (default): warm the pure-black hero surfaces toward the brand's
+   deep navy so the section reads as "bluish", not neutral black. Scoped to
+   the marketing tree and gated on :not(.light) so it never touches the app
+   dashboard or the light theme. #060814 is a near-black navy — barely
+   lighter than #000 but enough to carry the blue family alongside the
+   aurora glow. */
+html:not(.light) [data-marketing-root] .bg-black {
+  background-color: #060814;
+}
+html:not(.light) [data-marketing-root] .from-black {
+  --tw-gradient-from: #060814 var(--tw-gradient-from-position);
+  --tw-gradient-to: rgba(6, 8, 20, 0) var(--tw-gradient-to-position);
+}
+/* The hero's bottom vignette is a radial ending in #000 via an arbitrary
+   `[background:radial-gradient(...#000 75%)]` utility — retint its stop to
+   the same deep navy so the fade matches the tinted base. Match on the
+   stable `#000_75%` substring Tailwind keeps in the class attribute. */
+html:not(.light) [data-marketing-root] [class*="#000_75%"] {
+  background: radial-gradient(125% 125% at 50% 100%, transparent 0%, #060814 75%) !important;
+}
+
 html.light [data-marketing-root] {
   background:
-    radial-gradient(circle at 50% 0%, rgba(14, 165, 233,0.12), transparent 32rem),
-    linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 42%, #F3F4F6 100%);
+    radial-gradient(circle at 50% 0%, rgba(79, 109, 255,0.14), transparent 32rem),
+    linear-gradient(180deg, #FFFFFF 0%, #F6F7FF 42%, #EEF1FB 100%);
   color: #0F172A;
 }
 html.light [data-marketing-root] .bg-black { background-color: transparent; }
@@ -374,6 +401,10 @@ html.light [data-marketing-root] .bg-black\/40 {
 html.light [data-marketing-root] .from-black {
   --tw-gradient-from: rgba(248,250,252,0.96) var(--tw-gradient-from-position);
   --tw-gradient-to: rgba(248,250,252,0) var(--tw-gradient-to-position);
+}
+/* Hero bottom vignette in light mode: fade to the light page bg, not black. */
+html.light [data-marketing-root] [class*="#000_75%"] {
+  background: radial-gradient(125% 125% at 50% 100%, transparent 0%, #EEF1FB 75%) !important;
 }
 html.light [data-marketing-root] .via-black\/60 {
   --tw-gradient-to: rgba(248,250,252,0) var(--tw-gradient-to-position);
