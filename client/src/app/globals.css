@@ -460,6 +460,17 @@ html.light [data-marketing-root] header .bg-black\/50 {
   border-color: rgba(79,109,255,0.18);
   box-shadow: 0 10px 30px rgba(42,56,184,0.10);
 }
+/* The nav's action-group wrapper carries `bg-black/90` below the lg
+   breakpoint (and while the mobile menu is open). The global light override
+   turns that into near-solid white — the white slab wrapping the Sign In /
+   Book a Demo buttons in the screenshot. Inside the header, make it a soft
+   brand-blue glass so the buttons sit on a subtle panel, not a white box.
+   At lg+ the component already sets `lg:bg-transparent`, so this only
+   affects the narrow / open-menu states. */
+html.light [data-marketing-root] header .bg-black\/90 {
+  background-color: rgba(246,247,255,0.85);
+  border-color: rgba(79,109,255,0.16);
+}
 html.light [data-marketing-root] header [class*="bg-white/["] {
   background-color: rgba(79,109,255,0.07);
   border-color: rgba(79,109,255,0.22);
