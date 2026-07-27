@@ -274,7 +274,7 @@ function DashboardMock() {
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-left text-slate-900 shadow-2xl">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-left text-slate-900 shadow-2xl">
       {/* Browser chrome */}
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5">
         <span className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
