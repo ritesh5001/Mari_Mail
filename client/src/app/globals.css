@@ -402,6 +402,18 @@ html.light [data-marketing-root] .from-black {
   --tw-gradient-from: rgba(248,250,252,0.96) var(--tw-gradient-from-position);
   --tw-gradient-to: rgba(248,250,252,0) var(--tw-gradient-to-position);
 }
+/* The hero screenshot's bottom-fade overlay is `to-black`; in light mode it
+   must fade to the light page bg, otherwise it paints a black strip across
+   the bottom (and dark edges) of the dashboard mock. */
+html.light [data-marketing-root] .to-black {
+  --tw-gradient-to: #EEF1FB var(--tw-gradient-to-position);
+}
+/* Frame hairline ring — keep it a faint brand blue in light mode rather than
+   the near-invisible translucent white, so the mock reads as a clean framed
+   screenshot with no dark border. */
+html.light [data-marketing-root] .ring-white\/10 {
+  --tw-ring-color: rgba(79,109,255,0.14);
+}
 /* Hero bottom vignette in light mode: fade to the light page bg, not black. */
 html.light [data-marketing-root] [class*="#000_75%"] {
   background: radial-gradient(125% 125% at 50% 100%, transparent 0%, #EEF1FB 75%) !important;
