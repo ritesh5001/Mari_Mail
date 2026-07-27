@@ -38,10 +38,29 @@ import { prisma } from "@marimail/db";
 
 loadEnv({ path: new URL("../../.env", import.meta.url) });
 
+// Upstash request-quota rejections (`ERR max requests limit exceeded`) surface
+// here as unhandled `evalsha` rejections from BullMQ's poll loop. Left alone
+// they flood the terminal with identical stacks several times a second. The
+// worker quota-guard already pauses the workers and logs the situation once;
+// suppress the duplicates here (throttled to one line/minute) so the process
+// stays quiet without hiding genuine errors.
+const QUOTA_RE = /max requests limit exceeded|max daily request limit|quota/i;
+let lastQuotaLogAt = 0;
+function noteQuotaOnce() {
+  const now = Date.now();
+  if (now - lastQuotaLogAt < 60_000) return;
+  lastQuotaLogAt = now;
+  console.warn(
+    "[redis-quota] Upstash request quota exhausted — background workers paused; web server still running. Further quota errors are suppressed.",
+  );
+}
 process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason ?? "");
+  if (QUOTA_RE.test(msg)) return void noteQuotaOnce();
   console.warn("[unhandledRejection]", reason instanceof Error ? reason.message : reason);
 });
 process.on("uncaughtException", (err) => {
+  if (QUOTA_RE.test(err?.message ?? "")) return void noteQuotaOnce();
   console.warn("[uncaughtException]", err.message);
 });
 

@@ -4,6 +4,7 @@ import { startCampaignSchedulerWorker } from "./workers/campaign-scheduler.worke
 import { startManualSchedulerWorker } from "./workers/campaign-manual-scheduler.worker.js";
 import { startCsvImportWorker } from "./workers/csv-import.worker.js";
 import { startWarmupWorker } from "./workers/warmup.worker.js";
+import { installRedisQuotaGuard, isQuotaError } from "./workers/redis-quota-guard.js";
 
 export function startBackendWorkers() {
   const redisUrl = process.env.REDIS_URL;
@@ -12,9 +13,11 @@ export function startBackendWorkers() {
     return null;
   }
   const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
-  connection.on("error", (error) => {
-    console.error(`Redis worker connection error: ${error.message}`);
-  });
+  // Connection-level errors are handled by the quota guard below (it owns the
+  // `error` listener so a quota flood is logged once, not per command). We
+  // still attach a no-op here so an early error before the guard installs
+  // can't crash the process as an unhandled 'error' event.
+  connection.on("error", () => undefined);
 
   // Note: we used to open a QueueEvents subscription per queue here purely for
   // logging failures, but each subscription holds a persistent Redis reader
@@ -23,32 +26,53 @@ export function startBackendWorkers() {
   // emit their own `failed` events for logging, so the QueueEvents fan-out is
   // pure overhead. Remove them entirely.
 
+  // Quota errors are handled centrally by the guard (logged once, workers
+  // paused); the per-job `failed` handlers skip them so they don't re-spam
+  // the log with the same `max requests limit exceeded` for every job.
   const warmupWorker = startWarmupWorker(connection);
   warmupWorker.on("failed", (job, error) => {
+    if (isQuotaError(error)) return;
     console.error(`warmup worker job ${job?.id ?? "unknown"} failed: ${error.message}`);
   });
 
   const campaignSchedulerWorker = startCampaignSchedulerWorker(connection);
   campaignSchedulerWorker.on("failed", (job, error) => {
+    if (isQuotaError(error)) return;
     console.error(`eta-step worker job ${job?.id ?? "unknown"} failed: ${error.message}`);
   });
 
   const manualSchedulerWorker = startManualSchedulerWorker(connection);
   manualSchedulerWorker.on("failed", (job, error) => {
+    if (isQuotaError(error)) return;
     console.error(`manual-step worker job ${job?.id ?? "unknown"} failed: ${error.message}`);
   });
 
   const analyticsCronWorker = startAnalyticsCronWorker(connection);
   analyticsCronWorker.on("failed", (job, error) => {
+    if (isQuotaError(error)) return;
     console.error(`analytics-cron worker job ${job?.id ?? "unknown"} failed: ${error.message}`);
   });
 
   const csvImportWorker = startCsvImportWorker(connection);
   csvImportWorker.on("failed", (job, error) => {
+    if (isQuotaError(error)) return;
     console.error(`csv-import worker job ${job?.id ?? "unknown"} failed: ${error.message}`);
   });
 
+  // Graceful degradation when Upstash's request quota is exhausted: pause
+  // every worker (stops the doomed poll loop + the ReplyError log flood) and
+  // auto-resume once the quota recovers. Without this the process spams
+  // identical `max requests limit exceeded` stacks several times a second.
+  installRedisQuotaGuard(connection, [
+    warmupWorker,
+    campaignSchedulerWorker,
+    manualSchedulerWorker,
+    analyticsCronWorker,
+    csvImportWorker,
+  ]);
+
   registerAnalyticsCrons(connection).catch((error) => {
+    if (isQuotaError(error)) return; // guard already logged + paused
     console.error(`Failed to register analytics crons: ${error.message}`);
   });
 
