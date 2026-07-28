@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, X } from "lucide-react";
+import { Loader2, Plus, Rocket, Trash2, X } from "lucide-react";
+import { MotionButton } from "@/components/ui/motion-button";
 import { apiFetch } from "@/lib/browser-fetch";
 
 /** Seed describing who the campaign targets, passed by the entry point. */
@@ -580,14 +581,15 @@ export function SequenceCampaignWizard({
                 Next
               </button>
             ) : (
-              <button
+              <MotionButton
+                type="button"
+                size="sm"
+                tone="green"
+                icon={submitting ? <Loader2 className="size-4 animate-spin" /> : <Rocket className="size-4" />}
                 onClick={launch}
                 disabled={submitting}
-                className="inline-flex items-center gap-2 rounded-md bg-ocean px-4 py-1.5 text-sm font-semibold text-white hover:bg-ocean/90 disabled:opacity-50"
-              >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Launch campaign
-              </button>
+                label={submitting ? "Launching…" : "Launch campaign"}
+              />
             )}
           </div>
         )}

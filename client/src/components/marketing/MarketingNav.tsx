@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Calendar, LogIn, Menu, X } from "lucide-react";
 import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
+import { MotionButton } from "@/components/ui/motion-button";
 
 const links = [
   { href: "/", label: "Home" },
@@ -57,13 +58,12 @@ function DesktopNavContent({ scrolled }: { scrolled: boolean }) {
           }`}
         >
           <ThemeToggle />
-          <Link
+          <MotionButton
             href="/login"
-            className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-4 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white/[0.1]"
-          >
-            <LogIn className="h-3.5 w-3.5" />
-            Sign In
-          </Link>
+            size="sm"
+            icon={<LogIn className="size-4" />}
+            label="Sign In"
+          />
           <Link
             href="/book-demo"
             className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-4 text-[13px] font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-white/[0.1]"

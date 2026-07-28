@@ -1,23 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { Send } from "lucide-react";
+import { Rocket } from "lucide-react";
 import { SequenceCampaignWizard, type CampaignSeed } from "./SequenceCampaignWizard";
+import { MotionButton } from "@/components/ui/motion-button";
 
 function LaunchButton({ seed, label = "Launch campaign", disabled }: { seed: CampaignSeed; label?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       {open && <SequenceCampaignWizard seed={seed} onClose={() => setOpen(false)} />}
-      <button
+      <MotionButton
         type="button"
+        size="sm"
+        tone="green"
+        icon={<Rocket className="size-4" />}
         onClick={() => setOpen(true)}
         disabled={disabled}
-        className="inline-flex items-center gap-1.5 rounded-md bg-ocean px-3 py-2 text-sm font-semibold text-white hover:bg-ocean/90 disabled:opacity-40 dark:bg-accent-600 dark:hover:bg-accent-500"
-      >
-        <Send className="h-4 w-4" />
-        {label}
-      </button>
+        label={label}
+      />
     </>
   );
 }

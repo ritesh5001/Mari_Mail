@@ -51,28 +51,51 @@ const SIZES = {
   },
 } as const;
 
-const shell = (size: keyof typeof SIZES, className?: string) =>
+// Tone tokens: default brand-blue, plus green for "go live / launch" actions.
+const TONES = {
+  blue: {
+    border: "border-accent-500/40 dark:border-accent-400/40",
+    shadow: "shadow-[0_2px_10px_rgba(79,109,255,0.18)] hover:shadow-[0_8px_28px_rgba(79,109,255,0.35)]",
+    ring: "focus-visible:ring-accent-500/50",
+    label: "text-accent-600 group-hover:text-white dark:text-accent-300 dark:group-hover:text-white",
+    circle: "from-accent-500 to-accent-600",
+  },
+  green: {
+    border: "border-emerald-500/40 dark:border-emerald-400/40",
+    shadow: "shadow-[0_2px_10px_rgba(16,185,129,0.20)] hover:shadow-[0_8px_28px_rgba(16,185,129,0.4)]",
+    ring: "focus-visible:ring-emerald-500/50",
+    label: "text-emerald-600 group-hover:text-white dark:text-emerald-300 dark:group-hover:text-white",
+    circle: "from-emerald-500 to-emerald-600",
+  },
+} as const;
+
+const shell = (size: keyof typeof SIZES, tone: keyof typeof TONES, className?: string) =>
   cn(
-    "group relative inline-flex cursor-pointer items-center justify-center overflow-hidden rounded-full bg-white outline-none",
-    "border border-accent-500/40 shadow-[0_2px_10px_rgba(79,109,255,0.18)]",
-    "transition-[box-shadow,transform] duration-300 hover:shadow-[0_8px_28px_rgba(79,109,255,0.35)] hover:-translate-y-0.5",
-    "focus-visible:ring-2 focus-visible:ring-accent-500/50 focus-visible:ring-offset-2",
+    "group relative inline-flex cursor-pointer items-center justify-center overflow-hidden rounded-full bg-white outline-none border",
+    "transition-[box-shadow,transform] duration-300 hover:-translate-y-0.5",
+    "focus-visible:ring-2 focus-visible:ring-offset-2",
     "disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none",
-    "dark:bg-white/[0.04] dark:border-accent-400/40",
+    "dark:bg-white/[0.04]",
+    TONES[tone].border,
+    TONES[tone].shadow,
+    TONES[tone].ring,
     SIZES[size].height,
     className,
   );
 
 function Inner({
   size,
+  tone,
   icon,
   label,
 }: {
   size: keyof typeof SIZES;
+  tone: keyof typeof TONES;
   icon?: React.ReactNode;
   label: string;
 }) {
   const s = SIZES[size];
+  const t = TONES[tone];
   return (
     <>
       {/* Label sits in normal flow so the pill is always wide enough to hold
@@ -81,19 +104,20 @@ function Inner({
       <span
         className={cn(
           "relative z-10 whitespace-nowrap font-semibold tracking-tight duration-500",
-          "text-accent-600 group-hover:text-white dark:text-accent-300 dark:group-hover:text-white",
+          t.label,
           s.text,
         )}
       >
         {label}
       </span>
-      {/* Brand-blue circle: absolute overlay pinned left, grows to fill the
-          whole pill on hover. rounded-full at rest, rounded-inherit when full. */}
+      {/* Circle: absolute overlay pinned left, grows to fill the whole pill on
+          hover. */}
       <span
         aria-hidden
         className={cn(
-          "absolute rounded-full bg-gradient-to-br from-accent-500 to-accent-600 duration-500",
+          "absolute rounded-full bg-gradient-to-br duration-500",
           "group-hover:left-0 group-hover:top-0 group-hover:h-full group-hover:w-full group-hover:rounded-full",
+          t.circle,
           s.circleInset,
           s.circle,
         )}
@@ -119,6 +143,8 @@ export interface MotionButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   size?: keyof typeof SIZES;
+  /** Color tone: brand-blue (default) or green for "go live / launch" actions. */
+  tone?: keyof typeof TONES;
   /** Icon shown inside the circle. Defaults to an arrow. */
   icon?: React.ReactNode;
   /** When set, renders a Next.js <Link> instead of a <button>. */
@@ -126,17 +152,17 @@ export interface MotionButtonProps
 }
 
 export const MotionButton = React.forwardRef<HTMLButtonElement, MotionButtonProps>(
-  ({ label, size = "md", icon, className, disabled, href, ...props }, ref) => {
+  ({ label, size = "md", tone = "blue", icon, className, disabled, href, ...props }, ref) => {
     if (href) {
       return (
-        <Link href={href} className={shell(size, className)}>
-          <Inner size={size} icon={icon} label={label} />
+        <Link href={href} className={shell(size, tone, className)}>
+          <Inner size={size} tone={tone} icon={icon} label={label} />
         </Link>
       );
     }
     return (
-      <button ref={ref} disabled={disabled} className={shell(size, className)} {...props}>
-        <Inner size={size} icon={icon} label={label} />
+      <button ref={ref} disabled={disabled} className={shell(size, tone, className)} {...props}>
+        <Inner size={size} tone={tone} icon={icon} label={label} />
       </button>
     );
   },

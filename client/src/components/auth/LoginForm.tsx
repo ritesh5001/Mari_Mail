@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { apiUrl } from "@/lib/client-api";
+import { MotionButton } from "@/components/ui/motion-button";
 
 type LoginDefaults = {
   email: string;
@@ -150,13 +151,13 @@ export function LoginForm({
         </div>
       ) : null}
 
-      <button
+      <MotionButton
         type="submit"
+        size="md"
         disabled={pending}
-        className="w-full rounded-lg bg-[#4F6DFF] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_28px_rgba(14, 165, 233,0.4)] transition-all hover:-translate-y-0.5 hover:bg-[#3B4FE6] hover:shadow-[0_12px_36px_rgba(14, 165, 233,0.5)] disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none"
-      >
-        {pending ? "Signing in…" : "Sign in"}
-      </button>
+        className="w-full"
+        label={pending ? "Signing in…" : "Sign in"}
+      />
     </form>
   );
 }
