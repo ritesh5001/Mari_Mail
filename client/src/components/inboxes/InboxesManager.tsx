@@ -348,7 +348,7 @@ function ConnectWizard({
   const [provider, setProvider] = useState<Provider | null>(null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/50 p-4">
       <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0a0a0c]">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 dark:border-white/[0.06]">
           <h2 className="text-sm font-semibold text-slate-950 dark:text-white">

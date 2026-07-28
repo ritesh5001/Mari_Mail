@@ -102,7 +102,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/30 px-4 pt-24" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[70] bg-slate-950/30 px-4 pt-24" onMouseDown={onClose}>
       <div
         className="mx-auto w-full max-w-2xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-shell"
         onMouseDown={(event) => event.stopPropagation()}

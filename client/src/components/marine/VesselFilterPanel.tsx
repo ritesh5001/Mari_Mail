@@ -1381,7 +1381,7 @@ function FilterModalShell({
           role="dialog"
           aria-modal="true"
           aria-label="Filter vessels"
-          className={`fixed inset-0 z-50 flex items-stretch justify-stretch transition-opacity duration-200 ${
+          className={`fixed inset-0 z-[70] flex items-stretch justify-stretch transition-opacity duration-200 ${
             visible ? "opacity-100" : "opacity-0"
           }`}
         >

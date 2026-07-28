@@ -140,7 +140,7 @@ export function SendCampaignNowButton({
 
       {open ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/50 px-4"
           onClick={(event) => {
             if (event.target === event.currentTarget) setOpen(false);
           }}

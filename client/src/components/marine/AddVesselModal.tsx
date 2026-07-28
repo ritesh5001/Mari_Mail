@@ -100,7 +100,7 @@ export function AddVesselModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
       <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0F0F11]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-5 flex items-start justify-between px-6 pt-6">
           <div>

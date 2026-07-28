@@ -244,8 +244,10 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#F8FAFC_0%,#F0F9FF_46%,#F8FAFC_100%)] text-slate-900 dark:!bg-[#050507] dark:text-white/90">
-      {/* Desktop: hover-to-expand rail, fixed to the viewport edge. */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200/80 bg-white/95 shadow-[10px_0_36px_rgba(15,23,42,0.06)] dark:border-white/[0.06] dark:bg-[#0A0A0C] dark:shadow-none lg:block">
+      {/* Desktop: hover-to-expand rail, fixed to the viewport edge. Sits above
+          all page content (sticky table headers reach z-50) but below true
+          modals (z-[70]+), so it never gets sliced by a sticky <thead>. */}
+      <aside className="fixed inset-y-0 left-0 z-[60] hidden border-r border-slate-200/80 bg-white/95 shadow-[10px_0_36px_rgba(15,23,42,0.06)] dark:border-white/[0.06] dark:bg-[#0A0A0C] dark:shadow-none lg:block">
         <Sidebar open={sidebarOpen} setOpen={setSidebarOpen}>
           <SidebarBody className="h-full justify-between">
             <SidebarContent
@@ -259,7 +261,7 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
       </aside>
 
       <div className="min-h-screen dark:bg-[#050507] lg:pl-[68px]">
-        <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 shadow-[0_8px_26px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-white/[0.06] dark:bg-[#0A0A0C]/85 dark:shadow-none">
+        <header className="sticky top-0 z-[55] border-b border-slate-200/80 bg-white/90 shadow-[0_8px_26px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-white/[0.06] dark:bg-[#0A0A0C]/85 dark:shadow-none">
           <div className="flex h-16 items-center gap-3 px-5">
             {/* Mobile hamburger drawer */}
             <div className="lg:hidden">

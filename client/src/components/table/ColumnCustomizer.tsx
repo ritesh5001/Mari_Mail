@@ -73,7 +73,7 @@ export function ColumnCustomizer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex justify-end bg-black/40" onClick={onClose}>
       <div
         className="flex h-full w-full max-w-[380px] flex-col border-l border-slate-200 bg-white shadow-xl dark:border-[#202026] dark:bg-[#0B0B0E]"
         onClick={(e) => e.stopPropagation()}
