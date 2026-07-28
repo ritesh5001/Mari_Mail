@@ -23,6 +23,12 @@ interface Feature {
   isIncluded: boolean;
 }
 
+/** A per-plan numeric limit — the user gets this amount on this plan. */
+interface Metric {
+  label: string;
+  value: string;
+}
+
 interface PriceTier {
   id: string;
   name: string;
@@ -36,79 +42,128 @@ interface PriceTier {
   href: string;
   /** During early access every paid plan is free — show the promo treatment. */
   freeEarlyAccess?: boolean;
+  /** Numeric limits the subscriber gets on this plan (inboxes, credits, …). */
+  metrics: Metric[];
+  /** Plan-specific extras beyond the shared, all-plan feature set. */
   features: Feature[];
 }
 
+type PlanTuple = [PriceTier, PriceTier, PriceTier, PriceTier];
+
 interface PricingProps extends React.HTMLAttributes<HTMLDivElement> {
-  plans: [PriceTier, PriceTier, PriceTier];
+  plans: PlanTuple;
   billingCycle: BillingCycle;
   onCycleChange: (cycle: BillingCycle) => void;
 }
 
-// --- Real MariMail plans (brand content, not the prompt's generic SaaS) ----
+// --- Real MariMail plans (from the pricing sheet) --------------------------
 
 const EARLY_ACCESS_SEATS = 100;
 const ANNUAL_DISCOUNT_PERCENT = 20;
 
-export const mariMailPlans: [PriceTier, PriceTier, PriceTier] = [
+// Features every subscriber gets on every plan (the blank-value rows in the
+// pricing sheet — "available for all users"). Rendered once as a shared band
+// and marked included on each card.
+const SHARED_FEATURES: string[] = [
+  "Track vessels globally via satellite AIS",
+  "Access ship owner & manager contacts",
+  "View voyage data & port call history",
+  "Vessel DBMS read access",
+  "Access vessel profiles & port call history",
+  "Manual ETA triggers",
+  "Full ETA & cargo trigger engine",
+  "Email + reply tracking",
+  "Port Radar + smart lists",
+  "Search & filter with advanced parameters",
+  "Advanced filters",
+  "Smart alerts",
+  "Create & manage fleets",
+  "Export data to Excel",
+  "Waterfall enrichment",
+  "CSV, CRM & API data enrichment",
+  "Domain & mailbox purchasing",
+  "Dialer",
+  "CRM integrations",
+  "Hyper-personalization",
+  "Warmup, DNS health, A/B testing",
+  "244M contacts database",
+  "Priority support",
+];
+
+const annual = (monthly: number) =>
+  Math.round((monthly * 12 * (100 - ANNUAL_DISCOUNT_PERCENT)) / 100);
+
+export const mariMailPlans: PlanTuple = [
   {
     id: "starter",
     name: "Starter",
     description: "For solo operators dipping into ETA-driven outreach.",
-    priceMonthly: 49,
-    priceAnnually: 470, // ~20% off 12×49
+    priceMonthly: 25,
+    priceAnnually: annual(25),
     isPopular: false,
     buttonLabel: "Claim free access",
     href: "/book-demo",
     freeEarlyAccess: true,
-    features: [
-      { name: "1 connected inbox", isIncluded: true },
-      { name: "5,000 contacts", isIncluded: true },
-      { name: "Vessel DBMS read access", isIncluded: true },
-      { name: "Manual ETA triggers", isIncluded: true },
-      { name: "Email + reply tracking", isIncluded: true },
-      { name: "Port Radar + smart lists", isIncluded: false },
-      { name: "Warmup, DNS health, A/B testing", isIncluded: false },
-      { name: "SSO + role-based access", isIncluded: false },
+    metrics: [
+      { label: "Target countries", value: "1" },
+      { label: "Connected inboxes", value: "1" },
+      { label: "Enrichment credits", value: "5,000" },
+      { label: "Active sequences", value: "5" },
     ],
+    features: [],
   },
   {
     id: "pro",
     name: "Pro",
-    description: "The full ETA engine, multi-inbox rotation, Port Radar.",
-    priceMonthly: 149,
-    priceAnnually: 1430, // ~20% off 12×149
+    description: "For growing desks running multi-market outreach.",
+    priceMonthly: 45,
+    priceAnnually: annual(45),
     isPopular: true,
     buttonLabel: "Claim free access",
     href: "/book-demo",
     freeEarlyAccess: true,
-    features: [
-      { name: "5 connected inboxes", isIncluded: true },
-      { name: "50,000 contacts", isIncluded: true },
-      { name: "Full ETA & cargo trigger engine", isIncluded: true },
-      { name: "Port Radar + smart lists", isIncluded: true },
-      { name: "Warmup, DNS health, A/B testing", isIncluded: true },
-      { name: "Priority support", isIncluded: true },
-      { name: "SSO + role-based access", isIncluded: false },
-      { name: "Dedicated tenant + SLA", isIncluded: false },
+    metrics: [
+      { label: "Target countries", value: "2" },
+      { label: "Connected inboxes", value: "2" },
+      { label: "Enrichment credits", value: "10,000" },
+      { label: "Active sequences", value: "10" },
     ],
+    features: [{ name: "SSO + role-based access", isIncluded: false }],
   },
   {
     id: "fleet",
     name: "Fleet",
-    description: "For brokerages and shipping desks at enterprise scale.",
+    description: "For brokerages scaling across regions.",
+    priceMonthly: 85,
+    priceAnnually: annual(85),
+    isPopular: false,
+    buttonLabel: "Claim free access",
+    href: "/book-demo",
+    freeEarlyAccess: true,
+    metrics: [
+      { label: "Target countries", value: "4" },
+      { label: "Connected inboxes", value: "4" },
+      { label: "Enrichment credits", value: "20,000" },
+      { label: "Active sequences", value: "15" },
+    ],
+    features: [{ name: "SSO + role-based access", isIncluded: true }],
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise",
+    description: "For shipping groups that need everything, unmetered.",
     priceMonthly: null,
     priceAnnually: null,
     isPopular: false,
     buttonLabel: "Talk to sales",
     href: "mailto:info@maribiz.ai",
+    metrics: [
+      { label: "Target countries", value: "Unlimited" },
+      { label: "Connected inboxes", value: "Unlimited" },
+      { label: "Enrichment credits", value: "Unlimited" },
+      { label: "Active sequences", value: "Unlimited" },
+    ],
     features: [
-      { name: "Unlimited inboxes & contacts", isIncluded: true },
-      { name: "Vessel DBMS read access", isIncluded: true },
-      { name: "Full ETA & cargo trigger engine", isIncluded: true },
-      { name: "Port Radar + smart lists", isIncluded: true },
-      { name: "Warmup, DNS health, A/B testing", isIncluded: true },
-      { name: "Priority support", isIncluded: true },
       { name: "SSO + role-based access", isIncluded: true },
       { name: "Dedicated tenant + SLA", isIncluded: true },
     ],
@@ -158,13 +213,14 @@ const PricingComponent: React.FC<PricingProps> = ({
   className,
   ...props
 }) => {
-  if (plans.length !== 3) {
-    console.error("PricingComponent requires exactly 3 pricing tiers.");
+  if (plans.length !== 4) {
+    console.error("PricingComponent requires exactly 4 pricing tiers.");
     return null;
   }
 
-  // Union of every distinct feature across plans → comparison-table rows.
-  const allFeatures = Array.from(new Set(plans.flatMap((p) => p.features.map((f) => f.name))));
+  // Comparison-table rows = shared (all-plan) features + any plan-specific ones.
+  const planSpecific = Array.from(new Set(plans.flatMap((p) => p.features.map((f) => f.name))));
+  const allFeatures = [...SHARED_FEATURES, ...planSpecific];
 
   const CycleToggle = (
     <div className="mb-12 flex justify-center">
@@ -195,7 +251,7 @@ const PricingComponent: React.FC<PricingProps> = ({
   );
 
   const PricingCards = (
-    <div className="grid gap-6 md:grid-cols-3 lg:gap-8">
+    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
       {plans.map((plan) => {
         const isFeatured = plan.isPopular;
         const isCustom = plan.priceMonthly === null;
@@ -261,13 +317,38 @@ const PricingComponent: React.FC<PricingProps> = ({
             </CardHeader>
 
             <CardContent className="flex-grow">
-              <h4 className="mb-2 mt-2 text-sm font-semibold text-slate-700 dark:text-white/80">
-                Key features
+              {/* Per-plan numbers — what the subscriber actually gets. */}
+              <dl className="grid grid-cols-2 gap-2">
+                {plan.metrics.map((m) => (
+                  <div
+                    key={m.label}
+                    className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 dark:border-white/10 dark:bg-white/[0.03]"
+                  >
+                    <dt className="text-[11px] font-medium text-slate-500 dark:text-white/45">
+                      {m.label}
+                    </dt>
+                    <dd className="mt-0.5 text-base font-bold text-slate-900 dark:text-white">
+                      {m.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              <h4 className="mb-2 mt-5 text-sm font-semibold text-slate-700 dark:text-white/80">
+                Everything included
               </h4>
               <ul className="space-y-0">
-                {plan.features.slice(0, 6).map((feature) => (
+                {/* All shared features are available on every plan. */}
+                {SHARED_FEATURES.slice(0, 5).map((name) => (
+                  <FeatureItem key={name} feature={{ name, isIncluded: true }} />
+                ))}
+                {/* Plan-specific extras (e.g. SSO / dedicated tenant). */}
+                {plan.features.map((feature) => (
                   <FeatureItem key={feature.name} feature={feature} />
                 ))}
+                <li className="flex items-start gap-3 py-1.5 pl-8 text-sm font-medium text-accent-600 dark:text-accent-300">
+                  + all {SHARED_FEATURES.length} platform features
+                </li>
               </ul>
             </CardContent>
 
@@ -317,41 +398,70 @@ const PricingComponent: React.FC<PricingProps> = ({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-white/10">
-          {allFeatures.map((featureName, index) => (
+          {/* Numeric limit rows — show the actual amount per plan. */}
+          {plans[0].metrics.map((metric, index) => (
             <tr
-              key={featureName}
-              className={cn(
-                index % 2 === 1 && "bg-slate-50/60 dark:bg-white/[0.02]",
-              )}
+              key={`metric-${metric.label}`}
+              className={cn(index % 2 === 1 && "bg-slate-50/60 dark:bg-white/[0.02]")}
             >
-              <td className="whitespace-nowrap px-6 py-3 text-left text-sm font-medium text-slate-700 dark:text-white/80">
-                {featureName}
+              <td className="whitespace-nowrap px-6 py-3 text-left text-sm font-semibold text-slate-800 dark:text-white/90">
+                {metric.label}
               </td>
-              {plans.map((plan) => {
-                const included = plan.features.find((f) => f.name === featureName)?.isIncluded ?? false;
-                const Icon = included ? Check : X;
-                return (
-                  <td
-                    key={`${plan.id}-${featureName}`}
-                    className={cn(
-                      "px-6 py-3 text-center",
-                      plan.isPopular && "bg-accent-500/[0.06] dark:bg-accent-500/10",
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        "mx-auto h-5 w-5",
-                        included
-                          ? "text-accent-600 dark:text-accent-300"
-                          : "text-slate-300 dark:text-white/25",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </td>
-                );
-              })}
+              {plans.map((plan) => (
+                <td
+                  key={`${plan.id}-${metric.label}`}
+                  className={cn(
+                    "px-6 py-3 text-center text-sm font-bold text-slate-900 dark:text-white",
+                    plan.isPopular && "bg-accent-500/[0.06] dark:bg-accent-500/10",
+                  )}
+                >
+                  {plan.metrics.find((m) => m.label === metric.label)?.value ?? "—"}
+                </td>
+              ))}
             </tr>
           ))}
+
+          {/* Feature rows — shared features are included on every plan. */}
+          {allFeatures.map((featureName, index) => {
+            const isShared = SHARED_FEATURES.includes(featureName);
+            return (
+              <tr
+                key={featureName}
+                className={cn(
+                  (plans[0].metrics.length + index) % 2 === 1 && "bg-slate-50/60 dark:bg-white/[0.02]",
+                )}
+              >
+                <td className="whitespace-nowrap px-6 py-3 text-left text-sm font-medium text-slate-700 dark:text-white/80">
+                  {featureName}
+                </td>
+                {plans.map((plan) => {
+                  const included = isShared
+                    ? true
+                    : plan.features.find((f) => f.name === featureName)?.isIncluded ?? false;
+                  const Icon = included ? Check : X;
+                  return (
+                    <td
+                      key={`${plan.id}-${featureName}`}
+                      className={cn(
+                        "px-6 py-3 text-center",
+                        plan.isPopular && "bg-accent-500/[0.06] dark:bg-accent-500/10",
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "mx-auto h-5 w-5",
+                          included
+                            ? "text-accent-600 dark:text-accent-300"
+                            : "text-slate-300 dark:text-white/25",
+                        )}
+                        aria-hidden="true"
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -371,7 +481,7 @@ const PricingComponent: React.FC<PricingProps> = ({
           Choose the right plan for your marine desk.
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-lg text-slate-600 dark:text-white/60">
-          Scale from solo operator to enterprise brokerage — every plan is 100% free for the first{" "}
+          Scale from solo operator to enterprise brokerage — every paid plan is 100% free for the first{" "}
           {EARLY_ACCESS_SEATS} sign-ups, no credit card required.
         </p>
       </header>
