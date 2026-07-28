@@ -71,7 +71,7 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
       href={item.href}
       aria-label={item.label}
       className={cn(
-        "group/nav relative flex items-center gap-3 rounded-lg px-[15px] py-2.5 transition-colors",
+        "group/nav relative flex h-11 items-center gap-3 rounded-lg px-[15px] transition-colors",
         active
           ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
           : "text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-white/55 dark:hover:bg-white/[0.06] dark:hover:text-white",
@@ -161,7 +161,7 @@ function SidebarContent({
         <button
           type="button"
           onClick={onLogout}
-          className="flex w-full items-center gap-3 rounded-lg px-[7px] py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+          className="flex h-11 w-full items-center gap-3 rounded-lg px-[7px] text-left transition-colors hover:bg-slate-100 dark:hover:bg-white/[0.06]"
           aria-label="Log out"
         >
           <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#4F6DFF] to-[#2A38B8] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
