@@ -275,6 +275,17 @@ enum BillingStatus {
   TRIALING
 }
 
+enum PaymentLinkKind {
+  STRIPE // hosted Stripe Payment Link generated from the admin panel
+  MANUAL // any external/off-platform URL pasted by the admin
+}
+
+enum PaymentLinkStatus {
+  PENDING  // created, awaiting payment
+  PAID     // paid (Stripe webhook, or admin manually marked paid) → provisioned
+  CANCELED // voided by an admin
+}
+
 enum CreditLedgerReason {
   PLAN_REPLENISH
   ADD_ON_PURCHASE
@@ -328,6 +339,7 @@ model User {
   savedFilters        SavedFilter[]        @relation("SavedFilterCreator")
   serviceRecords      ServiceRecord[]      @relation("ServiceRecordCreator")
   creditLedger        CreditLedger[]       @relation("CreditLedgerActor")
+  paymentLinks        PaymentLink[]        @relation("PaymentLinkCreator")
   adminAuditLog       AdminAuditLog[]      @relation("AdminAuditActor")
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
@@ -378,6 +390,12 @@ model Workspace {
   emailLimit           Int                        @default(5000)
   inboxLimit           Int                        @default(1)
   teamLimit            Int                        @default(1)
+  // How many target countries this workspace may access. Set per plan and,
+  // for Enterprise, negotiated per-deal by an admin. Stored + admin-controlled;
+  // not yet hard-enforced in product flows.
+  countryLimit         Int                        @default(1)
+  // The specific countries granted (ISO names / codes), up to countryLimit.
+  allowedCountries     String[]                   @default([])
   createdAt            DateTime                   @default(now())
   updatedAt            DateTime                   @updatedAt
   owner                User                       @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
@@ -406,6 +424,7 @@ model Workspace {
   billingEvents        BillingEvent[]
   marineDataRows       MarineDataRow[]
   sentMessages         SentMessage[]
+  paymentLinks         PaymentLink[]
 
   @@index([ownerId])
   @@index([plan])
@@ -1287,6 +1306,42 @@ model BillingEvent {
 
   @@index([workspaceId])
   @@index([eventType])
+}
+
+// An admin-created payment request for a (usually Enterprise) deal. The admin
+// sets what the customer gets on payment — a plan, a country allowance, and/or
+// credits — plus a price. For STRIPE links we generate a hosted Stripe Payment
+// Link; for MANUAL the admin pastes any external URL. On PAID (Stripe webhook
+// or an admin manually marking it paid) the grants are provisioned onto the
+// workspace.
+model PaymentLink {
+  id               String            @id @default(cuid())
+  workspaceId      String
+  createdById      String?
+  kind             PaymentLinkKind
+  status           PaymentLinkStatus @default(PENDING)
+  description      String?
+  // Amount in the smallest currency unit (cents) so Stripe math is exact.
+  amountCents      Int
+  currency         String            @default("usd")
+  url              String // the payment URL (Stripe-generated or admin-pasted)
+  // What to provision on payment:
+  grantPlan        BillingPlan? // optional plan to apply
+  grantCountryLimit Int? // optional new country allowance
+  grantCountries   String[]          @default([]) // specific countries to grant
+  grantCredits     Int? // optional credit top-up
+  // Stripe references (STRIPE kind only):
+  stripePaymentLinkId String?        @unique
+  stripeSessionId  String?           @unique
+  paidAt           DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy        User?             @relation("PaymentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model CreditLedger {

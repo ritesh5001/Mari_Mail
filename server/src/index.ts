@@ -29,6 +29,7 @@ import { vesselEtaRouter } from "./routes/vessel-etas.js";
 import { adminMaribizRouter } from "./routes/admin/maribiz.js";
 import { adminApolloRouter } from "./routes/admin/apollo.js";
 import { adminDataSourcesRouter } from "./routes/admin/data-sources.js";
+import { adminBillingRouter } from "./routes/admin/billing.js";
 import { workspaceRouter } from "./routes/workspaces.js";
 import { inboundRouter, trackingRouter, unsubscribeRouter } from "./routes/tracking.js";
 import { setRealtimeServer } from "./services/realtime.js";
@@ -235,6 +236,7 @@ app.use("/api/billing", billingRouter);
 app.use("/api/admin/maribiz", adminMaribizRouter);
 app.use("/api/admin/apollo", adminApolloRouter);
 app.use("/api/admin/data-sources", adminDataSourcesRouter);
+app.use("/api/admin/billing", adminBillingRouter);
 app.use("/t", trackingRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -10,6 +10,7 @@ import {
   getStripe,
   grantCredits,
 } from "../services/billing.service.js";
+import { fulfilPaymentLink } from "../services/payment-link.service.js";
 
 export const billingRouter = Router();
 export const billingWebhookRouter = Router();
@@ -183,7 +184,14 @@ billingWebhookRouter.post(
 
       switch (event.type) {
         case "checkout.session.completed": {
-          const session = event.data.object as { metadata?: Record<string, string>; customer?: string; subscription?: string };
+          const session = event.data.object as { id?: string; metadata?: Record<string, string>; customer?: string; subscription?: string };
+          // Admin-created Enterprise payment link → provision its grants.
+          if (session.metadata?.paymentLinkId) {
+            await fulfilPaymentLink(session.metadata.paymentLinkId, {
+              stripeSessionId: typeof session.id === "string" ? session.id : undefined,
+            });
+            break;
+          }
           const plan = session.metadata?.plan as BillingPlan | undefined;
           const wsId = session.metadata?.workspaceId;
           if (wsId && plan) {
