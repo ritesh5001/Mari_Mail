@@ -532,7 +532,11 @@ export function PortRadarArrivals({
                 eta.previousCargo && eta.nextCargo && eta.previousCargo !== eta.nextCargo;
               const isOpen = expanded.has(eta.vesselId);
               const isSelected = selectedVessels.has(eta.vesselId);
-              const rowBg = isSelected ? "bg-ocean/5" : "bg-white";
+              // Pinned (sticky) cells must be OPAQUE, otherwise the horizontally
+              // scrolling columns (IMO, type…) show through the translucent
+              // `bg-ocean/5` selected tint and appear to strike through the
+              // vessel name. Use a solid tint that visually matches ocean/5-on-white.
+              const stickyBg = isSelected ? "bg-[#F4F6FF]" : "bg-white";
               const aisLabel = hasLivePosition
                 ? "Live"
                 : hasDestinationMarker
@@ -546,7 +550,7 @@ export function PortRadarArrivals({
               return (
                 <Fragment key={eta.id}>
                   <tr className={`hover:bg-slate-50 ${isSelected ? "bg-ocean/5" : ""}`}>
-                    <td className={`sticky left-0 z-10 px-4 py-3 ${rowBg}`}>
+                    <td className={`sticky left-0 z-10 px-4 py-3 ${stickyBg}`}>
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -555,7 +559,7 @@ export function PortRadarArrivals({
                       />
                     </td>
                     <td
-                      className={`sticky left-12 z-10 max-w-[220px] truncate whitespace-nowrap px-4 py-3 font-semibold text-slate-950 ${rowBg}`}
+                      className={`sticky left-12 z-10 max-w-[220px] truncate whitespace-nowrap px-4 py-3 font-semibold text-slate-950 ${stickyBg}`}
                       title={eta.vessel.vesselName}
                     >
                       <Link
@@ -653,7 +657,7 @@ export function PortRadarArrivals({
                         {formatAddedAgo(eta.createdAt)}
                       </td>
                     ) : null}
-                    <td className={`sticky right-0 z-10 px-4 py-3 ${rowBg}`}>
+                    <td className={`sticky right-0 z-10 px-4 py-3 ${stickyBg}`}>
                       <div className="flex items-center gap-2">
                         {isSuperAdmin ? (
                           <>

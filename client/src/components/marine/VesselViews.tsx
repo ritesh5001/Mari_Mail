@@ -542,12 +542,17 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
               ) : (
                 sortedVessels.map((vessel) => {
                   const isOpen = expanded.has(vessel.id);
+                  // Pinned (sticky) cells must be OPAQUE — a translucent
+                  // selected tint lets the horizontally-scrolling columns show
+                  // through and strike across the vessel name. Solid tint that
+                  // matches ocean/5-on-white.
+                  const stickyBg = selected.has(vessel.id) ? "bg-[#F4F6FF]" : "bg-white";
                   return (
                   <Fragment key={vessel.id}>
                   <tr
                     className={`hover:bg-slate-50 ${selected.has(vessel.id) ? "bg-ocean/5" : ""}`}
                   >
-                    <td className={`sticky left-0 z-10 px-2 py-3 ${selected.has(vessel.id) ? "bg-ocean/5" : "bg-white"}`}>
+                    <td className={`sticky left-0 z-10 px-2 py-3 ${stickyBg}`}>
                       <button
                         type="button"
                         onClick={() => toggleExpand(vessel.id)}
@@ -558,7 +563,7 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
                         {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </button>
                     </td>
-                    <td className={`sticky left-8 z-10 px-4 py-3 ${selected.has(vessel.id) ? "bg-ocean/5" : "bg-white"}`}>
+                    <td className={`sticky left-8 z-10 px-4 py-3 ${stickyBg}`}>
                       <input
                         type="checkbox"
                         checked={selected.has(vessel.id)}
@@ -572,7 +577,7 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
                         return (
                           <td
                             key={col.id}
-                            className={`max-w-[220px] truncate whitespace-nowrap px-4 py-3 sticky left-20 z-10 font-semibold text-slate-950 ${selected.has(vessel.id) ? "bg-ocean/5" : "bg-white"}`}
+                            className={`max-w-[220px] truncate whitespace-nowrap px-4 py-3 sticky left-20 z-10 font-semibold text-slate-950 ${stickyBg}`}
                             title={name}
                           >
                             <Link href={`/dashboard/vessels/${vessel.imoNumber}`} className="hover:text-ocean">
