@@ -98,11 +98,14 @@ function Inner({
           s.circle,
         )}
       />
-      {/* Icon rides on top of the circle, nudges right on hover. */}
+      {/* Icon rides on top of the circle, nudges right on hover. Force pure
+          white via an arbitrary value + [&_svg]:text so custom icons inherit it
+          — the marketing `.text-white → dark ink` light-mode override can't flip
+          `text-[#ffffff]`, so the arrow stays white on the light hero too. */}
       <span
         aria-hidden
         className={cn(
-          "absolute top-1/2 z-20 -translate-y-1/2 text-white duration-500 group-hover:translate-x-1",
+          "absolute top-1/2 z-20 -translate-y-1/2 text-[#ffffff] [&_svg]:text-[#ffffff] duration-500 group-hover:translate-x-1",
           s.iconLeft,
         )}
       >

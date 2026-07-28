@@ -3,7 +3,6 @@ import { StatsStrip } from "./StatsStrip";
 import { PainPoints } from "./PainPoints";
 import { Pillars } from "./Pillars";
 import { HowItWorks } from "./HowItWorks";
-import { Integrations } from "./Integrations";
 import { PricingCard } from "@/components/ui/pricing-card";
 import { FaqTabs } from "@/components/ui/faq-tabs";
 import { FinalCta } from "./FinalCta";
@@ -21,7 +20,6 @@ export function Marketing() {
       <PainPoints />
       <Pillars />
       <HowItWorks />
-      <Integrations />
       <PricingCard />
       <Testimonials />
       <FaqTabs />

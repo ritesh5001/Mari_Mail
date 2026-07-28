@@ -1,7 +1,7 @@
 const stats = [
   { value: "120K+", label: "Vessels Indexed" },
   { value: "4,500", label: "Ports Covered" },
-  { value: "$2.5B+", label: "Contacts" },
+  { value: "24/7", label: "ETA-Triggered Outreach" },
 ];
 
 export function StatsStrip() {
@@ -9,7 +9,7 @@ export function StatsStrip() {
     <section className="relative bg-black py-24 lg:py-32">
       <div className="mx-auto w-full max-w-6xl px-6 text-center">
         <p className="mx-auto max-w-sm text-balance text-base font-medium text-white/70 md:max-w-none md:text-lg">
-          How marine teams have grown using MariMail
+          The marine intelligence layer behind every campaign
         </p>
 
         <div className="mt-14 grid grid-cols-1 gap-12 md:grid-cols-3 md:gap-6">
