@@ -2,9 +2,10 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarClock, ExternalLink, Loader2, SlidersHorizontal } from "lucide-react";
+import { CalendarClock, ExternalLink, ListPlus, Loader2, SlidersHorizontal } from "lucide-react";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
+import { MotionButton } from "@/components/ui/motion-button";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 import { portRadarColumns } from "@/lib/table-columns";
 
@@ -449,14 +450,14 @@ export function PortRadarArrivals({
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Customize
             </button>
-            <button
+            <MotionButton
               type="button"
+              size="sm"
+              icon={<ListPlus className="size-4" />}
               onClick={() => selectedVesselIds.length > 0 && setShowVesselModal(true)}
               disabled={selectedVesselIds.length === 0}
-              className="rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
-            >
-              Add to List{selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}
-            </button>
+              label={`Add to List${selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}`}
+            />
             <button
               type="button"
               onClick={handleExport}

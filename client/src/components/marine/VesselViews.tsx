@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Database, ExternalLink, Loader2, Lock, SlidersHorizontal, Zap } from "lucide-react";
+import { ChevronDown, ChevronRight, Database, ExternalLink, ListPlus, Loader2, Lock, SlidersHorizontal, Zap } from "lucide-react";
 import Link from "next/link";
 import type { VesselWithCompanies } from "@/lib/marine-data";
 
@@ -17,6 +17,7 @@ function isPublicEmailDomain(value: string | null | undefined) {
 }
 import { VESSEL_SCHEMA_FIELDS, vesselFieldValue, type VesselSchemaField } from "@/lib/vessel-schema";
 import { VesselAddToListModal } from "./VesselAddToListModal";
+import { MotionButton } from "@/components/ui/motion-button";
 import { apiFetch } from "@/lib/browser-fetch";
 import { vesselTableColumns } from "@/lib/table-columns";
 import { useColumnPreferences } from "@/hooks/useColumnPreferences";
@@ -470,13 +471,14 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Customize
             </button>
-            <button
+            <MotionButton
+              type="button"
+              size="sm"
+              icon={<ListPlus className="size-4" />}
               onClick={() => { if (selectedIds.length > 0) setShowModal(true); }}
               disabled={selectedIds.length === 0}
-              className="rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
-            >
-              Add to List{selected.size > 0 ? ` (${selected.size})` : ""}
-            </button>
+              label={`Add to List${selected.size > 0 ? ` (${selected.size})` : ""}`}
+            />
             <button className="rounded-md border border-slate-200 px-2 py-1">Start Campaign</button>
             <button
               onClick={handleExport}

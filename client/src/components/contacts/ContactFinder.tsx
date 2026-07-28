@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Bookmark, ChevronDown, ChevronRight, Database, Linkedin, Loader2, Lock, Phone, PlusCircle, Smartphone, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Bookmark, ChevronDown, ChevronRight, Database, Linkedin, ListPlus, Loader2, Lock, Phone, PlusCircle, Smartphone, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import type { ContactModel } from "@/lib/contact-data";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue, type ContactSchemaField } from "@/lib/contact-schema";
@@ -12,6 +12,7 @@ import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
 import { SortableHeader } from "@/components/table/SortableHeader";
 import type { SortState } from "@/hooks/useClientSort";
 import { ContactAddToListModal } from "./ContactAddToListModal";
+import { MotionButton } from "@/components/ui/motion-button";
 import { LaunchCampaignFromSelection } from "@/components/campaigns/LaunchCampaignButton";
 import { VesselAddToListModal } from "@/components/marine/VesselAddToListModal";
 import type { AssociatedVesselView, AssociatedVesselsResponse, AssociationCountsResponse } from "@/lib/marine-row-views";
@@ -476,13 +477,14 @@ export function ContactFinder() {
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   Customize
                 </button>
-                <button
+                <MotionButton
+                  type="button"
+                  size="sm"
+                  icon={<ListPlus className="size-4" />}
                   onClick={() => { if (selectedIds.length > 0) setShowModal(true); }}
                   disabled={selectedIds.length === 0}
-                  className="rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
-                >
-                  Add to List{selected.size > 0 ? ` (${selected.size})` : ""}
-                </button>
+                  label={`Add to List${selected.size > 0 ? ` (${selected.size})` : ""}`}
+                />
                 <button className="rounded-md border border-slate-200 px-2 py-1">Export CSV</button>
                 <LaunchCampaignFromSelection contactIds={selectedIds} />
                 <button

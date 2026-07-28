@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { Variants } from "framer-motion";
 import { AnimatedGroup } from "@/components/ui/animated-group";
+import { MotionButton } from "@/components/ui/motion-button";
 import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { cn } from "@/lib/cn";
 
@@ -135,14 +136,7 @@ export function HeroSection() {
                   }}
                   className="mt-12 flex flex-col items-center justify-center gap-3 md:flex-row"
                 >
-                  <Link
-                    key={1}
-                    href="/book-demo"
-                    className="group inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#F8FAFC] px-6 text-[15px] font-semibold text-black shadow-[0_14px_44px_rgba(255,255,255,0.12)] transition-all hover:-translate-y-0.5 hover:bg-[#EDEDF0]"
-                  >
-                    <span className="text-nowrap">Start for Free</span>
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                  </Link>
+                  <MotionButton key={1} href="/book-demo" size="md" label="Start for Free" />
                   <Link
                     key={2}
                     href="/book-demo"
