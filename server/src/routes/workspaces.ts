@@ -52,6 +52,9 @@ workspaceRouter.get("/", requireAuth, async (req, res, next) => {
         slug: membership.workspace.slug,
         role: membership.role,
         timezone: membership.workspace.timezone,
+        targetPortCountry: membership.workspace.targetPortCountry,
+        allowedCountries: membership.workspace.allowedCountries,
+        countryLimit: membership.workspace.countryLimit,
         onboardedAt: membership.workspace.onboardedAt,
       })),
     );

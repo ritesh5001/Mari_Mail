@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
+    "db:import-ports": "tsx prisma/import-ports.ts",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.json"
