@@ -14,19 +14,24 @@ import {
   LogOut,
   Mail,
   Megaphone,
+  Menu,
   Play,
   Radar,
   Settings,
   Ship,
   Users,
+  X,
   Zap,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { AuthSession, WorkspaceSummary } from "@marimail/types";
 import { apiFetch } from "@/lib/browser-fetch";
+import { cn } from "@/lib/cn";
 import { CommandPalette } from "./CommandPalette";
+import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar";
 import { SidebarCustomizePanel } from "./SidebarCustomizePanel";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -57,10 +62,134 @@ const navItems: NavItem[] = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
 
+/** A single nav row that reveals its label as the sidebar expands (brand-blue active state). */
+function NavRow({ item, active }: { item: NavItem; active: boolean }) {
+  const { open, animate } = useSidebar();
+  const Icon = item.icon;
+  return (
+    <Link
+      href={item.href}
+      aria-label={item.label}
+      className={cn(
+        "group/nav relative flex items-center gap-3 rounded-lg px-[15px] py-2.5 transition-colors",
+        active
+          ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+          : "text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-white/55 dark:hover:bg-white/[0.06] dark:hover:text-white",
+      )}
+    >
+      {active && (
+        <span className="absolute left-[-12px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-sky-500 dark:bg-accent-400" />
+      )}
+      <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+      <motion.span
+        animate={{
+          display: animate ? (open ? "inline-block" : "none") : "inline-block",
+          opacity: animate ? (open ? 1 : 0) : 1,
+        }}
+        className="whitespace-pre text-sm font-medium"
+      >
+        {item.label}
+      </motion.span>
+    </Link>
+  );
+}
+
+/** Logo that shows the wordmark when open, just the mark when collapsed. */
+function SidebarLogo() {
+  const { open, animate } = useSidebar();
+  return (
+    <Link
+      href="/dashboard"
+      aria-label="MariMail home"
+      className="flex h-10 items-center gap-2 px-[11px]"
+    >
+      <img src="/logo.png" alt="MariMail" className="h-7 w-7 flex-shrink-0 object-contain" />
+      <motion.span
+        animate={{
+          display: animate ? (open ? "inline-block" : "none") : "inline-block",
+          opacity: animate ? (open ? 1 : 0) : 1,
+        }}
+        className="whitespace-pre text-base font-semibold text-slate-950 dark:text-white"
+      >
+        MariMail
+      </motion.span>
+    </Link>
+  );
+}
+
+function SidebarContent({
+  session,
+  hiddenNavItems,
+  setHiddenNavItems,
+  onLogout,
+}: {
+  session: AuthSession;
+  hiddenNavItems: string[];
+  setHiddenNavItems: (hidden: string[]) => void;
+  onLogout: () => void;
+}) {
+  const pathname = usePathname();
+  const { open, animate } = useSidebar();
+  const userInitial = session.user.name?.slice(0, 1).toUpperCase() ?? "U";
+
+  return (
+    <>
+      <SidebarLogo />
+
+      <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {navItems.map((item) => {
+          if (item.superAdminOnly && !session.user.isSuperAdmin) return null;
+          if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
+          const active =
+            pathname === item.href ||
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          return <NavRow key={item.href} item={item} active={active} />;
+        })}
+      </nav>
+
+      <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
+        <SidebarCustomizePanel
+          items={navItems
+            .filter((item) => !item.alwaysVisible && (!item.superAdminOnly || session.user.isSuperAdmin))
+            .map((item) => ({ href: item.href, label: item.label, icon: item.icon }))}
+          hidden={hiddenNavItems}
+          onChange={setHiddenNavItems}
+        />
+      </div>
+
+      <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
+        <button
+          type="button"
+          onClick={onLogout}
+          className="flex w-full items-center gap-3 rounded-lg px-[7px] py-2 text-left transition-colors hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+          aria-label="Log out"
+        >
+          <span className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#4F6DFF] to-[#2A38B8] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]">
+            {userInitial}
+          </span>
+          <motion.span
+            animate={{
+              display: animate ? (open ? "flex" : "none") : "flex",
+              opacity: animate ? (open ? 1 : 0) : 1,
+            }}
+            className="min-w-0 flex-1 items-center justify-between gap-2 whitespace-pre"
+          >
+            <span className="min-w-0 truncate text-sm font-medium text-slate-700 dark:text-white/80">
+              {session.user.name ?? "Account"}
+            </span>
+            <LogOut className="h-4 w-4 flex-shrink-0 text-slate-400 dark:text-white/50" />
+          </motion.span>
+        </button>
+      </div>
+    </>
+  );
+}
+
 export function DashboardShell({ session, children }: { session: AuthSession; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState(session.activeWorkspace);
   const [hiddenNavItems, setHiddenNavItems] = useState(session.user.hiddenNavItems ?? []);
 
@@ -113,78 +242,35 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
     router.refresh();
   }
 
-  const userInitial = session.user.name?.slice(0, 1).toUpperCase() ?? "U";
-
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#F8FAFC_0%,#F0F9FF_46%,#F8FAFC_100%)] text-slate-900 dark:!bg-[#050507] dark:text-white/90">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-16 flex-col border-r border-slate-200/80 bg-white/95 shadow-[10px_0_36px_rgba(15,23,42,0.06)] dark:border-white/[0.06] dark:bg-[#0A0A0C] dark:shadow-none lg:flex">
-        <Link
-          href="/dashboard"
-          className="flex h-16 items-center justify-center border-b border-slate-100 dark:border-white/[0.04]"
-          aria-label="MariMail home"
-        >
-          <img src="/logo.png" alt="MariMail" className="h-7 w-auto object-contain" />
-        </Link>
-
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {navItems.map((item) => {
-            if (item.superAdminOnly && !session.user.isSuperAdmin) return null;
-            if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
-            const Icon = item.icon;
-            const active =
-              pathname === item.href ||
-              (item.href !== "/dashboard" && pathname.startsWith(item.href));
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`group relative mx-auto flex h-11 w-11 items-center justify-center rounded-lg transition-colors ${
-                  active
-                    ? "bg-sky-50 text-sky-700 before:absolute before:left-[-10px] before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r before:bg-sky-500 dark:bg-accent-500/15 dark:text-accent-300 dark:before:bg-accent-400"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-white/55 dark:hover:bg-white/[0.06] dark:hover:text-white"
-                }`}
-                aria-label={item.label}
-              >
-                <Icon className="h-[18px] w-[18px]" />
-                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 opacity-0 shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100 dark:border-white/10 dark:bg-[#15131c] dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.55)]">
-                  {item.label}
-                </span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="border-t border-slate-100 p-2 dark:border-white/[0.04]">
-          <SidebarCustomizePanel
-            items={navItems
-              .filter((item) => !item.alwaysVisible && (!item.superAdminOnly || session.user.isSuperAdmin))
-              .map((item) => ({ href: item.href, label: item.label, icon: item.icon }))}
-            hidden={hiddenNavItems}
-            onChange={setHiddenNavItems}
-          />
-        </div>
-
-        <div className="border-t border-slate-100 p-2 dark:border-white/[0.04]">
-          <button
-            type="button"
-            onClick={logout}
-            className="group relative mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#4F6DFF] to-[#2A38B8] text-sm font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] transition-transform hover:scale-105"
-            aria-label="Log out"
-          >
-            {userInitial}
-            <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-x-1 -translate-y-1/2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 opacity-0 shadow-[0_12px_28px_rgba(15,23,42,0.14)] transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100 dark:border-white/10 dark:bg-[#15131c] dark:text-white dark:shadow-[0_8px_24px_rgba(0,0,0,0.55)]">
-              <span className="inline-flex items-center gap-1.5">
-                <LogOut className="h-3 w-3" />
-                Sign out
-              </span>
-            </span>
-          </button>
-        </div>
+      {/* Desktop: hover-to-expand rail, fixed to the viewport edge. */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200/80 bg-white/95 shadow-[10px_0_36px_rgba(15,23,42,0.06)] dark:border-white/[0.06] dark:bg-[#0A0A0C] dark:shadow-none lg:block">
+        <Sidebar open={sidebarOpen} setOpen={setSidebarOpen}>
+          <SidebarBody className="h-full justify-between">
+            <SidebarContent
+              session={session}
+              hiddenNavItems={hiddenNavItems}
+              setHiddenNavItems={setHiddenNavItems}
+              onLogout={logout}
+            />
+          </SidebarBody>
+        </Sidebar>
       </aside>
 
-      <div className="min-h-screen dark:bg-[#050507] lg:pl-16">
+      <div className="min-h-screen dark:bg-[#050507] lg:pl-[68px]">
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 shadow-[0_8px_26px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-white/[0.06] dark:bg-[#0A0A0C]/85 dark:shadow-none">
           <div className="flex h-16 items-center gap-3 px-5">
+            {/* Mobile hamburger drawer */}
+            <div className="lg:hidden">
+              <MobileNav
+                session={session}
+                hiddenNavItems={hiddenNavItems}
+                setHiddenNavItems={setHiddenNavItems}
+                onLogout={logout}
+              />
+            </div>
+
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="truncate text-base font-semibold text-slate-950 dark:text-white">{breadcrumb}</h1>
               <button
@@ -255,5 +341,119 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
+  );
+}
+
+/** Mobile slide-in drawer: same nav, always-expanded labels. */
+function MobileNav({
+  session,
+  hiddenNavItems,
+  setHiddenNavItems,
+  onLogout,
+}: {
+  session: AuthSession;
+  hiddenNavItems: string[];
+  setHiddenNavItems: (hidden: string[]) => void;
+  onLogout: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close the drawer whenever the route changes.
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Open menu"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+      >
+        <Menu className="h-4 w-4" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[90] bg-slate-950/40 backdrop-blur-sm"
+              onClick={() => setOpen(false)}
+            />
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.28, ease: "easeInOut" }}
+              className="fixed inset-y-0 left-0 z-[100] flex w-[260px] flex-col border-r border-slate-200 bg-white px-3 py-4 dark:border-white/[0.06] dark:bg-[#0A0A0C]"
+            >
+              <div className="flex items-center justify-between px-2">
+                <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setOpen(false)}>
+                  <img src="/logo.png" alt="MariMail" className="h-7 w-7 object-contain" />
+                  <span className="text-base font-semibold text-slate-950 dark:text-white">MariMail</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close menu"
+                  className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:text-white/50 dark:hover:bg-white/[0.06]"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto">
+                {navItems.map((item) => {
+                  if (item.superAdminOnly && !session.user.isSuperAdmin) return null;
+                  if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
+                  const Icon = item.icon;
+                  const active =
+                    pathname === item.href ||
+                    (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/70 dark:hover:bg-white/[0.06] dark:hover:text-white",
+                      )}
+                    >
+                      <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
+                <SidebarCustomizePanel
+                  items={navItems
+                    .filter((item) => !item.alwaysVisible && (!item.superAdminOnly || session.user.isSuperAdmin))
+                    .map((item) => ({ href: item.href, label: item.label, icon: item.icon }))}
+                  hidden={hiddenNavItems}
+                  onChange={setHiddenNavItems}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={onLogout}
+                className="mt-2 flex items-center gap-3 rounded-lg border-t border-slate-100 px-2 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:border-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.06]"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </button>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
