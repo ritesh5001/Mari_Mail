@@ -62,32 +62,35 @@ const EARLY_ACCESS_SEATS = 100;
 const ANNUAL_DISCOUNT_PERCENT = 20;
 
 // Features every subscriber gets on every plan (the blank-value rows in the
-// pricing sheet — "available for all users"). Rendered once as a shared band
+// pricing sheet — "available for all users"). Wording is cleaned up and
+// de-duplicated for the live marketing page. Rendered once as a shared band
 // and marked included on each card.
 const SHARED_FEATURES: string[] = [
-  "Track vessels globally via satellite AIS",
-  "Access ship owner & manager contacts",
-  "View voyage data & port call history",
-  "Vessel DBMS read access",
-  "Access vessel profiles & port call history",
-  "Manual ETA triggers",
-  "Full ETA & cargo trigger engine",
-  "Email + reply tracking",
-  "Port Radar + smart lists",
-  "Search & filter with advanced parameters",
-  "Advanced filters",
-  "Smart alerts",
-  "Create & manage fleets",
-  "Export data to Excel",
-  "Waterfall enrichment",
+  // Marine intelligence
+  "Global vessel tracking via satellite AIS",
+  "Vessel profiles, voyage data & port-call history",
+  "Ship owner & manager contact directory",
+  "244M-contact global B2B database",
+  "Full vessel DBMS read access",
+  // Targeting & alerts
+  "Advanced search & filtering",
+  "Real-time smart alerts",
+  "Create & manage custom fleets",
+  "Port Radar with smart lists",
+  // Outreach engine
+  "ETA & cargo-triggered sequences",
+  "Multi-step email & reply tracking",
+  "Inbox warmup, DNS health & A/B testing",
+  "Hyper-personalized messaging",
+  "Dedicated calling dialer",
+  // Data & enrichment
+  "Waterfall contact enrichment",
   "CSV, CRM & API data enrichment",
   "Domain & mailbox purchasing",
-  "Dialer",
-  "CRM integrations",
-  "Hyper-personalization",
-  "Warmup, DNS health, A/B testing",
-  "244M contacts database",
-  "Priority support",
+  "Native CRM integrations",
+  "Export to Excel & CSV",
+  // Support
+  "Priority customer support",
 ];
 
 const annual = (monthly: number) =>
