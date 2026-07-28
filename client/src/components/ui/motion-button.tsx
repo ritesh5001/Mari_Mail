@@ -21,43 +21,45 @@ import { cn } from "@/lib/cn";
  * buttons — highlighting everything highlights nothing.
  */
 
+// Each size defines: overall pill height, the resting circle diameter, icon
+// size, and how far the label is padded so it clears the resting circle on the
+// left and has breathing room on the right.
 const SIZES = {
   sm: {
-    pad: "p-1",
-    circle: "h-8 w-8",
+    height: "h-9",
+    circle: "h-7 w-7",
+    circleInset: "left-1 top-1",
     icon: "size-4",
-    iconPos: "left-2",
-    text: "text-sm px-4 pl-9",
-    minH: "min-h-[2.5rem]",
+    iconLeft: "left-[0.6rem]",
+    text: "text-sm pl-10 pr-4",
   },
   md: {
-    pad: "p-1.5",
+    height: "h-12",
     circle: "h-10 w-10",
+    circleInset: "left-1 top-1",
     icon: "size-5",
-    iconPos: "left-2.5",
-    text: "text-base px-6 pl-12",
-    minH: "min-h-[3.25rem]",
+    iconLeft: "left-[0.8rem]",
+    text: "text-base pl-14 pr-6",
   },
   lg: {
-    pad: "p-2",
+    height: "h-14",
     circle: "h-12 w-12",
+    circleInset: "left-1 top-1",
     icon: "size-6",
-    iconPos: "left-3",
-    text: "text-lg px-8 pl-14",
-    minH: "min-h-[4rem]",
+    iconLeft: "left-[0.9rem]",
+    text: "text-lg pl-16 pr-8",
   },
 } as const;
 
 const shell = (size: keyof typeof SIZES, className?: string) =>
   cn(
-    "group relative inline-flex cursor-pointer items-center overflow-hidden rounded-full bg-white outline-none",
+    "group relative inline-flex cursor-pointer items-center justify-center overflow-hidden rounded-full bg-white outline-none",
     "border border-accent-500/40 shadow-[0_2px_10px_rgba(79,109,255,0.18)]",
     "transition-[box-shadow,transform] duration-300 hover:shadow-[0_8px_28px_rgba(79,109,255,0.35)] hover:-translate-y-0.5",
     "focus-visible:ring-2 focus-visible:ring-accent-500/50 focus-visible:ring-offset-2",
     "disabled:pointer-events-none disabled:opacity-40 disabled:shadow-none",
     "dark:bg-white/[0.04] dark:border-accent-400/40",
-    SIZES[size].pad,
-    SIZES[size].minH,
+    SIZES[size].height,
     className,
   );
 
@@ -73,33 +75,38 @@ function Inner({
   const s = SIZES[size];
   return (
     <>
-      {/* Expanding brand-blue circle */}
-      <span
-        aria-hidden
-        className={cn(
-          "block flex-shrink-0 rounded-full bg-gradient-to-br from-accent-500 to-accent-600 duration-500 group-hover:w-full",
-          s.circle,
-        )}
-      />
-      {/* Icon inside the circle */}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute top-1/2 -translate-y-1/2 text-white duration-500 group-hover:translate-x-1",
-          s.iconPos,
-        )}
-      >
-        {icon ?? <ArrowRight className={s.icon} />}
-      </span>
-      {/* Label — flips to white as the circle fills */}
+      {/* Label sits in normal flow so the pill is always wide enough to hold
+          it; left padding clears the resting circle. Flips to white as the
+          circle sweeps across on hover. */}
       <span
         className={cn(
-          "absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-center font-semibold tracking-tight duration-500",
+          "relative z-10 whitespace-nowrap font-semibold tracking-tight duration-500",
           "text-accent-600 group-hover:text-white dark:text-accent-300 dark:group-hover:text-white",
           s.text,
         )}
       >
         {label}
+      </span>
+      {/* Brand-blue circle: absolute overlay pinned left, grows to fill the
+          whole pill on hover. rounded-full at rest, rounded-inherit when full. */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute rounded-full bg-gradient-to-br from-accent-500 to-accent-600 duration-500",
+          "group-hover:left-0 group-hover:top-0 group-hover:h-full group-hover:w-full group-hover:rounded-full",
+          s.circleInset,
+          s.circle,
+        )}
+      />
+      {/* Icon rides on top of the circle, nudges right on hover. */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute top-1/2 z-20 -translate-y-1/2 text-white duration-500 group-hover:translate-x-1",
+          s.iconLeft,
+        )}
+      >
+        {icon ?? <ArrowRight className={s.icon} />}
       </span>
     </>
   );
