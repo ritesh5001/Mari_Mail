@@ -13,7 +13,17 @@ type RegisterDefaults = {
   termsAccepted: boolean;
   timezone: string;
   targetPortCountry: string;
+  plan?: string;
 };
+
+/** Plans offered at signup — each grants a 14-day free trial + N countries. */
+type PlanKey = "STARTER" | "PRO" | "FLEET";
+const PLANS: { key: PlanKey; name: string; price: string; countries: number; blurb: string }[] = [
+  { key: "STARTER", name: "Starter", price: "$25/mo", countries: 1, blurb: "1 country · solo operator" },
+  { key: "PRO", name: "Pro", price: "$45/mo", countries: 2, blurb: "2 countries · growing desk" },
+  { key: "FLEET", name: "Fleet", price: "$85/mo", countries: 4, blurb: "4 countries · brokerage" },
+];
+const PLAN_COUNTRIES: Record<PlanKey, number> = { STARTER: 1, PRO: 2, FLEET: 4 };
 
 /**
  * Curated UTC-offset list surfaced in the timezone picker. We ship offsets
@@ -99,6 +109,31 @@ export function RegisterForm({
   const [offsetIana, setOffsetIana] = useState<string>(initialOffset.iana);
   const [country, setCountry] = useState<string>(defaults.targetPortCountry);
 
+  // Plan selection → country allowance. Default to the plan from a retry, else
+  // Pro (the "most popular" tier).
+  const initialPlan = (["STARTER", "PRO", "FLEET"] as const).includes(defaults.plan as PlanKey)
+    ? (defaults.plan as PlanKey)
+    : "PRO";
+  const [plan, setPlan] = useState<PlanKey>(initialPlan);
+  const countryCap = PLAN_COUNTRIES[plan];
+  // The set of countries the user wants to track (up to countryCap).
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(
+    defaults.targetPortCountry ? [defaults.targetPortCountry] : [],
+  );
+
+  // When the plan shrinks the allowance, trim the selection to fit.
+  useEffect(() => {
+    setSelectedCountries((prev) => prev.slice(0, countryCap));
+  }, [countryCap]);
+
+  function toggleCountry(code: string) {
+    setSelectedCountries((prev) => {
+      if (prev.includes(code)) return prev.filter((c) => c !== code);
+      if (prev.length >= countryCap) return prev; // at cap — ignore
+      return [...prev, code];
+    });
+  }
+
   // Public country list — no session needed here, it's the same reference
   // data the authed picker uses.
   useEffect(() => {
@@ -135,7 +170,12 @@ export function RegisterForm({
         workspaceName: String(form.get("workspaceName") ?? ""),
         termsAccepted: form.get("termsAccepted") === "on",
         timezone: offsetIana,
-        targetPortCountry: country,
+        // Keep the single targetPortCountry (primary = first selected) so
+        // existing workspace logic still works, and send the full plan +
+        // multi-country selection for access provisioning.
+        targetPortCountry: selectedCountries[0] ?? country,
+        plan,
+        countries: selectedCountries,
       }),
     });
 
@@ -191,41 +231,96 @@ export function RegisterForm({
         />
       </FloatingField>
 
-      <div className="grid grid-cols-2 gap-3">
-        <FloatingField id="targetPortCountry" label="Target country" required>
-          <select
-            id="targetPortCountry"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            required
-            className={`${FLOATING_INPUT_CLS} appearance-none`}
-          >
-            <option value="" disabled>
-              {countriesLoading ? "Loading…" : "Select a country"}
-            </option>
-            {countries.map((option) => (
-              <option key={option.country} value={option.country}>
-                {option.countryName} ({option.country})
-              </option>
-            ))}
-          </select>
-        </FloatingField>
-        <FloatingField id="timezone" label="Timezone (UTC offset)" required>
-          <select
-            id="timezone"
-            value={offsetIana}
-            onChange={(e) => setOffsetIana(e.target.value)}
-            required
-            className={`${FLOATING_INPUT_CLS} appearance-none`}
-          >
-            {OFFSET_OPTIONS.map((option) => (
-              <option key={option.iana} value={option.iana}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </FloatingField>
+      {/* Plan selection — grants a 14-day free trial + N countries. */}
+      <div>
+        <p className="mb-2 text-[13px] font-semibold text-slate-700 dark:text-white/80">
+          Choose your plan
+          <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">· 14-day free trial</span>
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {PLANS.map((p) => {
+            const active = plan === p.key;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => setPlan(p.key)}
+                className={`rounded-lg border p-2.5 text-left transition-all ${
+                  active
+                    ? "border-accent-500 bg-accent-500/[0.06] ring-1 ring-accent-500 dark:border-accent-400 dark:ring-accent-400/60"
+                    : "border-slate-200 bg-white hover:border-accent-300 dark:border-white/10 dark:bg-white/[0.04]"
+                }`}
+              >
+                <span className="block text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
+                <span className="block text-xs font-semibold text-accent-600 dark:text-accent-300">{p.price}</span>
+                <span className="mt-0.5 block text-[11px] leading-tight text-slate-500 dark:text-white/45">{p.blurb}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {/* Country access — pick up to the plan's allowance. */}
+      <div>
+        <p className="mb-2 text-[13px] font-semibold text-slate-700 dark:text-white/80">
+          Countries to track
+          <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">
+            · {selectedCountries.length}/{countryCap} selected
+          </span>
+        </p>
+        <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-white/[0.04]">
+          {countriesLoading ? (
+            <p className="px-2 py-3 text-sm text-slate-400 dark:text-white/40">Loading countries…</p>
+          ) : (
+            countries.map((option) => {
+              const checked = selectedCountries.includes(option.country);
+              const atCap = !checked && selectedCountries.length >= countryCap;
+              return (
+                <label
+                  key={option.country}
+                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                    atCap
+                      ? "cursor-not-allowed opacity-40"
+                      : "hover:bg-slate-50 dark:hover:bg-white/[0.05]"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={atCap}
+                    onChange={() => toggleCountry(option.country)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 accent-accent-500 dark:border-white/20"
+                  />
+                  <span className="text-slate-700 dark:text-white/75">
+                    {option.countryName} <span className="text-slate-400 dark:text-white/40">({option.country})</span>
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
+        {selectedCountries.length >= countryCap && (
+          <p className="mt-1 text-[11px] text-slate-400 dark:text-white/40">
+            {plan} plan includes {countryCap} {countryCap === 1 ? "country" : "countries"}. Upgrade for more.
+          </p>
+        )}
+      </div>
+
+      <FloatingField id="timezone" label="Timezone (UTC offset)" required>
+        <select
+          id="timezone"
+          value={offsetIana}
+          onChange={(e) => setOffsetIana(e.target.value)}
+          required
+          className={`${FLOATING_INPUT_CLS} appearance-none`}
+        >
+          {OFFSET_OPTIONS.map((option) => (
+            <option key={option.iana} value={option.iana}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </FloatingField>
 
       <FloatingField id="password" label="Password" required>
         <div className="relative">
@@ -274,7 +369,7 @@ export function RegisterForm({
 
       <button
         type="submit"
-        disabled={pending || !country}
+        disabled={pending || selectedCountries.length === 0}
         className="w-full rounded-lg bg-[#4F6DFF] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_28px_rgba(14, 165, 233,0.4)] transition-all hover:-translate-y-0.5 hover:bg-[#3B4FE6] hover:shadow-[0_12px_36px_rgba(14, 165, 233,0.5)] disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none"
       >
         {pending ? "Creating workspace…" : "Create your workspace"}

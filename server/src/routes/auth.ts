@@ -8,6 +8,7 @@ import { clearAuthCookies, refreshCookieName, setAuthCookies } from "../lib/cook
 import { sendData, sendError } from "../lib/http.js";
 import { requireAuth, type AuthedRequest } from "../auth/middleware.js";
 import { issueTokenPair, revokeRefreshToken, rotateRefreshToken } from "../auth/jwt.js";
+import { planLimits } from "../services/billing.service.js";
 import { deleteToken, getToken, setToken } from "../services/token-store.js";
 
 export const authRouter = Router();
@@ -31,7 +32,34 @@ const registerSchema = z.object({
     .length(2)
     .transform((value) => value.toUpperCase())
     .optional(),
+  // Plan chosen at signup — grants a 14-day free trial of that plan.
+  plan: z.enum(["STARTER", "PRO", "FLEET"]).optional(),
+  // Countries the user wants to track, capped by the plan's allowance. Sent as
+  // a comma-separated string (HTML form) or an array (JSON client).
+  countries: z
+    .preprocess(
+      (v) => (typeof v === "string" ? v.split(",").map((s) => s.trim()).filter(Boolean) : v),
+      z.array(z.string().trim().length(2).transform((c) => c.toUpperCase())).max(50),
+    )
+    .optional(),
 });
+
+// Country allowance per plan chosen at registration. FLEET here maps to the
+// BUSINESS billing plan internally (the marketing "Fleet" tier).
+const PLAN_COUNTRY_LIMIT: Record<"STARTER" | "PRO" | "FLEET", number> = {
+  STARTER: 1,
+  PRO: 2,
+  FLEET: 4,
+};
+
+const REGISTER_PLAN_TO_BILLING = {
+  STARTER: "STARTER",
+  PRO: "PRO",
+  FLEET: "BUSINESS",
+} as const;
+
+const TRIAL_DAYS = 14;
+const TRIAL_CREDITS = 500;
 
 const loginSchema = z.object({
   email: z.string().trim().email().toLowerCase(),
@@ -116,6 +144,12 @@ function registerRetryUrl(body: Record<string, unknown>, message: string) {
   if (typeof body.targetPortCountry === "string" && body.targetPortCountry.length > 0) {
     params.set("targetPortCountry", body.targetPortCountry);
   }
+  if (typeof body.plan === "string" && body.plan.length > 0) {
+    params.set("plan", body.plan);
+  }
+  if (typeof body.countries === "string" && body.countries.length > 0) {
+    params.set("countries", body.countries);
+  }
   return appUrl(`/register?${params.toString()}`);
 }
 
@@ -160,6 +194,8 @@ function serializeSession(user: {
       slug: string;
       timezone: string;
       targetPortCountry: string | null;
+      allowedCountries?: string[];
+      countryLimit?: number;
       onboardedAt: Date | null;
     };
   }>;
@@ -171,6 +207,8 @@ function serializeSession(user: {
     role: membership.role,
     timezone: membership.workspace.timezone,
     targetPortCountry: membership.workspace.targetPortCountry,
+    allowedCountries: membership.workspace.allowedCountries ?? [],
+    countryLimit: membership.workspace.countryLimit ?? 1,
     onboardedAt: membership.workspace.onboardedAt?.toISOString() ?? null,
   }));
 
@@ -211,6 +249,8 @@ function userSessionSelect(includeTargetPortCountry: boolean) {
             slug: true,
             timezone: true,
             onboardedAt: true,
+            allowedCountries: true,
+            countryLimit: true,
             ...(includeTargetPortCountry ? { targetPortCountry: true as const } : {}),
           },
         },
@@ -285,6 +325,16 @@ authRouter.post("/register", async (req, res, next) => {
     const workspaceName = input.data.workspaceName ?? `${input.data.name}'s Workspace`;
     const slug = await uniqueWorkspaceSlug(workspaceName);
 
+    // Resolve the chosen plan → billing plan, country allowance, and the
+    // 14-day free trial (plan features + 500 credits, then we start charging).
+    const chosenPlan = input.data.plan ?? "STARTER";
+    const billingPlan = REGISTER_PLAN_TO_BILLING[chosenPlan];
+    const countryLimit = PLAN_COUNTRY_LIMIT[chosenPlan];
+    const limits = planLimits(billingPlan);
+    // Only grant as many countries as the plan allows.
+    const allowedCountries = (input.data.countries ?? []).slice(0, countryLimit);
+    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+
     const user = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
@@ -306,12 +356,38 @@ authRouter.post("/register", async (req, res, next) => {
           ...(input.data.targetPortCountry
             ? { targetPortCountry: input.data.targetPortCountry }
             : {}),
+          // 14-day free trial of the chosen plan.
+          plan: billingPlan,
+          billingStatus: "TRIALING",
+          trialEndsAt,
+          vesselLimit: limits.vesselLimit,
+          emailLimit: limits.emailLimit,
+          inboxLimit: limits.inboxLimit,
+          teamLimit: limits.teamLimit,
+          // Free 500 credits for the trial (not the plan's monthly allotment —
+          // that kicks in once billing starts after the trial).
+          creditBalance: TRIAL_CREDITS,
+          // Country access chosen at signup, capped by the plan.
+          countryLimit,
+          allowedCountries,
           // Skip the /onboarding wizard when the register form already
           // gathered the workspace basics. Login sees onboardedAt !== null
           // and routes straight to /dashboard.
           ...(input.data.targetPortCountry && input.data.timezone
             ? { onboardedAt: new Date() }
             : {}),
+        },
+      });
+
+      // Record the trial credit grant in the ledger for auditability.
+      await tx.creditLedger.create({
+        data: {
+          workspaceId: workspace.id,
+          delta: TRIAL_CREDITS,
+          balance: TRIAL_CREDITS,
+          reason: "ADMIN_GRANT",
+          detail: `14-day trial credits (${chosenPlan})`,
+          actorId: createdUser.id,
         },
       });
 

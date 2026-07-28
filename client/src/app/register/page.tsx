@@ -16,6 +16,7 @@ export default function RegisterPage({
     timezone: typeof searchParams.timezone === "string" ? searchParams.timezone : "",
     targetPortCountry:
       typeof searchParams.targetPortCountry === "string" ? searchParams.targetPortCountry : "",
+    plan: typeof searchParams.plan === "string" ? searchParams.plan : "",
   };
 
   return (

@@ -3,6 +3,7 @@ import {
   getPortRadarTabCounts,
   listLatestBatchEtas,
   listPortRadarFeed,
+  portCountryWhere,
   requireEtaWorkspaceId,
   PORT_RADAR_DEFAULT_PAGE_SIZE,
   type PagedFeed,
@@ -19,20 +20,20 @@ export default async function PortRadarPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { workspaceId, targetPortCountry } = await requireEtaWorkspaceId();
+  const { workspaceId, countryScope: workspaceCountryScope } = await requireEtaWorkspaceId();
   const session = await getServerSession();
   const isSuperAdmin = session?.user.isSuperAdmin ?? false;
-  // Super-admin sees every ETA on record (across all countries), not just
-  // the workspace's target country. Regular users stay scoped to their country.
-  const countryScope = isSuperAdmin ? null : targetPortCountry;
+  // Super-admin sees every ETA on record (across all countries). Regular users
+  // stay scoped to the countries their plan grants (allowedCountries).
+  const countryScope = isSuperAdmin ? null : workspaceCountryScope;
 
   // Cheap tab-badge totals + the port list for the map — no full feed rows yet.
   const [counts, ports] = await Promise.all([
-    getPortRadarTabCounts(workspaceId, targetPortCountry, searchParams, {
+    getPortRadarTabCounts(workspaceId, countryScope, searchParams, {
       includeAllCountries: isSuperAdmin,
     }),
     prisma.port.findMany({
-      where: isSuperAdmin || !targetPortCountry ? {} : { country: targetPortCountry },
+      where: isSuperAdmin ? {} : portCountryWhere(countryScope),
       orderBy: { portName: "asc" },
       take: isSuperAdmin ? 1000 : 200,
       select: { portCode: true, portName: true, countryName: true, latitude: true, longitude: true },

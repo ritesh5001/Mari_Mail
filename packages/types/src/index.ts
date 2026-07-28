@@ -15,6 +15,10 @@ export type WorkspaceSummary = {
   role: "OWNER" | "ADMIN" | "MEMBER";
   timezone: string;
   targetPortCountry: string | null;
+  /** Countries this workspace may track vessels for (Port Radar access). */
+  allowedCountries: string[];
+  /** How many countries the plan permits selecting. */
+  countryLimit: number;
   onboardedAt: string | null;
 };
 

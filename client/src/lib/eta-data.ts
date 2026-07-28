@@ -9,20 +9,43 @@ export async function requireEtaWorkspaceId() {
   if (!session?.activeWorkspace) {
     notFound();
   }
+  // Country scope for Port Radar: prefer the plan's multi-country allowlist
+  // (chosen at signup, e.g. 2 countries), else fall back to the legacy single
+  // targetPortCountry, else null (no restriction — un-scoped workspace).
+  const allowed = session.activeWorkspace.allowedCountries ?? [];
+  const countryScope: CountryScope =
+    allowed.length > 0 ? allowed : session.activeWorkspace.targetPortCountry;
+
   return {
     workspaceId: session.activeWorkspace.id,
     userId: session.user.id,
     targetPortCountry: session.activeWorkspace.targetPortCountry,
+    allowedCountries: allowed,
+    countryScope,
   };
 }
 
+/** A country restriction: one country (legacy), many (plan allowlist), or none. */
+export type CountryScope = string | string[] | null | undefined;
+
 /**
- * Returns the workspace's `port.country = ?` clause, or `{}` when the
- * workspace hasn't picked a target country yet. Use this anywhere we used
- * to hardcode the country (formerly `INDIA_PORT_WHERE`).
+ * Returns the `port.country` clause for a country scope: `{ in: [...] }` for a
+ * multi-country plan allowlist, `= country` for a single legacy country, or
+ * `{}` (no restriction) when the workspace hasn't picked any.
  */
-function countryClause(country: string | null | undefined): Prisma.VesselETAWhereInput {
-  return country ? { port: { is: { country } } } : {};
+function countryClause(scope: CountryScope): Prisma.VesselETAWhereInput {
+  if (Array.isArray(scope)) {
+    return scope.length > 0 ? { port: { is: { country: { in: scope } } } } : {};
+  }
+  return scope ? { port: { is: { country: scope } } } : {};
+}
+
+/** Same scope, applied directly to the Port model (`port.findMany`). */
+export function portCountryWhere(scope: CountryScope): Prisma.PortWhereInput {
+  if (Array.isArray(scope)) {
+    return scope.length > 0 ? { country: { in: scope } } : {};
+  }
+  return scope ? { country: scope } : {};
 }
 
 export type RadarEta = Prisma.VesselETAGetPayload<{
@@ -192,11 +215,11 @@ export async function listPortRadarFeed(
   searchParams: Record<string, string | string[] | undefined>,
   options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
 ) {
-  const { workspaceId, targetPortCountry } = await requireEtaWorkspaceId();
-  // Super-admin view: drop the workspace's target-country restriction so the
-  // radar shows every ETA in the DB, not just India (or whatever the workspace
-  // is scoped to). Regular users still see only their country's arrivals.
-  const effectiveTargetCountry = options.includeAllCountries ? null : targetPortCountry;
+  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
+  // Super-admin view: drop the workspace's country restriction so the radar
+  // shows every ETA in the DB. Regular users stay scoped to the countries their
+  // plan grants (allowedCountries), or the legacy single targetPortCountry.
+  const effectiveTargetCountry = options.includeAllCountries ? null : countryScope;
 
   const port =
     typeof searchParams.port === "string"
@@ -330,7 +353,7 @@ export async function listPortRadarFeed(
       }),
       prisma.vesselETA.count({ where }),
       prisma.port.findMany({
-        where: effectiveTargetCountry ? { country: effectiveTargetCountry } : {},
+        where: portCountryWhere(effectiveTargetCountry),
         orderBy: { portName: "asc" },
         take: options.includeAllCountries ? 1000 : 200,
         select: {
@@ -374,7 +397,7 @@ export async function listPortRadarFeed(
  */
 export async function listLatestBatchEtas(
   workspaceId: string,
-  targetPortCountry: string | null,
+  targetPortCountry: CountryScope,
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
 ): Promise<PagedFeed> {
@@ -505,7 +528,7 @@ export async function listLatestBatchEtas(
  */
 export async function getPortRadarTabCounts(
   workspaceId: string,
-  targetPortCountry: string | null,
+  targetPortCountry: CountryScope,
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean } = {},
 ): Promise<{ newly: number; upcoming: number }> {
@@ -558,7 +581,7 @@ export async function getPortRadarTabCounts(
   }
 }
 
-export async function getPortRadarSummary(workspaceId: string, targetPortCountry: string | null) {
+export async function getPortRadarSummary(workspaceId: string, targetPortCountry: CountryScope) {
   const now = new Date();
   const startOfToday = new Date(now);
   startOfToday.setUTCHours(0, 0, 0, 0);
