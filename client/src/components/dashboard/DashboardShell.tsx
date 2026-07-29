@@ -19,7 +19,6 @@ import {
   Radar,
   Settings,
   Ship,
-  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -46,7 +45,6 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, alwaysVisible: true },
   { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
-  { href: "/dashboard/contacts", label: "Contacts", icon: Users },
   { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
   { href: "/dashboard/port-radar", label: "ETA / Port Radar", icon: Radar },
   { href: "/dashboard/lists", label: "Lists", icon: List },

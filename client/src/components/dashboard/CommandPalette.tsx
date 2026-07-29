@@ -6,7 +6,6 @@ import { apiFetch } from "@/lib/browser-fetch";
 
 const items = [
   { type: "Vessel", label: "MV Pacific Eagle", detail: "IMO 9781234", icon: Ship, href: "/dashboard/vessels/9781234" },
-  { type: "Contact", label: "Captain James Ward", detail: "Fleet Manager", icon: UserRound, href: "/dashboard/contacts" },
   { type: "Campaign", label: "Fujairah Hold Cleaning", detail: "ETA sequence", icon: Mail, href: "/dashboard/campaigns" },
 ];
 

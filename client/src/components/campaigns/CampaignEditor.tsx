@@ -1377,9 +1377,9 @@ function ListPreviewPanel({
         <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-3 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            <strong>{lockedCount}</strong> locked contact{lockedCount === 1 ? "" : "s"} in this list {lockedCount === 1 ? "hasn't" : "haven't"} been revealed yet. They&rsquo;re skipped when the campaign launches — no credits are spent automatically. Reveal them from{" "}
-            <Link href="/dashboard/contacts" className="font-semibold underline">
-              People Finder
+            <strong>{lockedCount}</strong> locked contact{lockedCount === 1 ? "" : "s"} in this list {lockedCount === 1 ? "hasn't" : "haven't"} been revealed yet. They&rsquo;re skipped when the campaign launches — no credits are spent automatically. Reveal them from the{" "}
+            <Link href="/dashboard/lists" className="font-semibold underline">
+              list
             </Link>{" "}
             (1 credit per email) to include them.
           </span>
