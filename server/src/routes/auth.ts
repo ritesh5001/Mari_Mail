@@ -37,12 +37,23 @@ import {
   verifyTotp,
 } from "../auth/totp.js";
 import { encryptSecret, decryptSecret, parseEncryptedSecret } from "@marimail/utils";
+import { passwordProblem } from "@marimail/utils/password-policy";
 import { planLimits } from "../services/billing.service.js";
 import { deleteToken, getToken, setToken } from "../services/token-store.js";
 
 export const authRouter = Router();
 
 const SETTINGS_ID = "singleton";
+
+/**
+ * Password rule, shared with the signup form's live checklist
+ * (@marimail/utils/password-policy). Defined once so a green tick on screen
+ * always means the API will accept it.
+ */
+const passwordField = z.string().superRefine((value, ctx) => {
+  const problem = passwordProblem(value);
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+});
 
 // A real bcrypt hash (cost 12) of a value nobody can supply. Compared against
 // when the submitted email has no account, so the response time of a failed
@@ -53,7 +64,7 @@ const DUMMY_PASSWORD_HASH =
 const registerSchema = z.object({
   name: z.string().trim().min(2),
   email: z.string().trim().email().toLowerCase(),
-  password: z.string().min(10),
+  password: passwordField,
   workspaceName: z.string().trim().min(2).optional(),
   termsAccepted: z.preprocess((value) => value === true || value === "true" || value === "on", z.literal(true)),
   // Optional workspace bootstrap fields — folded into registration so a fresh
@@ -123,7 +134,7 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(32),
-  password: z.string().min(10),
+  password: passwordField,
 });
 
 const preferencesSchema = z.object({
@@ -940,7 +951,7 @@ authRouter.post("/onboarding", requireAuth, async (req, res, next) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(10),
+  newPassword: passwordField,
 });
 
 /**

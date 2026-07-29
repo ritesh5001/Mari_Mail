@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PasswordStrength } from "./PasswordStrength";
+import { PASSWORD_MIN_LENGTH } from "@marimail/utils/password-policy";
 import { apiUrl } from "@/lib/client-api";
 
 export function ResetPasswordForm({ token }: { token: string }) {
@@ -36,7 +37,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         New password
         <input
           type="password"
-          minLength={10}
+          minLength={PASSWORD_MIN_LENGTH}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2"

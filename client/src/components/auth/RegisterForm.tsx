@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, Search, X } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
+import { PASSWORD_MIN_LENGTH } from "@marimail/utils/password-policy";
 import { apiUrl } from "@/lib/client-api";
 import { CaptchaField, resetCaptcha } from "./CaptchaField";
 import { MotionButton } from "@/components/ui/motion-button";
@@ -405,7 +406,7 @@ export function RegisterForm({
         </select>
       </FloatingField>
 
-      <FloatingField id="password" label="Password (min. 10 characters)" required>
+      <FloatingField id="password" label="Password" required>
         <div className="relative">
           <input
             id="password"
@@ -414,7 +415,7 @@ export function RegisterForm({
             autoComplete="new-password"
             placeholder="••••••••••"
             className={`${FLOATING_INPUT_CLS} pr-10`}
-            minLength={10}
+            minLength={PASSWORD_MIN_LENGTH}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

@@ -17,5 +17,15 @@
   "devDependencies": {
     "@types/node": "^20.17.6",
     "typescript": "^5.6.3"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./password-policy": {
+      "types": "./dist/password-policy.d.ts",
+      "default": "./dist/password-policy.js"
+    }
   }
 }
