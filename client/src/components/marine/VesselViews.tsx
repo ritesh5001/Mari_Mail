@@ -25,7 +25,6 @@ import { useClientSort } from "@/hooks/useClientSort";
 import { SortableHeader } from "@/components/table/SortableHeader";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
 import { ContactAddToListModal } from "@/components/contacts/ContactAddToListModal";
-import { LaunchCampaignFromSelection } from "@/components/campaigns/LaunchCampaignButton";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
 import { EditVesselButton } from "@/components/marine/EditVesselButton";
 import { vesselToFormInitial } from "@/lib/vessel-form";
@@ -479,7 +478,6 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
               disabled={selectedIds.length === 0}
               label={`Add to List${selected.size > 0 ? ` (${selected.size})` : ""}`}
             />
-            <button className="rounded-md border border-slate-200 px-2 py-1">Start Campaign</button>
             <button
               onClick={handleExport}
               disabled={selectedIds.length === 0 || exporting}
@@ -488,14 +486,6 @@ export function VesselTable({ vessels, isSuperAdmin = false }: { vessels: Vessel
               {exporting && <Loader2 className="h-3 w-3 animate-spin" />}
               Export CSV{selected.size > 0 ? ` (${selected.size})` : ""}
             </button>
-            <button
-              onClick={() => { if (selectedContactIds.length > 0) setShowContactModal(true); }}
-              disabled={selectedContactIds.length === 0}
-              className="rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
-            >
-              Add Contacts to List{selectedContactIds.length ? ` (${selectedContactIds.length})` : ""}
-            </button>
-            <LaunchCampaignFromSelection contactIds={selectedContactIds} />
           </div>
         </div>
         <div className="max-h-[calc(100vh-300px)] overflow-auto overscroll-x-contain">
