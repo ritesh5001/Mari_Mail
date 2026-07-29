@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, Search, X } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
-import { PASSWORD_MIN_LENGTH } from "@marimail/utils/password-policy";
+import { PASSWORD_MIN_LENGTH, evaluatePassword } from "@marimail/utils/password-policy";
 import { apiUrl } from "@/lib/client-api";
 import { CaptchaField, resetCaptcha } from "./CaptchaField";
 import { MotionButton } from "@/components/ui/motion-button";
@@ -94,6 +94,12 @@ export function RegisterForm({
   serverError: string | null;
 }) {
   const router = useRouter();
+  // Two-step flow: account details, then workspace setup. Splitting it keeps
+  // the first screen to three familiar fields instead of nine mixed ones.
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState(defaults.name);
+  const [email, setEmail] = useState(defaults.email);
+  const [workspaceName, setWorkspaceName] = useState(defaults.workspaceName);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(serverError);
   const [pending, setPending] = useState(false);
@@ -171,8 +177,29 @@ export function RegisterForm({
     };
   }, []);
 
+  // Step 1 must be complete before we let anyone move on — otherwise they fill
+  // in a whole workspace and only then learn their email was malformed.
+  const step1Valid =
+    name.trim().length >= 2 &&
+    /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()) &&
+    evaluatePassword(password).valid;
+
+  function goToStep2() {
+    if (!step1Valid) {
+      setError("Complete your details to continue.");
+      return;
+    }
+    setError(null);
+    setStep(2);
+  }
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Pressing Enter on step 1 should advance, not submit a half-filled form.
+    if (step === 1) {
+      goToStep2();
+      return;
+    }
     setPending(true);
     setError(null);
 
@@ -182,10 +209,10 @@ export function RegisterForm({
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: String(form.get("name") ?? ""),
-        email: String(form.get("email") ?? ""),
+        name,
+        email,
         password,
-        workspaceName: String(form.get("workspaceName") ?? ""),
+        workspaceName,
         termsAccepted: form.get("termsAccepted") === "on",
         captchaToken,
         timezone: offsetIana,
@@ -215,31 +242,55 @@ export function RegisterForm({
 
   return (
     <form className="space-y-4" method="post" action={`${apiUrl}/auth/register`} onSubmit={onSubmit}>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FloatingField id="name" label="Full name" required>
+      {/* Progress: shows how much is left, which is the main thing a split
+          form has to communicate. */}
+      <div className="flex items-center gap-3" aria-label={`Step ${step} of 2`}>
+        {[1, 2].map((n) => (
+          <div key={n} className="flex flex-1 items-center gap-2">
+            <span
+              className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold transition-colors ${
+                step > n
+                  ? "bg-emerald-500 text-[#ffffff]"
+                  : step === n
+                    ? "bg-accent-500 text-[#ffffff]"
+                    : "bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-white/40"
+              }`}
+            >
+              {step > n ? <Check className="h-3 w-3" strokeWidth={3} /> : n}
+            </span>
+            <span
+              className={`text-xs font-medium ${
+                step >= n ? "text-slate-700 dark:text-white/80" : "text-slate-400 dark:text-white/35"
+              }`}
+            >
+              {n === 1 ? "Your details" : "Workspace"}
+            </span>
+            {n === 1 ? (
+              <span
+                className={`h-px flex-1 transition-colors ${
+                  step > 1 ? "bg-emerald-500" : "bg-slate-200 dark:bg-white/10"
+                }`}
+              />
+            ) : null}
+          </div>
+        ))}
+      </div>
+
+      {step === 1 ? (
+      <>
+      <FloatingField id="name" label="Full name" required>
           <input
             id="name"
             name="name"
             type="text"
             autoComplete="name"
-            defaultValue={defaults.name}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             placeholder="Alex Chen"
             className={FLOATING_INPUT_CLS}
             required
           />
         </FloatingField>
-        <FloatingField id="workspaceName" label="Workspace name" required>
-          <input
-            id="workspaceName"
-            name="workspaceName"
-            type="text"
-            defaultValue={defaults.workspaceName}
-            placeholder="Acme Shipping"
-            className={FLOATING_INPUT_CLS}
-            required
-          />
-        </FloatingField>
-      </div>
 
       <FloatingField id="email" label="Work email" required>
         <input
@@ -247,12 +298,65 @@ export function RegisterForm({
           name="email"
           type="email"
           autoComplete="email"
-          defaultValue={defaults.email}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           placeholder="you@company.com"
           className={FLOATING_INPUT_CLS}
           required
         />
       </FloatingField>
+
+      <FloatingField id="password" label="Password" required>
+        <div className="relative">
+          <input
+            id="password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="new-password"
+            placeholder="••••••••••"
+            className={`${FLOATING_INPUT_CLS} pr-10`}
+            minLength={PASSWORD_MIN_LENGTH}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-700 dark:text-white/40 dark:hover:text-white/70"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+      </FloatingField>
+      <PasswordStrength password={password} />
+
+      {/* Advance rather than submit; the real submit lives on step 2. */}
+      <MotionButton
+        type="button"
+        size="md"
+        onClick={goToStep2}
+        disabled={!step1Valid}
+        className="w-full"
+        label="Continue"
+      />
+
+      </>
+      ) : (
+      <>
+        <FloatingField id="workspaceName" label="Workspace name" required>
+          <input
+            id="workspaceName"
+            name="workspaceName"
+            type="text"
+            value={workspaceName}
+            onChange={(e) => setWorkspaceName(e.target.value)}
+            placeholder="Acme Shipping"
+            className={FLOATING_INPUT_CLS}
+            required
+          />
+        </FloatingField>
 
       {/* Plan selection — grants a 14-day free trial + N countries. */}
       <div>
@@ -297,6 +401,7 @@ export function RegisterForm({
       {/* Country access — pick up to the plan's allowance. */}
       <div>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+
           <p className="text-[13px] font-semibold text-slate-700 dark:text-white/80">
             Which countries do you sell into?
           </p>
@@ -406,31 +511,6 @@ export function RegisterForm({
         </select>
       </FloatingField>
 
-      <FloatingField id="password" label="Password" required>
-        <div className="relative">
-          <input
-            id="password"
-            name="password"
-            type={showPassword ? "text" : "password"}
-            autoComplete="new-password"
-            placeholder="••••••••••"
-            className={`${FLOATING_INPUT_CLS} pr-10`}
-            minLength={PASSWORD_MIN_LENGTH}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-700 dark:text-white/40 dark:hover:text-white/70"
-            aria-label={showPassword ? "Hide password" : "Show password"}
-          >
-            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-        </div>
-      </FloatingField>
-      <PasswordStrength password={password} />
 
       <CaptchaField onToken={setCaptchaToken} className="pt-1" />
 
@@ -476,6 +556,19 @@ export function RegisterForm({
         className="w-full"
         label={pending ? "Creating workspace…" : "Create your workspace"}
       />
+
+      <button
+        type="button"
+        onClick={() => {
+          setStep(1);
+          setError(null);
+        }}
+        className="w-full text-center text-xs font-medium text-slate-500 transition-colors hover:text-accent-400 dark:text-white/50"
+      >
+        ← Back to your details
+      </button>
+      </>
+      )}
     </form>
   );
 }
