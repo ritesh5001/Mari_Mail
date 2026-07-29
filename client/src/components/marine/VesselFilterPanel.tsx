@@ -1356,13 +1356,15 @@ function FilterModalShell({
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col">
-              {/* Horizontal gooey tab bar. The blue active pill lives on a
-                  gooey-filtered layer so it stretches/merges as it slides
-                  between tabs; the labels sit on a crisp layer above it. */}
-              <GooeyFilter id="vessel-filter-goo" strength={6} />
+              {/* Horizontal gooey tab bar. A SOLID brand-blue pill slides
+                  between tabs on a gooey-filtered layer, so its leading/trailing
+                  edges pinch and stretch like liquid as it moves. The active
+                  label flips to white on top of the pill; the goo needs a
+                  saturated, opaque shape (not a faint tint) to render. */}
+              <GooeyFilter id="vessel-filter-goo" strength={10} />
               <nav className="shrink-0 overflow-x-auto border-b border-slate-100 px-4 py-3 dark:border-white/10">
                 <div className="relative flex w-max min-w-full gap-1">
-                  {/* Gooey blob layer (behind labels) */}
+                  {/* Gooey pill layer (behind labels) */}
                   <div
                     className="pointer-events-none absolute inset-0 flex gap-1"
                     style={{ filter: "url(#vessel-filter-goo)" }}
@@ -1373,8 +1375,8 @@ function FilterModalShell({
                         {s.key === activeSection?.key && (
                           <motion.div
                             layoutId="vessel-filter-active-tab"
-                            className="absolute inset-0 rounded-full bg-ocean/15 dark:bg-accent-500/25"
-                            transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
+                            className="absolute inset-0 rounded-full bg-gradient-to-r from-accent-500 to-accent-600 shadow-[0_6px_20px_rgba(79,109,255,0.35)]"
+                            transition={{ type: "spring", bounce: 0.2, duration: 0.55 }}
                           />
                         )}
                       </div>
@@ -1389,9 +1391,9 @@ function FilterModalShell({
                         key={s.key}
                         type="button"
                         onClick={() => setActiveKey(s.key)}
-                        className={`relative z-10 flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                        className={`relative z-10 flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-300 ${
                           isActive
-                            ? "font-semibold text-ocean dark:text-accent-200"
+                            ? "font-semibold text-[#ffffff]"
                             : "text-slate-600 hover:text-slate-900 dark:text-white/65 dark:hover:text-white"
                         }`}
                       >
@@ -1400,7 +1402,7 @@ function FilterModalShell({
                           <span
                             className={`rounded-full px-1.5 text-xs font-semibold ${
                               isActive
-                                ? "bg-ocean/20 text-ocean dark:bg-accent-500/25 dark:text-accent-100"
+                                ? "bg-white/25 text-[#ffffff]"
                                 : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
                             }`}
                           >
@@ -1413,7 +1415,14 @@ function FilterModalShell({
                 </div>
               </nav>
 
-              <div key={activeSection?.key} className="flex-1 overflow-y-auto px-8 py-6 animate-in-fade">
+              {/* The modal pane is the scroll container; strip the inner
+                  max-height caps the section bodies use in the compact
+                  (horizontal) layout so lists fill the tall modal instead of
+                  being clipped to ~288px with empty space below. */}
+              <div
+                key={activeSection?.key}
+                className="min-h-0 flex-1 overflow-y-auto px-8 py-6 animate-in-fade [&_.max-h-56]:max-h-none [&_.max-h-72]:max-h-none [&_.max-h-80]:max-h-none"
+              >
                 <SectionVariantContext.Provider value="plain">
                   {activeSection?.body}
                 </SectionVariantContext.Provider>

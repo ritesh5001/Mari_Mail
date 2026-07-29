@@ -485,9 +485,6 @@ function ChipInput({
     items: [],
   });
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-  // Titles the user has ticked in the popover but hasn't committed yet.
-  // Committing (via footer button or Enter) folds them into `values`.
-  const [pending, setPending] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -544,45 +541,6 @@ function ChipInput({
     if (seen.has(value.toLowerCase())) return;
     onChange([...values, value]);
     setDraft("");
-    setPending(new Set());
-  }
-
-  function togglePending(suggestion: string) {
-    setPending((prev) => {
-      const next = new Set(prev);
-      const key = suggestion.toLowerCase();
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }
-
-  function commitPending(all: string[]) {
-    const seen = new Set(values.map((v) => v.toLowerCase()));
-    const toAdd: string[] = [];
-    for (const suggestion of all) {
-      const key = suggestion.toLowerCase();
-      if (!pending.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      toAdd.push(suggestion);
-    }
-    if (toAdd.length === 0) return;
-    onChange([...values, ...toAdd]);
-    setDraft("");
-    setPending(new Set());
-    // Reset the caret / popover explicitly. Without this the input keeps
-    // focus and holds the old (now-committed) draft in state briefly, so
-    // typing more characters produces the same query string as before —
-    // the debounced fetch effect early-returns and no new suggestions
-    // appear. Blurring closes the popover, and next time the user clicks
-    // in it's a fresh session with a clean draft.
-    inputRef.current?.blur();
-    setFocused(false);
-    // Live-suggestions cache from the previous draft is also stale for the
-    // NEXT session — clear it so opening the popover again doesn't briefly
-    // flash the results from before the commit while the new fetch is in
-    // flight.
-    setLiveSuggestions({ query: "", items: [] });
   }
 
   function removeAt(idx: number) {
@@ -638,7 +596,6 @@ function ChipInput({
       // needed — we're only touching what's already in view.
       const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
       onChange(values.filter((v) => !poolKeys.has(v.toLowerCase())));
-      setPending(new Set());
       return;
     }
 
@@ -677,7 +634,6 @@ function ChipInput({
       toAdd.push(s);
     }
     if (toAdd.length > 0) onChange([...values, ...toAdd]);
-    setPending(new Set());
   }
 
   const chipClass =
@@ -814,17 +770,22 @@ function ChipInput({
               )
             ) : (
               filteredSuggestions.slice(0, 20).map((suggestion) => {
-                const checked = pending.has(suggestion.toLowerCase());
+                // Checked reflects whether the title is ALREADY a chip — ticking
+                // adds it immediately, un-ticking removes it. No staging step.
+                const checked = values.some((v) => v.toLowerCase() === suggestion.toLowerCase());
                 return (
                   <div
                     key={suggestion}
-                    // The whole row toggles the checkbox; the inner button
-                    // adds this one title immediately. mousedown, not click,
-                    // so the field's blur (which would close the popover)
-                    // fires *after* our handler.
+                    // Clicking the row toggles membership in the chip list right
+                    // away. mousedown (not click) so it fires before the input
+                    // blur that would close the popover.
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      togglePending(suggestion);
+                      if (checked) {
+                        onChange(values.filter((v) => v.toLowerCase() !== suggestion.toLowerCase()));
+                      } else {
+                        commit(suggestion);
+                      }
                     }}
                     className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer transition ${
                       checked
@@ -836,60 +797,16 @@ function ChipInput({
                       type="checkbox"
                       checked={checked}
                       readOnly
-                      // Row-level mousedown already toggles pending — this is
-                      // presentation only, hence tabIndex -1 to skip it in
-                      // keyboard flow.
                       tabIndex={-1}
                       className="h-3.5 w-3.5 rounded border-slate-300 text-ocean pointer-events-none"
-                      aria-label={`Select ${suggestion}`}
+                      aria-label={`${checked ? "Remove" : "Add"} ${suggestion}`}
                     />
                     <span className="flex-1 truncate">{suggestion}</span>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        commit(suggestion);
-                      }}
-                      className="rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500 hover:bg-ocean hover:text-white dark:bg-white/[0.06] dark:text-white/60"
-                      title="Add just this title"
-                    >
-                      + Add
-                    </button>
                   </div>
                 );
               })
             )}
           </div>
-          {pending.size > 0 ? (
-            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-              <span className="text-[11px] font-semibold text-slate-600 dark:text-white/70">
-                {pending.size} selected
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    setPending(new Set());
-                  }}
-                  className="text-[11px] font-semibold text-slate-500 hover:text-red-600 dark:text-white/60"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    commitPending(filteredSuggestions);
-                  }}
-                  className="rounded-md bg-ocean px-3 py-1 text-[11px] font-semibold text-white hover:bg-ocean/90"
-                >
-                  Add {pending.size} selected
-                </button>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>
