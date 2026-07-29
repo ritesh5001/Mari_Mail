@@ -330,6 +330,31 @@ function Section({
 const inputClass =
   "w-full rounded-md border border-slate-300 px-3 py-2 text-sm dark:border-[#262631] dark:bg-[#08080B] dark:text-white/85";
 
+/** A labeled text input for the filter modal — label above, input below. */
+function LabeledField({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-white/60">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
 export function VesselFilterPanel({
   searchParams,
   basePath = "/dashboard/vessels",
@@ -815,14 +840,14 @@ export function VesselFilterPanel({
   );
 
   const ownerBody = (
-    <>
-      <input value={state.owner} onChange={(e) => patch({ owner: e.target.value })} placeholder="Owner (registered / beneficial / company)" className={inputClass} />
-      <input value={state.registeredOwner} onChange={(e) => patch({ registeredOwner: e.target.value })} placeholder="Registered owner (specific)" className={inputClass} />
-      <input value={state.beneficialOwner} onChange={(e) => patch({ beneficialOwner: e.target.value })} placeholder="Beneficial owner (specific)" className={inputClass} />
-      <input value={state.manager} onChange={(e) => patch({ manager: e.target.value })} placeholder="Manager (ISM / commercial / technical)" className={inputClass} />
-      <input value={state.technicalManager} onChange={(e) => patch({ technicalManager: e.target.value })} placeholder="Technical manager (specific)" className={inputClass} />
-      <input value={state.operator} onChange={(e) => patch({ operator: e.target.value })} placeholder="Operator" className={inputClass} />
-    </>
+    <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+      <LabeledField label="Owner (any)" value={state.owner} onChange={(v) => patch({ owner: v })} placeholder="Registered / beneficial / company" />
+      <LabeledField label="Registered owner" value={state.registeredOwner} onChange={(v) => patch({ registeredOwner: v })} placeholder="Specific registered owner" />
+      <LabeledField label="Beneficial owner" value={state.beneficialOwner} onChange={(v) => patch({ beneficialOwner: v })} placeholder="Specific beneficial owner" />
+      <LabeledField label="Manager (any)" value={state.manager} onChange={(v) => patch({ manager: v })} placeholder="ISM / commercial / technical" />
+      <LabeledField label="Technical manager" value={state.technicalManager} onChange={(v) => patch({ technicalManager: v })} placeholder="Specific technical manager" />
+      <LabeledField label="Operator" value={state.operator} onChange={(v) => patch({ operator: v })} placeholder="Operator name" />
+    </div>
   );
 
   const cargoBody = (
@@ -881,26 +906,11 @@ export function VesselFilterPanel({
   );
 
   const buildersBody = (
-    <>
-      <input
-        value={state.classSociety}
-        onChange={(e) => patch({ classSociety: e.target.value })}
-        placeholder="Class society, e.g. Lloyd's Register, DNV"
-        className={inputClass}
-      />
-      <input
-        value={state.shipBuilder}
-        onChange={(e) => patch({ shipBuilder: e.target.value })}
-        placeholder="Ship builder, e.g. Hyundai HI, Samsung HI"
-        className={inputClass}
-      />
-      <input
-        value={state.engineBuilder}
-        onChange={(e) => patch({ engineBuilder: e.target.value })}
-        placeholder="Engine builder, e.g. MAN, Wärtsilä"
-        className={inputClass}
-      />
-    </>
+    <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
+      <LabeledField label="Class society" value={state.classSociety} onChange={(v) => patch({ classSociety: v })} placeholder="e.g. Lloyd's Register, DNV" />
+      <LabeledField label="Ship builder" value={state.shipBuilder} onChange={(v) => patch({ shipBuilder: v })} placeholder="e.g. Hyundai HI, Samsung HI" />
+      <LabeledField label="Engine builder" value={state.engineBuilder} onChange={(v) => patch({ engineBuilder: v })} placeholder="e.g. MAN, Wärtsilä" />
+    </div>
   );
 
   const qualityBody = (
@@ -1421,7 +1431,7 @@ function FilterModalShell({
                   being clipped to ~288px with empty space below. */}
               <div
                 key={activeSection?.key}
-                className="min-h-0 flex-1 overflow-y-auto px-8 py-6 animate-in-fade [&_.max-h-56]:max-h-none [&_.max-h-72]:max-h-none [&_.max-h-80]:max-h-none"
+                className="min-h-0 flex-1 overflow-y-auto px-8 pb-6 pt-8 animate-in-fade [&_.max-h-56]:max-h-none [&_.max-h-72]:max-h-none [&_.max-h-80]:max-h-none"
               >
                 <SectionVariantContext.Provider value="plain">
                   {activeSection?.body}
