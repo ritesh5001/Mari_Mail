@@ -110,7 +110,7 @@ function formatAddedAbsolute(iso: string) {
 }
 
 function campaignBadge(triggers: Array<{ status: string }>) {
-  if (!triggers.length) return { label: "No Campaign", tone: "border-slate-200 bg-slate-50 text-slate-600" };
+  if (!triggers.length) return { label: "None", tone: "border-slate-200 bg-slate-50 text-slate-600" };
   const active = triggers.some((trigger) => trigger.status === "PENDING" || trigger.status === "ACTIVE");
   if (active) return { label: "Active", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" };
   return { label: "Completed", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" };
@@ -433,20 +433,25 @@ export function PortRadarArrivals({
         </div>
       ) : null}
       <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
           <div>
-            <p className="text-sm font-semibold text-slate-950">Table view</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">Table view</p>
+            <p className="text-xs text-slate-500 dark:text-white/45">
               {selectedVesselIds.length > 0
-                ? `${selectedVesselIds.length} vessel${selectedVesselIds.length === 1 ? "" : "s"} selected`
+                ? // Select-all only covers the rows currently on screen. Say so
+                  // when there are more pages, so "Add to List (25)" of 277
+                  // results isn't mistaken for "all 277".
+                  `${selectedVesselIds.length} vessel${selectedVesselIds.length === 1 ? "" : "s"} selected${
+                    count > etas.length ? ` on this page · ${count.toLocaleString("en")} total` : ""
+                  }`
                 : `${count.toLocaleString("en")} upcoming arrival${count === 1 ? "" : "s"} · sorted by ETA`}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-white/70">
             <button
               type="button"
               onClick={() => setShowCustomizer(true)}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean dark:border-white/10"
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Customize
@@ -463,7 +468,7 @@ export function PortRadarArrivals({
               type="button"
               onClick={handleExport}
               disabled={selectedVesselIds.length === 0 || exporting}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean dark:border-white/10"
             >
               {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
               Export CSV{selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}
@@ -478,7 +483,7 @@ export function PortRadarArrivals({
             the viewport height. */}
         <div className="max-h-[calc(100vh-230px)] overflow-auto overscroll-x-contain rounded-b-lg">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+          <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-[#0F0F11] dark:text-white/50 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
             <tr>
               <th className="sticky left-0 top-0 z-40 bg-slate-50 px-4 py-3">
                 <input
@@ -513,7 +518,7 @@ export function PortRadarArrivals({
               {isVisible("type") ? sortableTh("Type", "type") : null}
               {isVisible("etaUtc") ? sortableTh("ETA (UTC)", "etaUtc") : null}
               {isVisible("destination") ? sortableTh("Destination", "destination") : null}
-              {isVisible("eta") ? sortableTh("ETA", "eta") : null}
+              {isVisible("eta") ? sortableTh("Arrives in", "eta") : null}
               {/* Campaign / Cargo / AIS / Contacts have no single sortable column. */}
               {isVisible("campaign") ? <th className="whitespace-nowrap px-4 py-3">Campaign</th> : null}
               {isVisible("voyage") ? sortableTh("Voyage", "voyage") : null}
@@ -607,9 +612,11 @@ export function PortRadarArrivals({
                       </td>
                     ) : null}
                     {isVisible("campaign") ? (
-                      <td className="px-4 py-3">
+                      <td className="whitespace-nowrap px-4 py-3">
+                        {/* nowrap: "No Campaign" used to wrap onto two lines and
+                            made those rows taller than the rest. */}
                         <span
-                          className={`rounded-full border px-2 py-1 text-xs font-semibold ${campaign.tone}`}
+                          className={`inline-block whitespace-nowrap rounded-full border px-2 py-1 text-xs font-semibold ${campaign.tone}`}
                         >
                           {campaign.label}
                         </span>

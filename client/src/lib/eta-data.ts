@@ -395,12 +395,25 @@ export async function listPortRadarFeed(
  * Returns the same `RadarEta` shape as `listPortRadarFeed` so the
  * existing PortRadarArrivals table can render it unchanged.
  */
+/**
+ * Newly-added ETAs (most recent upload batch).
+ *
+ * The workspace id and country scope are derived HERE rather than accepted as
+ * parameters. They used to be passed in, and the two call sites disagreed: the
+ * page passed the plan's `allowedCountries` scope while the pagination route
+ * passed the legacy single `targetPortCountry`. Because `countryClause(null)`
+ * means "no restriction", any workspace whose `targetPortCountry` was unset —
+ * which is every workspace provisioned through the admin country-access
+ * endpoint — got correctly-scoped results on page 1 and then EVERY country in
+ * the database from page 2 onward. Deriving internally makes that class of
+ * drift impossible.
+ */
 export async function listLatestBatchEtas(
-  workspaceId: string,
-  targetPortCountry: CountryScope,
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
 ): Promise<PagedFeed> {
+  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
+  const targetPortCountry: CountryScope = countryScope;
   const MIN_BATCH_SIZE = 5;
   const SCAN_WINDOW = 500;
   const pageSize = options.pageSize ?? PORT_RADAR_DEFAULT_PAGE_SIZE;
@@ -526,14 +539,18 @@ export async function listLatestBatchEtas(
  * reuses the batch id-scan (id + createdAt only) then counts the country-scoped
  * batch — the same numbers the feeds themselves report.
  */
+/**
+ * Tab badge counts. Like listLatestBatchEtas, the workspace + country scope are
+ * derived here so a caller can't pass a stale/wrong entitlement and make the
+ * badge disagree with the table it labels.
+ */
 export async function getPortRadarTabCounts(
-  workspaceId: string,
-  targetPortCountry: CountryScope,
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean } = {},
 ): Promise<{ newly: number; upcoming: number }> {
+  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
   const now = new Date();
-  const effectiveCountry = options.includeAllCountries ? null : targetPortCountry;
+  const effectiveCountry = options.includeAllCountries ? null : countryScope;
   const vesselClauses = buildVesselFilterClauses(searchParams);
   const vesselWhere: Prisma.VesselETAWhereInput =
     vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};

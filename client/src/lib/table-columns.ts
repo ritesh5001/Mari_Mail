@@ -129,13 +129,18 @@ export function portRadarColumns(): TableColumn[] {
     { id: "type", label: "Type", group: "Identity", sortKey: "type" },
     { id: "etaUtc", label: "ETA (UTC)", group: "Voyage", sortKey: "etaUtc" },
     { id: "destination", label: "Destination", group: "Voyage", sortKey: "destination" },
-    { id: "eta", label: "ETA countdown", group: "Voyage", sortKey: "eta" },
+    // Two adjacent columns both read "ETA" in the header — this one is the
+    // relative countdown, so name it that way in the table too, not just in
+    // the customizer.
+    { id: "eta", label: "Arrives in", group: "Voyage", sortKey: "eta" },
     { id: "campaign", label: "Campaign", group: "Voyage", sortable: false },
-    { id: "voyage", label: "Voyage", group: "Voyage", sortKey: "voyage" },
-    { id: "cargo", label: "Cargo", group: "Voyage", sortable: false },
-    { id: "ais", label: "AIS", group: "Voyage", sortable: false },
     { id: "contacts", label: "Contacts", group: "Match", sortable: false },
-    { id: "added", label: "Added", group: "Voyage", sortKey: "added" },
+    // Sparse/secondary columns — hidden by default so the table fits without a
+    // horizontal scroll. All still available in Customize.
+    { id: "voyage", label: "Voyage", group: "Voyage", sortKey: "voyage", defaultHidden: true },
+    { id: "cargo", label: "Cargo", group: "Voyage", sortable: false, defaultHidden: true },
+    { id: "ais", label: "AIS", group: "Voyage", sortable: false, defaultHidden: true },
+    { id: "added", label: "Added", group: "Voyage", sortKey: "added", defaultHidden: true },
   ];
 }
 

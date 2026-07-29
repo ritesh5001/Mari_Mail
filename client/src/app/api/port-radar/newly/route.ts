@@ -15,12 +15,13 @@ export async function POST(request: Request) {
   const isSuperAdmin = session.user.isSuperAdmin ?? false;
   const { searchParams, page, pageSize } = await parseFeedRequest(request);
 
-  const { etas, count } = await listLatestBatchEtas(
-    session.activeWorkspace.id,
-    session.activeWorkspace.targetPortCountry,
-    searchParams,
-    { includeAllCountries: isSuperAdmin, page, pageSize },
-  );
+  // Country scope is derived inside listLatestBatchEtas from the workspace's
+  // plan entitlement — do NOT pass it in, that's what caused the scope leak.
+  const { etas, count } = await listLatestBatchEtas(searchParams, {
+    includeAllCountries: isSuperAdmin,
+    page,
+    pageSize,
+  });
 
   return NextResponse.json({
     etas: etas.map((eta) => serializeRadarEta(eta)),

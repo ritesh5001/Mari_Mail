@@ -20,7 +20,7 @@ export default async function PortRadarPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { workspaceId, countryScope: workspaceCountryScope } = await requireEtaWorkspaceId();
+  const { countryScope: workspaceCountryScope } = await requireEtaWorkspaceId();
   const session = await getServerSession();
   const isSuperAdmin = session?.user.isSuperAdmin ?? false;
   // Super-admin sees every ETA on record (across all countries). Regular users
@@ -29,7 +29,7 @@ export default async function PortRadarPage({
 
   // Cheap tab-badge totals + the port list for the map — no full feed rows yet.
   const [counts, ports] = await Promise.all([
-    getPortRadarTabCounts(workspaceId, countryScope, searchParams, {
+    getPortRadarTabCounts(searchParams, {
       includeAllCountries: isSuperAdmin,
     }),
     prisma.port.findMany({
@@ -50,7 +50,7 @@ export default async function PortRadarPage({
   const pageSize = PORT_RADAR_DEFAULT_PAGE_SIZE;
   let initial: PagedFeed;
   if (initialTab === "newly") {
-    initial = await listLatestBatchEtas(workspaceId, countryScope, searchParams, {
+    initial = await listLatestBatchEtas(searchParams, {
       includeAllCountries: isSuperAdmin,
       page: 1,
       pageSize,
