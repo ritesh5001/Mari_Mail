@@ -189,6 +189,14 @@ export function ContactListDetail({
   const [revealing, setRevealing] = useState<Record<string, "email" | "phone" | undefined>>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Errors here used to use native alert() — blocking, unstyled, and out of
+  // keeping with the toast used everywhere else in this file.
+  const [error, setError] = useState<string | null>(null);
+
+  function showError(message: string) {
+    setError(message);
+    window.setTimeout(() => setError(null), 5000);
+  }
 
   async function deleteList() {
     setDeleting(true);
@@ -196,7 +204,7 @@ export function ContactListDetail({
       const res = await apiFetch(`/api/lists/${list.id}`, { method: "DELETE" });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-        alert(body?.error?.message ?? `Delete failed (${res.status})`);
+        showError(body?.error?.message ?? `Delete failed (${res.status})`);
         return;
       }
       // Back to the lists index — the current page's route is gone.
@@ -247,7 +255,7 @@ export function ContactListDetail({
           (r.status === 402
             ? "Not enough credits — top up to reveal this contact."
             : `Reveal failed (${r.status})`);
-        alert(msg);
+        showError(msg);
       }
     } finally {
       setRevealing((prev) => {
@@ -260,6 +268,15 @@ export function ContactListDetail({
 
   return (
     <>
+      {error && (
+        <div
+          role="alert"
+          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+        >
+          {error}
+        </div>
+      )}
+
       <div className="space-y-5">
         <section className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div>

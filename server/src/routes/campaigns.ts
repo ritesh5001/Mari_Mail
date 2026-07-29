@@ -72,6 +72,28 @@ const sequenceSchema = z.object({
 
 type SequenceInput = z.infer<typeof sequenceSchema>;
 
+/**
+ * `targetConfig.contactListIds` is client-supplied JSON. Zod only proves the
+ * entries are strings — it can't prove they belong to the caller. Without this
+ * check a campaign could reference another workspace's list id, and activation
+ * would then read that list's vessels and enrol them (broken object-level
+ * authorization). Returns the offending ids, empty when everything checks out.
+ */
+async function foreignContactListIds(
+  workspaceId: string,
+  targetConfig: unknown,
+): Promise<string[]> {
+  const raw = (targetConfig as { contactListIds?: unknown } | null)?.contactListIds;
+  const ids = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+  if (ids.length === 0) return [];
+  const owned = await prisma.contactList.findMany({
+    where: { id: { in: ids }, workspaceId },
+    select: { id: true },
+  });
+  const ownedIds = new Set(owned.map((row) => row.id));
+  return ids.filter((id) => !ownedIds.has(id));
+}
+
 const targetConfigSchema = z.object({
   roles: z
     .array(z.enum(["SHIP_OWNER", "ISM_MANAGER", "COMMERCIAL_MANAGER"]))
@@ -433,6 +455,12 @@ campaignRouter.post("/", requireAuth, async (req, res, next) => {
       return sendError(res, 409, "NO_SENDING_INBOX", NO_SENDING_INBOX_MESSAGE);
     }
 
+    // Reject list ids the caller doesn't own before persisting the config.
+    const foreignOnCreate = await foreignContactListIds(workspaceId, parsed.data.targetConfig);
+    if (foreignOnCreate.length > 0) {
+      return sendError(res, 404, "LIST_NOT_FOUND", "One or more selected lists were not found.");
+    }
+
     // New campaigns inherit the workspace's default random send-gap range so
     // outgoing mail is human-paced out of the box (5–20 min by default).
     const workspaceDefaults = await prisma.workspace.findUnique({
@@ -656,6 +684,13 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
     if (!existing)
       return sendError(res, 404, "NOT_FOUND", "Campaign not found");
 
+    // Same tenant guard as create — an update must not be able to swap in a
+    // list id belonging to another workspace.
+    const foreignOnUpdate = await foreignContactListIds(workspaceId, parsed.data.targetConfig);
+    if (foreignOnUpdate.length > 0) {
+      return sendError(res, 404, "LIST_NOT_FOUND", "One or more selected lists were not found.");
+    }
+
     const sequencesInput = parsed.data.sequences;
 
     const campaign = await prisma.$transaction(async (tx) => {
@@ -791,7 +826,12 @@ campaignRouter.post("/:id/activate", requireAuth, async (req, res, next) => {
         prisma.portCampaignRule.count({ where: { campaignId: campaign.id } }),
         prisma.cargoChangeTrigger.count({ where: { campaignId: campaign.id } }),
         listIds.length
-          ? prisma.listVessel.count({ where: { listId: { in: listIds } } })
+          ? prisma.listVessel.count({
+              // Scope through the parent list: contactListIds comes from
+              // campaign.targetConfig (client-writable JSON), so an id from
+              // another workspace must not resolve here.
+              where: { listId: { in: listIds }, list: { workspaceId } },
+            })
           : Promise.resolve(0),
       ]);
       if (portRules === 0 && cargoTriggers === 0 && listVesselCount === 0) {
@@ -838,7 +878,9 @@ campaignRouter.post("/:id/activate", requireAuth, async (req, res, next) => {
               : [];
             if (listIds.length > 0) {
               const vessels = await prisma.listVessel.findMany({
-                where: { listId: { in: listIds } },
+                // Same tenant guard as the count above — never read vessels
+                // out of a list this workspace doesn't own.
+                where: { listId: { in: listIds }, list: { workspaceId } },
                 select: { vesselId: true },
               });
               if (vessels.length > 0) {

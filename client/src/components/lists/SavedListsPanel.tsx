@@ -33,6 +33,9 @@ export function SavedListsPanel() {
   const [lists, setLists] = useState<ContactList[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  // Inline error surface — replaces a native alert() so failures match the
+  // rest of the app's visual language and don't block the thread.
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -69,12 +72,21 @@ export function SavedListsPanel() {
     if (!res.ok) {
       setLists(previous);
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      alert(body?.error?.message ?? `Delete failed (${res.status})`);
+      setError(body?.error?.message ?? `Delete failed (${res.status})`);
+      window.setTimeout(() => setError(null), 5000);
     }
   }
 
   return (
     <>
+      {error && (
+        <div
+          role="alert"
+          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+        >
+          {error}
+        </div>
+      )}
       {showCreate ? (
         <CreateListModal
           onClose={() => setShowCreate(false)}
