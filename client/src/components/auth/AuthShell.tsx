@@ -1,17 +1,18 @@
 import Link from "next/link";
-import { Anchor, BarChart3, Mail, Radar, Ship } from "lucide-react";
+import { Anchor, BarChart3, Mail, Radar, Ship, Users } from "lucide-react";
 
 const features = [
-  { icon: Ship, text: "Live vessel DBMS with IMO, flag & DWT tracking" },
-  { icon: Radar, text: "ETA port radar — catch arrivals before competitors" },
-  { icon: Mail, text: "AI-personalized cold outreach at scale" },
-  { icon: BarChart3, text: "Full campaign analytics & reply intelligence" },
+  { icon: Ship, text: "Track 120,000+ vessels with live voyage intelligence" },
+  { icon: Users, text: "Identify ship owners, managers & technical decision-makers" },
+  { icon: Radar, text: "Port Radar with ETA alerts before vessels arrive" },
+  { icon: Mail, text: "AI-generated personalized email campaigns" },
+  { icon: BarChart3, text: "Campaign analytics, reply tracking & lead management" },
 ];
 
 const stats = [
-  { value: "500M+", label: "Emails sent" },
-  { value: "5M+", label: "Vessels tracked" },
-  { value: "$2.0B+", label: "Pipeline built" },
+  { value: "120K+", label: "Vessels tracked" },
+  { value: "4,500", label: "Ports covered" },
+  { value: "24/7", label: "Live ETA alerts" },
 ];
 
 export function AuthShell({
@@ -43,15 +44,13 @@ export function AuthShell({
             <div className="space-y-8">
               <div>
                 <h2 className="text-4xl font-semibold leading-[1.1] tracking-tight text-slate-950 dark:text-white">
-                  Turn vessel movements
+                  Know which vessel needs{" "}
+                  <span className="violet-accent text-[1.05em]">your service</span>
                   <br />
-                  into{" "}
-                  <span className="violet-accent text-[1.05em]">marine outreach</span>
-                  <br />
-                  that actually lands.
+                  before it reaches port.
                 </h2>
                 <p className="mt-4 max-w-md text-[15px] leading-7 text-slate-600 dark:text-white/60">
-                  The only platform built for ship-owners, ISM managers and port operators — with live ETA intelligence baked in.
+                  MariMail combines live vessel intelligence, port ETA tracking, AI-powered prospecting and automated outreach to help marine companies win more business.
                 </p>
               </div>
 

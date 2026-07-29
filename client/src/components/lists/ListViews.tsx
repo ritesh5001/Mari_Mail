@@ -837,6 +837,11 @@ export function CampaignByRolePanel({
   const [adding, setAdding] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [filter, setFilter] = useState<RoleFilter>(EMPTY_ROLE_FILTER);
+  // Post-search result filters — narrow the already-fetched rows so unusable
+  // contacts (no email on file) and off-target countries drop out of the list,
+  // making it easier to pick the right people. Purely client-side; no re-search.
+  const [emailFilter, setEmailFilter] = useState<"all" | "available" | "unavailable">("all");
+  const [countryFilter, setCountryFilter] = useState<string>("all");
   // Workspace credit balance shown in the panel header. Loaded once on
   // mount from /api/billing/me; each successful reveal returns a fresh
   // balance so we can update this in place without another round-trip.
@@ -1164,7 +1169,46 @@ export function CampaignByRolePanel({
   }
 
   const loaded = state.status === "loaded" ? state : null;
-  const visibleRows = loaded ? loaded.allRows : [];
+
+  // Distinct countries present in the results, for the country dropdown.
+  const countryOptions = loaded
+    ? Array.from(
+        new Set(
+          loaded.allRows
+            .map((r) => (r.country ?? "").trim())
+            .filter((c): c is string => Boolean(c)),
+        ),
+      ).sort()
+    : [];
+
+  // Apply the post-search result filters (email availability + country).
+  // A row has a usable email when it isn't explicitly flagged unavailable.
+  const rowHasEmail = (r: ApolloRow) => r.emailAvailable !== false;
+  const visibleRows = loaded
+    ? loaded.allRows.filter((r) => {
+        if (emailFilter === "available" && !rowHasEmail(r)) return false;
+        if (emailFilter === "unavailable" && rowHasEmail(r)) return false;
+        if (countryFilter !== "all" && (r.country ?? "").trim() !== countryFilter) return false;
+        return true;
+      })
+    : [];
+
+  // Drop any selected rows that the active result filter now hides, so the
+  // "N selected" count and Reveal & add only ever act on visible contacts.
+  useEffect(() => {
+    if (!loaded) return;
+    const visibleIds = new Set(visibleRows.map((r) => r.id));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (visibleIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailFilter, countryFilter]);
   // Feed distinct titles from the latest results back into the include-title
   // autocomplete so the user can pick a title they just saw.
   const suggestionsFromResults = loaded
@@ -1363,8 +1407,52 @@ export function CampaignByRolePanel({
         <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.02]">
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-[11px] text-slate-500 dark:text-white/50">
-              {loaded.allRows.length} match{loaded.allRows.length === 1 ? "" : "es"} across {loaded.totalDomains} primary company domain{loaded.totalDomains === 1 ? "" : "s"} — {summarizeFilter(loaded.filter)}.
+              {visibleRows.length}
+              {visibleRows.length !== loaded.allRows.length ? ` of ${loaded.allRows.length}` : ""} match
+              {loaded.allRows.length === 1 ? "" : "es"} across {loaded.totalDomains} primary company domain
+              {loaded.totalDomains === 1 ? "" : "s"} — {summarizeFilter(loaded.filter)}.
             </p>
+
+            {/* Post-search result filters: hide unusable / off-target contacts. */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={emailFilter}
+                onChange={(e) => setEmailFilter(e.target.value as typeof emailFilter)}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                aria-label="Filter by email availability"
+              >
+                <option value="all">Email: all</option>
+                <option value="available">Email available</option>
+                <option value="unavailable">No email</option>
+              </select>
+              {countryOptions.length > 0 && (
+                <select
+                  value={countryFilter}
+                  onChange={(e) => setCountryFilter(e.target.value)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                  aria-label="Filter by country"
+                >
+                  <option value="all">Country: all</option>
+                  {countryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {(emailFilter !== "all" || countryFilter !== "all") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailFilter("all");
+                    setCountryFilter("all");
+                  }}
+                  className="text-xs font-medium text-slate-500 hover:text-accent-500 dark:text-white/50 dark:hover:text-accent-300"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
             {visibleRows.length > 0 ? (
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {(() => {

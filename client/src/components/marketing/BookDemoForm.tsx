@@ -10,6 +10,11 @@ const inputCls =
   "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:shadow-none dark:placeholder:text-white/30 dark:focus:border-accent-400/60 dark:focus:bg-white/[0.06] dark:focus:ring-0";
 const labelCls = "block text-xs font-semibold text-slate-600 dark:text-white/70";
 
+/** Red asterisk marking a required field. */
+function Req() {
+  return <span className="ml-0.5 text-red-500" aria-hidden="true">*</span>;
+}
+
 function detectDefaultCountry(): Country {
   try {
     const lang = typeof navigator !== "undefined" ? navigator.language : undefined;
@@ -32,6 +37,14 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    // The WhatsApp number is a controlled PhoneInput (not a native <input>), so
+    // the browser's `required` validation doesn't cover it — enforce it here.
+    if (!phone || phone.trim().length < 6) {
+      setError("Please enter your WhatsApp number.");
+      return;
+    }
+
     setPending(true);
     setError(null);
 
@@ -92,28 +105,28 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="name" className={labelCls}>
-            Full name
+            Full name<Req />
           </label>
           <input id="name" name="name" type="text" autoComplete="name" required className={inputCls} placeholder="Alex Chen" />
         </div>
         <div>
           <label htmlFor="company" className={labelCls}>
-            Company
+            Company<Req />
           </label>
-          <input id="company" name="company" type="text" autoComplete="organization" className={inputCls} placeholder="Acme Shipping" />
+          <input id="company" name="company" type="text" autoComplete="organization" required className={inputCls} placeholder="Acme Shipping" />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label htmlFor="email" className={labelCls}>
-            Work email
+            Work email<Req />
           </label>
           <input id="email" name="email" type="email" autoComplete="email" required className={inputCls} placeholder="alex@acme.com" />
         </div>
         <div>
           <label htmlFor="phone" className={labelCls}>
-            Whatsapp Number (optional)
+            Whatsapp Number<Req />
           </label>
           <PhoneInput
             id="phone"
@@ -131,9 +144,9 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
 
       <div>
         <label htmlFor="role" className={labelCls}>
-          Role
+          Role<Req />
         </label>
-        <input id="role" name="role" type="text" className={inputCls} placeholder="Fleet Manager" />
+        <input id="role" name="role" type="text" required className={inputCls} placeholder="Fleet Manager" />
       </div>
 
       <div>

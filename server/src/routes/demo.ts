@@ -86,9 +86,11 @@ function buildAdminEmail(booking: {
 const createSchema = z.object({
   name: z.string().trim().min(2).max(120),
   email: z.string().trim().email().toLowerCase().max(200),
-  company: z.string().trim().max(160).optional().or(z.literal("")),
-  phone: z.string().trim().max(40).optional().or(z.literal("")),
-  role: z.string().trim().max(120).optional().or(z.literal("")),
+  // Company, WhatsApp number and role are required on the book-demo form; only
+  // the free-text requirements (message) is optional.
+  company: z.string().trim().min(1).max(160),
+  phone: z.string().trim().min(6).max(40),
+  role: z.string().trim().min(1).max(120),
   fleetSize: z.string().trim().max(40).optional().or(z.literal("")),
   message: z.string().trim().max(2000).optional().or(z.literal("")),
   preferredAt: z
