@@ -356,7 +356,10 @@ authRouter.get("/captcha-config", (_req, res) => {
   return sendData(res, {
     enabled: captchaEnabled(),
     provider: (process.env.CAPTCHA_PROVIDER ?? "turnstile").toLowerCase(),
-    siteKey: process.env.CAPTCHA_SITE_KEY ?? null,
+    // Trimmed defensively: dotenv strips surrounding whitespace, but systemd's
+    // EnvironmentFile and Docker env do not, and a site key with a stray space
+    // silently fails to render the widget.
+    siteKey: process.env.CAPTCHA_SITE_KEY?.trim() || null,
   });
 });
 
