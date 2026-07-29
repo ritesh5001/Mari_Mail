@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { Check, Eye, EyeOff, Search, X } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
 import { apiUrl } from "@/lib/client-api";
 import { CaptchaField, resetCaptcha } from "./CaptchaField";
+import { MotionButton } from "@/components/ui/motion-button";
 
 type RegisterDefaults = {
   name: string;
@@ -99,6 +100,9 @@ export function RegisterForm({
   // null until the challenge is solved. The widget renders nothing (and this
   // stays null) when CAPTCHA is disabled server-side, so signup is unaffected.
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // The country list is ~209 entries; without a filter, finding one means
+  // scrolling a tiny box past a hundred-odd options.
+  const [countrySearch, setCountrySearch] = useState("");
   const [countries, setCountries] = useState<Array<{ country: string; countryName: string }>>([]);
   const [countriesLoading, setCountriesLoading] = useState(true);
 
@@ -124,6 +128,15 @@ export function RegisterForm({
   const [selectedCountries, setSelectedCountries] = useState<string[]>(
     defaults.targetPortCountry ? [defaults.targetPortCountry] : [],
   );
+
+  // Filter by name or ISO code so "NL" and "Netherlands" both work.
+  const visibleCountries = useMemo(() => {
+    const q = countrySearch.trim().toLowerCase();
+    if (!q) return countries;
+    return countries.filter(
+      (c) => c.countryName.toLowerCase().includes(q) || c.country.toLowerCase().includes(q),
+    );
+  }, [countries, countrySearch]);
 
   // When the plan shrinks the allowance, trim the selection to fit.
   useEffect(() => {
@@ -201,7 +214,7 @@ export function RegisterForm({
 
   return (
     <form className="space-y-4" method="post" action={`${apiUrl}/auth/register`} onSubmit={onSubmit}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FloatingField id="name" label="Full name" required>
           <input
             id="name"
@@ -246,7 +259,7 @@ export function RegisterForm({
           Choose your plan
           <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">· 14-day free trial</span>
         </p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {PLANS.map((p) => {
             const active = plan === p.key;
             return (
@@ -254,15 +267,26 @@ export function RegisterForm({
                 key={p.key}
                 type="button"
                 onClick={() => setPlan(p.key)}
-                className={`rounded-lg border p-2.5 text-left transition-all ${
+                aria-pressed={active}
+                className={`relative rounded-lg border p-3 text-left transition-all ${
                   active
                     ? "border-accent-500 bg-accent-500/[0.06] ring-1 ring-accent-500 dark:border-accent-400 dark:ring-accent-400/60"
-                    : "border-slate-200 bg-white hover:border-accent-300 dark:border-white/10 dark:bg-white/[0.04]"
+                    : "border-slate-200 bg-white hover:border-accent-300 hover:shadow-sm dark:border-white/10 dark:bg-white/[0.04]"
                 }`}
               >
+                {p.key === "PRO" && !active ? (
+                  <span className="absolute -top-2 right-2 rounded-full bg-accent-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#ffffff]">
+                    Popular
+                  </span>
+                ) : null}
+                {active ? (
+                  <span className="absolute right-2 top-2 grid h-4 w-4 place-items-center rounded-full bg-accent-500 text-[#ffffff]">
+                    <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                  </span>
+                ) : null}
                 <span className="block text-sm font-bold text-slate-900 dark:text-white">{p.name}</span>
                 <span className="block text-xs font-semibold text-accent-600 dark:text-accent-300">{p.price}</span>
-                <span className="mt-0.5 block text-[11px] leading-tight text-slate-500 dark:text-white/45">{p.blurb}</span>
+                <span className="mt-1 block text-[11px] leading-tight text-slate-500 dark:text-white/45">{p.blurb}</span>
               </button>
             );
           })}
@@ -271,48 +295,98 @@ export function RegisterForm({
 
       {/* Country access — pick up to the plan's allowance. */}
       <div>
-        <p className="mb-2 text-[13px] font-semibold text-slate-700 dark:text-white/80">
-          Countries to track
-          <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">
-            · {selectedCountries.length}/{countryCap} selected
-          </span>
-        </p>
-        <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-white/[0.04]">
-          {countriesLoading ? (
-            <p className="px-2 py-3 text-sm text-slate-400 dark:text-white/40">Loading countries…</p>
-          ) : (
-            countries.map((option) => {
-              const checked = selectedCountries.includes(option.country);
-              const atCap = !checked && selectedCountries.length >= countryCap;
-              return (
-                <label
-                  key={option.country}
-                  className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-                    atCap
-                      ? "cursor-not-allowed opacity-40"
-                      : "hover:bg-slate-50 dark:hover:bg-white/[0.05]"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={atCap}
-                    onChange={() => toggleCountry(option.country)}
-                    className="h-3.5 w-3.5 rounded border-slate-300 accent-accent-500 dark:border-white/20"
-                  />
-                  <span className="text-slate-700 dark:text-white/75">
-                    {option.countryName} <span className="text-slate-400 dark:text-white/40">({option.country})</span>
-                  </span>
-                </label>
-              );
-            })
-          )}
-        </div>
-        {selectedCountries.length >= countryCap && (
-          <p className="mt-1 text-[11px] text-slate-400 dark:text-white/40">
-            {plan} plan includes {countryCap} {countryCap === 1 ? "country" : "countries"}. Upgrade for more.
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-[13px] font-semibold text-slate-700 dark:text-white/80">
+            Which countries do you sell into?
           </p>
+          <span
+            className={`text-[11px] font-semibold ${
+              selectedCountries.length === countryCap
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-slate-400 dark:text-white/40"
+            }`}
+          >
+            {selectedCountries.length} of {countryCap} selected
+          </span>
+        </div>
+
+        {/* Your picks, visible at a glance and removable — otherwise a chosen
+            country is lost somewhere in a 209-row scroll list. */}
+        {selectedCountries.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {selectedCountries.map((code) => {
+              const match = countries.find((c) => c.country === code);
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => toggleCountry(code)}
+                  className="inline-flex items-center gap-1 rounded-full bg-accent-500/10 py-1 pl-2.5 pr-1.5 text-xs font-semibold text-accent-600 transition-colors hover:bg-accent-500/20 dark:text-accent-300"
+                  aria-label={`Remove ${match?.countryName ?? code}`}
+                >
+                  {match?.countryName ?? code}
+                  <X className="h-3 w-3" />
+                </button>
+              );
+            })}
+          </div>
         )}
+
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
+          <div className="relative border-b border-slate-100 dark:border-white/10">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={countrySearch}
+              onChange={(e) => setCountrySearch(e.target.value)}
+              placeholder="Search countries…"
+              className="w-full bg-transparent py-2 pl-9 pr-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/30"
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto p-1">
+            {countriesLoading ? (
+              <p className="px-2 py-3 text-sm text-slate-400 dark:text-white/40">Loading countries…</p>
+            ) : visibleCountries.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-slate-400 dark:text-white/40">
+                No countries match &ldquo;{countrySearch}&rdquo;.
+              </p>
+            ) : (
+              visibleCountries.map((option) => {
+                const checked = selectedCountries.includes(option.country);
+                const atCap = !checked && selectedCountries.length >= countryCap;
+                return (
+                  <label
+                    key={option.country}
+                    title={atCap ? `Your ${plan} plan covers ${countryCap}. Remove one to swap.` : undefined}
+                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                      atCap
+                        ? "cursor-not-allowed text-slate-300 dark:text-white/25"
+                        : "cursor-pointer hover:bg-slate-50 dark:hover:bg-white/[0.05]"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={atCap}
+                      onChange={() => toggleCountry(option.country)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 accent-accent-500 dark:border-white/20"
+                    />
+                    <span className={atCap ? "" : "text-slate-700 dark:text-white/75"}>
+                      {option.countryName}{" "}
+                      <span className={atCap ? "" : "text-slate-400 dark:text-white/40"}>({option.country})</span>
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <p className="mt-1.5 text-[11px] text-slate-400 dark:text-white/40">
+          {selectedCountries.length >= countryCap
+            ? `${PLANS.find((p) => p.key === plan)?.name} covers ${countryCap} ${countryCap === 1 ? "country" : "countries"} — pick a bigger plan for more.`
+            : "You'll only see vessels arriving at ports in the countries you pick."}
+        </p>
       </div>
 
       <FloatingField id="timezone" label="Timezone (UTC offset)" required>
@@ -331,7 +405,7 @@ export function RegisterForm({
         </select>
       </FloatingField>
 
-      <FloatingField id="password" label="Password" required>
+      <FloatingField id="password" label="Password (min. 10 characters)" required>
         <div className="relative">
           <input
             id="password"
@@ -368,7 +442,15 @@ export function RegisterForm({
           required
         />
         <span className="text-xs leading-5 text-slate-500 dark:text-white/50">
-          I agree to use MariMail for permission-based business outreach only.
+          I agree to the{" "}
+          <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-medium text-accent-500 underline underline-offset-2 hover:text-accent-400">
+            Terms
+          </a>{" "}
+          and{" "}
+          <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-medium text-accent-500 underline underline-offset-2 hover:text-accent-400">
+            Privacy Policy
+          </a>
+          , and to use MariMail for permission-based business outreach only.
         </span>
       </label>
 
@@ -378,13 +460,21 @@ export function RegisterForm({
         </div>
       ) : null}
 
-      <button
+      {/* Tell the user WHY they can't submit — a dead button with no
+          explanation reads as broken. */}
+      {selectedCountries.length === 0 && !pending ? (
+        <p className="text-center text-xs text-slate-500 dark:text-white/50">
+          Pick at least one country to continue.
+        </p>
+      ) : null}
+
+      <MotionButton
         type="submit"
+        size="md"
         disabled={pending || selectedCountries.length === 0}
-        className="w-full rounded-lg bg-[#4F6DFF] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_28px_rgba(14, 165, 233,0.4)] transition-all hover:-translate-y-0.5 hover:bg-[#3B4FE6] hover:shadow-[0_12px_36px_rgba(14, 165, 233,0.5)] disabled:cursor-not-allowed disabled:opacity-60 disabled:transform-none"
-      >
-        {pending ? "Creating workspace…" : "Create your workspace"}
-      </button>
+        className="w-full"
+        label={pending ? "Creating workspace…" : "Create your workspace"}
+      />
     </form>
   );
 }
