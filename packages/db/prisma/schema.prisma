@@ -324,6 +324,13 @@ model User {
   defaultWorkspaceId  String?
   isSuperAdmin        Boolean              @default(false)
   bannedAt            DateTime?
+  // --- MFA (TOTP) ---
+  mfaEnabled          Boolean              @default(false)
+  // AES-GCM envelope (see @marimail/utils encryptSecret) — never plaintext.
+  mfaSecret           Json?
+  // SHA-256 hashes of single-use recovery codes; the plaintext is shown once.
+  mfaRecoveryCodes    String[]             @default([])
+  mfaEnrolledAt       DateTime?
   themePreference     String?
   hiddenNavItems      String[]             @default([])
   lastActiveAt        DateTime?
@@ -343,6 +350,7 @@ model User {
   adminAuditLog       AdminAuditLog[]      @relation("AdminAuditActor")
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
+  authEvents          AuthEvent[]
 }
 
 model Account {
@@ -451,6 +459,11 @@ model Session {
   userId           String
   workspaceId      String?
   refreshTokenHash String?
+  // Captured at sign-in so a user can recognise their own sessions in the
+  // device list and revoke ones they don't.
+  ipAddress        String?
+  userAgent        String?
+  lastUsedAt       DateTime?
   expires          DateTime
   revokedAt        DateTime?
   createdAt        DateTime   @default(now())
@@ -460,6 +473,42 @@ model Session {
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+enum AuthEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGIN_BLOCKED_LOCKOUT
+  LOGOUT
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+  EMAIL_VERIFIED
+  MFA_ENABLED
+  MFA_DISABLED
+  MFA_CHALLENGE_FAILED
+  RECOVERY_CODE_USED
+  SESSION_REVOKED
+  REFRESH_REUSE_DETECTED
+}
+
+/// Security audit trail for authentication. Without this there is no way to
+/// answer "was this account accessed, and from where?" after an incident.
+model AuthEvent {
+  id        String        @id @default(cuid())
+  userId    String?
+  /// Kept separately so failed logins for a non-existent account are still
+  /// recorded (userId would be null there).
+  email     String?
+  type      AuthEventType
+  ipAddress String?
+  userAgent String?
+  detail    String?
+  createdAt DateTime      @default(now())
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([email, createdAt])
+  @@index([type, createdAt])
 }
 
 model VerificationToken {

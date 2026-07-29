@@ -30,7 +30,11 @@ export function verifyAccessToken(token: string) {
   return jwt.verify(token, secret("JWT_ACCESS_SECRET")) as AccessPayload;
 }
 
-export async function issueTokenPair(userId: string, workspaceId: string) {
+export async function issueTokenPair(
+  userId: string,
+  workspaceId: string,
+  device?: { ipAddress?: string | null; userAgent?: string | null },
+) {
   const accessToken = jwt.sign(
     { sub: userId, workspaceId, type: "access" } satisfies AccessPayload,
     secret("JWT_ACCESS_SECRET"),
@@ -45,6 +49,10 @@ export async function issueTokenPair(userId: string, workspaceId: string) {
       refreshTokenHash,
       userId,
       workspaceId,
+      // Captured so the user can recognise and revoke their own devices.
+      ipAddress: device?.ipAddress ?? null,
+      userAgent: device?.userAgent ?? null,
+      lastUsedAt: new Date(),
       expires: new Date(Date.now() + refreshTtlSeconds * 1000),
     },
   });

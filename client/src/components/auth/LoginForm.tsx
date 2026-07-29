@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { apiUrl } from "@/lib/client-api";
 import { MotionButton } from "@/components/ui/motion-button";
@@ -26,6 +26,12 @@ export function LoginForm({
 }) {
   const [error, setError] = useState<string | null>(serverError);
   const [pending, setPending] = useState(false);
+  // Second-factor step. The server answers the first POST with
+  // { mfaRequired: true } and issues no session until a code is supplied, so
+  // we keep the credentials to replay them alongside the code.
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const pendingCredentials = useRef<{ email: string; password: string; remember: boolean } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -33,6 +39,14 @@ export function LoginForm({
     setPending(true);
     setError(null);
     const form = new FormData(event.currentTarget);
+    const credentials = mfaRequired && pendingCredentials.current
+      ? pendingCredentials.current
+      : {
+          email: String(form.get("email") ?? ""),
+          password: String(form.get("password") ?? ""),
+          remember: form.get("remember") === "on",
+        };
+    pendingCredentials.current = credentials;
 
     let response: Response;
     try {
@@ -41,9 +55,8 @@ export function LoginForm({
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: String(form.get("email") ?? ""),
-          password: String(form.get("password") ?? ""),
-          remember: form.get("remember") === "on",
+          ...credentials,
+          ...(mfaCode ? { mfaCode } : {}),
         }),
       });
     } catch {
@@ -75,10 +88,17 @@ export function LoginForm({
     }
 
     const payload = (await response.json().catch(() => null)) as
-      | { data: { activeWorkspace: { onboardedAt: string | null } | null } }
+      | { data: { mfaRequired?: boolean; activeWorkspace?: { onboardedAt: string | null } | null } }
       | null;
     if (!payload?.data) {
       setError("Unexpected response from the server. Please try again.");
+      return;
+    }
+
+    // Password accepted, second factor still outstanding — no session yet.
+    if (payload.data.mfaRequired) {
+      setMfaRequired(true);
+      setMfaCode("");
       return;
     }
     const dest = payload.data.activeWorkspace?.onboardedAt ? "/dashboard" : "/onboarding";
@@ -93,6 +113,40 @@ export function LoginForm({
         </div>
       ) : null}
 
+      {mfaRequired ? (
+        <div>
+          <label htmlFor="mfaCode" className={labelCls}>
+            Authentication code
+          </label>
+          <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
+            Enter the 6-digit code from your authenticator app, or one of your recovery codes.
+          </p>
+          <input
+            id="mfaCode"
+            name="mfaCode"
+            inputMode="text"
+            autoComplete="one-time-code"
+            autoFocus
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value)}
+            placeholder="123456"
+            className={`${inputCls} tracking-[0.3em]`}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setMfaRequired(false);
+              setMfaCode("");
+              setError(null);
+            }}
+            className="mt-2 text-xs font-medium text-slate-500 hover:text-accent-400 dark:text-white/50"
+          >
+            ← Use a different account
+          </button>
+        </div>
+      ) : (
+      <>
       <div>
         <label htmlFor="email" className={labelCls}>Email address</label>
         <input
@@ -144,6 +198,8 @@ export function LoginForm({
           Forgot password?
         </a>
       </div>
+      </>
+      )}
 
       {error ? (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-400">
@@ -156,7 +212,7 @@ export function LoginForm({
         size="md"
         disabled={pending}
         className="w-full"
-        label={pending ? "Signing in…" : "Sign in"}
+        label={pending ? "Signing in…" : mfaRequired ? "Verify code" : "Sign in"}
       />
     </form>
   );
