@@ -521,7 +521,16 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
       return res.redirect(303, appUrl("/login?registered=1"));
     }
 
-    return sendData(res, { id: user.id, email: user.email, verificationRequired: true }, 201);
+    // Reports the server's ACTUAL policy rather than a hardcoded `true`. The
+    // post-signup screen tells people whether confirming is a hard gate or a
+    // recommendation, and that claim has to match what login will really do —
+    // otherwise enabling or disabling REQUIRE_EMAIL_VERIFICATION silently makes
+    // the UI lie.
+    return sendData(
+      res,
+      { id: user.id, email: user.email, verificationRequired: REQUIRE_EMAIL_VERIFICATION },
+      201,
+    );
   } catch (error) {
     return next(error);
   }

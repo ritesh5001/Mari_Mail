@@ -1,6 +1,4 @@
-import Link from "next/link";
-import { AuthShell } from "@/components/auth/AuthShell";
-import { RegisterForm } from "@/components/auth/RegisterForm";
+import { RegisterPanel } from "@/components/auth/RegisterPanel";
 
 export default function RegisterPage({
   searchParams,
@@ -19,20 +17,5 @@ export default function RegisterPage({
     plan: typeof searchParams.plan === "string" ? searchParams.plan : "",
   };
 
-  return (
-    <AuthShell
-      title="Start for free"
-      subtitle="Set up your workspace in under 2 minutes. No credit card required."
-      footer={
-        <>
-          Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-accent-400 hover:text-accent-300">
-            Sign in
-          </Link>
-        </>
-      }
-    >
-      <RegisterForm defaults={defaults} serverError={error} />
-    </AuthShell>
-  );
+  return <RegisterPanel defaults={defaults} serverError={error} />;
 }

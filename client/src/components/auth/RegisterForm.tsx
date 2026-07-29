@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, Search, X } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
 import { PASSWORD_MIN_LENGTH, evaluatePassword } from "@marimail/utils/password-policy";
@@ -9,7 +8,7 @@ import { apiUrl } from "@/lib/client-api";
 import { CaptchaField, resetCaptcha } from "./CaptchaField";
 import { MotionButton } from "@/components/ui/motion-button";
 
-type RegisterDefaults = {
+export type RegisterDefaults = {
   name: string;
   email: string;
   workspaceName: string;
@@ -89,11 +88,13 @@ function detectDefaultOffset(): OffsetOption {
 export function RegisterForm({
   defaults,
   serverError,
+  onRegistered,
 }: {
   defaults: RegisterDefaults;
   serverError: string | null;
+  /** Called once the account exists, with the address and the server's policy. */
+  onRegistered: (email: string, verificationRequired: boolean) => void;
 }) {
-  const router = useRouter();
   // Two-step flow: account details, then workspace setup. Splitting it keeps
   // the first screen to three familiar fields instead of nine mixed ones.
   const [step, setStep] = useState<1 | 2>(1);
@@ -237,7 +238,15 @@ export function RegisterForm({
       return;
     }
 
-    router.push("/login?registered=1");
+    // Show the "confirm your email" screen in place of the form rather than
+    // redirecting to /login, whose banner told people to sign in — which the
+    // EMAIL_NOT_VERIFIED guard then refuses. The address stays in component
+    // state instead of a query param so it never lands in browser history,
+    // referrer headers or server logs.
+    const payload = (await response.json().catch(() => null)) as {
+      data?: { verificationRequired?: boolean };
+    } | null;
+    onRegistered(email, payload?.data?.verificationRequired ?? false);
   }
 
   return (

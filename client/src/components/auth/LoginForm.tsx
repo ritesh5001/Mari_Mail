@@ -115,8 +115,14 @@ export function LoginForm({
   return (
     <form className="space-y-4" method="post" action={`${apiUrl}/auth/login`} onSubmit={onSubmit}>
       {registered ? (
+        // Reached by the no-JS form post, which the server redirects here.
+        // "Sign in to continue" never mentioned the confirmation email at all.
+        // Worded to hold whether or not REQUIRE_EMAIL_VERIFICATION is on —
+        // this page is rendered by Next and can't read the API's env, so it
+        // must not promise that signing in will or won't be blocked.
         <div className="rounded-lg border border-accent-500/30 bg-accent-500/10 px-3.5 py-2.5 text-sm text-accent-300">
-          Account created — sign in to continue.
+          Account created. We&rsquo;ve emailed you a confirmation link — click it to confirm your
+          address.
         </div>
       ) : null}
 
