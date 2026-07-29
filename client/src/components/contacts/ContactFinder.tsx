@@ -36,6 +36,50 @@ function initials(contact: ContactModel) {
   return `${contact.firstName.slice(0, 1)}${contact.lastName.slice(0, 1)}`.toUpperCase();
 }
 
+/**
+ * One icon in the ACTIONS column. When we have the underlying value it renders
+ * as a real link (tel: / profile URL) with an accessible label; when we don't
+ * it stays inert but still announces *why* it's greyed out, so the colour isn't
+ * the only thing carrying the meaning.
+ */
+function ContactActionIcon({
+  icon: Icon,
+  value,
+  href,
+  label,
+  external,
+}: {
+  icon: typeof Smartphone;
+  value: string | null | undefined;
+  href: string | null | undefined;
+  label: string;
+  external?: boolean;
+}) {
+  if (!value || !href) {
+    return (
+      <span
+        title={`No ${label} on file`}
+        aria-label={`No ${label} on file`}
+        className="cursor-default text-slate-300 dark:text-white/20"
+      >
+        <Icon className="h-4 w-4" />
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      title={`${label.charAt(0).toUpperCase()}${label.slice(1)}: ${value}`}
+      aria-label={`Open ${label}: ${value}`}
+      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+      onClick={(e) => e.stopPropagation()}
+      className="rounded p-0.5 text-emerald-600 hover:bg-slate-100 hover:text-emerald-700 dark:text-emerald-400 dark:hover:bg-white/10"
+    >
+      <Icon className="h-4 w-4" />
+    </a>
+  );
+}
+
 function scoreTier(score: number) {
   if (score >= 75) return "Hot";
   if (score >= 40) return "Warm";
@@ -122,6 +166,8 @@ export function ContactFinder() {
   const [selectedVessels, setSelectedVessels] = useState<Set<string>>(new Set());
   const [showVesselModal, setShowVesselModal] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [tagging, setTagging] = useState(false);
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [associationCounts, setAssociationCounts] = useState<Record<string, number>>({});
@@ -361,6 +407,115 @@ export function ContactFinder() {
   const selectedIds = Array.from(selected);
   const selectedVesselIds = Array.from(selectedVessels);
 
+  /**
+   * Export the selected contacts as CSV.
+   *
+   * There is no server-side contacts export endpoint (unlike vessels), and the
+   * rows are already in memory, so we build the file client-side — instant, no
+   * round-trip, no credits. Values are RFC-4180 quoted so commas/quotes in
+   * titles and company names can't corrupt the columns.
+   */
+  function handleExport() {
+    const rows = contacts.filter((c) => selected.has(c.id));
+    if (rows.length === 0) return;
+    setExporting(true);
+    try {
+      const headers = ["First name", "Last name", "Title", "Company", "Email", "Mobile", "Country", "LinkedIn"];
+      const cell = (v: unknown) => {
+        const s = v == null ? "" : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const csv = [
+        headers.join(","),
+        ...rows.map((c) =>
+          [
+            c.firstName,
+            c.lastName,
+            c.title,
+            c.companyName,
+            // Never leak a masked preview into a file the user will trust.
+            isApolloRow(c) && c.emailLocked ? "" : c.email,
+            c.mobilePhone,
+            c.country,
+            c.personLinkedinUrl,
+          ]
+            .map(cell)
+            .join(","),
+        ),
+      ].join("\n");
+
+      const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setToast(`Exported ${rows.length} contact${rows.length !== 1 ? "s" : ""}`);
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  /** Add a tag to every selected contact (merged with their existing tags). */
+  async function handleBulkTag() {
+    if (selectedIds.length === 0) return;
+
+    // Directory/Apollo previews aren't rows in our DB yet — PATCHing their
+    // synthetic ids would 404. Only saved contacts can carry tags.
+    const byId = new Map(contacts.map((c) => [c.id, c]));
+    const taggable = selectedIds.filter((id) => {
+      const row = byId.get(id);
+      return row ? !isExternalRow(row) : false;
+    });
+    const skipped = selectedIds.length - taggable.length;
+
+    if (taggable.length === 0) {
+      setToast("Those contacts aren't saved yet — add them to a list first, then tag them.");
+      setTimeout(() => setToast(null), 5000);
+      return;
+    }
+
+    const raw = window.prompt(
+      `Tag ${taggable.length} contact${taggable.length !== 1 ? "s" : ""} with:${
+        skipped > 0 ? `\n\n(${skipped} unsaved preview${skipped !== 1 ? "s" : ""} will be skipped.)` : ""
+      }`,
+    );
+    const tag = raw?.trim();
+    if (!tag) return;
+
+    setTagging(true);
+    let ok = 0;
+    try {
+      await Promise.all(
+        taggable.map(async (id) => {
+          const existing = byId.get(id)?.tags ?? [];
+          if (existing.some((t) => t.toLowerCase() === tag.toLowerCase())) {
+            ok += 1; // already tagged — count as success, don't re-write
+            return;
+          }
+          const res = await apiFetch(`/api/contacts/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tags: [...existing, tag] }),
+          });
+          if (res.ok) ok += 1;
+        }),
+      );
+      setToast(
+        ok === taggable.length
+          ? `Tagged ${ok} contact${ok !== 1 ? "s" : ""} with "${tag}"${skipped > 0 ? ` · ${skipped} skipped` : ""}`
+          : `Tagged ${ok} of ${taggable.length} — some failed`,
+      );
+    } catch {
+      setToast("Tagging failed — please try again");
+    } finally {
+      setTagging(false);
+      setTimeout(() => setToast(null), 4000);
+    }
+  }
+
   async function toggleExpand(contactId: string) {
     const isOpen = expanded.has(contactId);
     setExpanded((prev) => {
@@ -434,23 +589,31 @@ export function ContactFinder() {
           orientation="horizontal"
         />
 
-        <section className="min-w-0 space-y-5">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold uppercase tracking-wide text-ocean">Contact Intelligence</p>
-            <h2 className="mt-2 text-2xl font-semibold text-slate-950">
-              {loading ? "Searching…" : `${count.toLocaleString("en")} contacts match your filters`}
+        <section className="min-w-0 space-y-4">
+          {/* Compact result line. This used to be a full hero card repeating the
+              page's own <h1> ("People") and the breadcrumb ("Contacts") — three
+              titles and ~180px of chrome before the first row of data. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+              {loading ? "Searching…" : `${count.toLocaleString("en")} contact${count === 1 ? "" : "s"}`}
             </h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Filter and review the full contact schema across identity, company, communication, digital, and CRM fields.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {maribizCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
-                  <Database className="h-3.5 w-3.5" />
-                  {maribizCount.toLocaleString("en")} from the directory
-                </span>
-              )}
-            </div>
+            {maribizCount > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                <Database className="h-3.5 w-3.5" />
+                {maribizCount.toLocaleString("en")} from the directory
+              </span>
+            )}
+            {/* Legend so the row-level status dot is learnable, not guesswork. */}
+            <span className="ml-auto flex items-center gap-3 text-xs text-slate-500 dark:text-white/45">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden />
+                Verified
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-amber-500" aria-hidden />
+                Unverified
+              </span>
+            </span>
           </div>
 
           {secondaryWarning && (
@@ -466,9 +629,9 @@ export function ContactFinder() {
             </div>
           )}
 
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 px-4 py-3">
-              <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03] dark:shadow-none">
+            <div className="border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-white/70">
                 <button
                   onClick={() => setShowCustomizer(true)}
                   className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean"
@@ -484,13 +647,31 @@ export function ContactFinder() {
                   disabled={selectedIds.length === 0}
                   label={`Add to List${selected.size > 0 ? ` (${selected.size})` : ""}`}
                 />
-                <button className="rounded-md border border-slate-200 px-2 py-1">Export CSV</button>
-                <button className="rounded-md border border-slate-200 px-2 py-1">Bulk Tag</button>
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  disabled={selectedIds.length === 0 || exporting}
+                  title={selectedIds.length === 0 ? "Select contacts to export" : "Download the selected contacts as CSV"}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean dark:border-white/10"
+                >
+                  {exporting && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Export CSV{selected.size > 0 ? ` (${selected.size})` : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkTag}
+                  disabled={selectedIds.length === 0 || tagging}
+                  title={selectedIds.length === 0 ? "Select contacts to tag" : "Add a tag to the selected contacts"}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean dark:border-white/10"
+                >
+                  {tagging && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Bulk Tag{selected.size > 0 ? ` (${selected.size})` : ""}
+                </button>
               </div>
             </div>
             <div className="max-h-[calc(100vh-260px)] overflow-auto overscroll-x-contain">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+              <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
+                <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-[#0F0F11] dark:text-white/50 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
                   <tr>
                     <th className="sticky left-0 top-0 z-40 bg-slate-50 px-2 py-3" />
                     <th className="sticky left-8 top-0 z-40 bg-slate-50 px-4 py-3">
@@ -542,10 +723,17 @@ export function ContactFinder() {
                   ) : (
                     contacts.map((contact) => {
                       const isOpen = expanded.has(contact.id);
+                      // Pinned cells must be OPAQUE. A translucent selected tint
+                      // (bg-ocean/5) lets the horizontally-scrolling columns show
+                      // through the frozen Name column and strike across the text
+                      // — the same bug that hit Port Radar.
+                      const stickyBg = selected.has(contact.id)
+                        ? "bg-[#F4F6FF] dark:bg-[#151A2E]"
+                        : "bg-white dark:bg-[#0F0F11]";
                       return (
                       <Fragment key={contact.id}>
-                      <tr className={`hover:bg-slate-50 ${selected.has(contact.id) ? "bg-ocean/5" : ""}`}>
-                        <td className={`sticky left-0 z-10 px-2 py-3 ${selected.has(contact.id) ? "bg-ocean/5" : "bg-white"}`}>
+                      <tr className={`hover:bg-slate-50 dark:hover:bg-white/[0.03] ${selected.has(contact.id) ? "bg-ocean/5" : ""}`}>
+                        <td className={`sticky left-0 z-10 px-2 py-3 ${stickyBg}`}>
                           {!isExternalRow(contact) ? (
                             <button
                               type="button"
@@ -558,7 +746,7 @@ export function ContactFinder() {
                             </button>
                           ) : null}
                         </td>
-                        <td className={`sticky left-8 z-10 px-4 py-3 ${selected.has(contact.id) ? "bg-ocean/5" : "bg-white"}`}>
+                        <td className={`sticky left-8 z-10 px-4 py-3 ${stickyBg}`}>
                           <input
                             type="checkbox"
                             checked={selected.has(contact.id)}
@@ -593,7 +781,7 @@ export function ContactFinder() {
                           return (
                             <td
                               key={col.id}
-                              className={`max-w-[240px] truncate whitespace-nowrap px-4 py-3 text-slate-600 ${isFirst ? `sticky left-20 z-10 font-semibold text-slate-950 ${selected.has(contact.id) ? "bg-ocean/5" : "bg-white"}` : ""}`}
+                              className={`max-w-[240px] truncate whitespace-nowrap px-4 py-3 text-slate-600 ${isFirst ? `sticky left-20 z-10 font-semibold text-slate-950 ${stickyBg}` : ""}`}
                               title={value}
                             >
                               {isFirst ? (
@@ -637,7 +825,21 @@ export function ContactFinder() {
                                   </button>
                                 ) : (
                                   <div className="flex items-center gap-2">
-                                    <span className={contact.emailStatus === "VALID" ? "h-2 w-2 rounded-full bg-emerald-500" : "h-2 w-2 rounded-full bg-amber-500"} />
+                                    {/* Colour alone can't carry deliverability —
+                                        give the dot a title + screen-reader text. */}
+                                    <span
+                                      title={
+                                        contact.emailStatus === "VALID"
+                                          ? "Verified — safe to send"
+                                          : `Unverified (${formatEnum(contact.emailStatus ?? "UNKNOWN")}) — may bounce`
+                                      }
+                                      className={`h-2 w-2 shrink-0 rounded-full ${
+                                        contact.emailStatus === "VALID" ? "bg-emerald-500" : "bg-amber-500"
+                                      }`}
+                                    />
+                                    <span className="sr-only">
+                                      {contact.emailStatus === "VALID" ? "Verified email." : "Unverified email."}
+                                    </span>
                                     <span>{value}</span>
                                   </div>
                                 )
@@ -691,9 +893,31 @@ export function ContactFinder() {
                                   className={savedIds.has(contact.id) ? "h-4 w-4 fill-ocean text-ocean" : "h-4 w-4 text-slate-400 hover:text-ocean"}
                                 />
                               </button>
-                              <Smartphone className={contact.mobilePhone ? "h-4 w-4 text-emerald-600" : "h-4 w-4"} />
-                              <Phone className={contact.corporatePhone ? "h-4 w-4 text-emerald-600" : "h-4 w-4"} />
-                              <Linkedin className={contact.personLinkedinUrl ? "h-4 w-4 text-emerald-600" : "h-4 w-4"} />
+                              {/* These sit in the ACTIONS column, so they have to
+                                  BE actions. Previously they were bare icons —
+                                  green when data existed, inert always — which
+                                  read as buttons and did nothing when clicked.
+                                  Now: real tel:/profile links when we have the
+                                  data, explicitly muted + labelled when we don't. */}
+                              <ContactActionIcon
+                                icon={Smartphone}
+                                value={contact.mobilePhone}
+                                href={contact.mobilePhone ? `tel:${contact.mobilePhone}` : null}
+                                label="mobile"
+                              />
+                              <ContactActionIcon
+                                icon={Phone}
+                                value={contact.corporatePhone}
+                                href={contact.corporatePhone ? `tel:${contact.corporatePhone}` : null}
+                                label="office phone"
+                              />
+                              <ContactActionIcon
+                                icon={Linkedin}
+                                value={contact.personLinkedinUrl}
+                                href={contact.personLinkedinUrl}
+                                label="LinkedIn profile"
+                                external
+                              />
                             </div>
                           )}
                         </td>

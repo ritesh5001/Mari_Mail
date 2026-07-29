@@ -76,6 +76,22 @@ export function vesselTableColumns(): TableColumn[] {
   ];
 }
 
+/**
+ * Columns shown on first load. The contact schema has 18 fields and every one
+ * used to be visible by default, so sparse ones (Departments, Contact Owner,
+ * four separate phone numbers, three URL fields) pushed the useful columns —
+ * and the Actions column — off-screen behind a horizontal scroll. Everything
+ * omitted here is still one click away in Customize.
+ */
+const CONTACT_DEFAULT_VISIBLE = new Set([
+  "firstName",
+  "lastName",
+  "title",
+  "companyName",
+  "email",
+  "country",
+]);
+
 export function contactTableColumns(): TableColumn[] {
   return [
     ...CONTACT_SCHEMA_FIELDS.map<TableColumn>((field, index) => ({
@@ -83,6 +99,7 @@ export function contactTableColumns(): TableColumn[] {
       label: field.label,
       group: field.group,
       locked: index === 0,
+      defaultHidden: !CONTACT_DEFAULT_VISIBLE.has(String(field.key)),
       sortKey: String(field.key),
     })),
     { id: "marineRole", label: "Marine Role", group: "Marine", sortKey: "marineRole" },
