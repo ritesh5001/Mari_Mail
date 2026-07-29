@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  AlertCircle,
   CheckCircle2,
   ChevronRight,
   Loader2,
@@ -15,6 +16,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 
 type Provider = "SMTP" | "GMAIL" | "OUTLOOK";
@@ -65,10 +67,13 @@ export function InboxesManager({
   initialInboxes,
   userEmail,
   oauthStatus,
+  loadFailed = false,
 }: {
   initialInboxes: Inbox[];
   userEmail: string;
   oauthStatus: string | null;
+  /** True when the inbox list couldn't be fetched — distinct from "none yet". */
+  loadFailed?: boolean;
 }) {
   const [inboxes, setInboxes] = useState(initialInboxes);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -164,44 +169,103 @@ export function InboxesManager({
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-shell dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Your inboxes</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">
-              Connect a mailbox to send from
-            </h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-              Connect your Gmail, Outlook, or any SMTP mailbox. MariMail sends campaigns from these
-              inboxes using rotation and warm-up.
+            {/* One page title. It used to be breadcrumb "Inboxes" + eyebrow
+                "YOUR INBOXES" + an h1 that was an instruction ("Connect a
+                mailbox to send from") which stayed wrong once you had five. */}
+            <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Inboxes</h1>
+            <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
+              MariMail sends campaigns from the mailboxes you connect here, rotating between them
+              and warming them up to protect deliverability.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setWizardOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
-          >
-            <Plus className="h-4 w-4" />
-            Connect inbox
-          </button>
+          {/* Hidden while the list is empty — the empty state below already
+              carries the one call to action, and two identical buttons a few
+              hundred pixels apart just asks which one is the real one. */}
+          {inboxes.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-[#ffffff] shadow-sm transition-colors hover:bg-accent-600"
+            >
+              <Plus className="h-4 w-4" />
+              Connect inbox
+            </button>
+          ) : null}
         </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
-        {inboxes.length === 0 ? (
+        {loadFailed ? (
+          // Distinct from "none yet" — telling someone with mailboxes already
+          // connected that they have none invites a needless reconnect.
           <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
-            <Mail className="h-8 w-8 text-slate-300 dark:text-white/30" />
-            <p className="text-sm font-medium text-slate-700 dark:text-white/80">
-              No inboxes connected yet.
+            <AlertCircle className="h-8 w-8 text-red-500" />
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              Couldn&rsquo;t load your inboxes
             </p>
-            <p className="text-xs text-slate-500 dark:text-white/50">
-              Connect your first inbox to start sending.
+            <p className="max-w-sm text-xs text-slate-500 dark:text-white/50">
+              This is a display problem — any mailboxes you&rsquo;ve connected are still there and
+              still sending. Reload to try again.
             </p>
-            <button
-              type="button"
-              onClick={() => setWizardOpen(true)}
-              className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-sm transition hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
+            <Link
+              href="/dashboard/inboxes"
+              className="mt-2 inline-flex items-center gap-2 rounded-lg bg-accent-500 px-3 py-1.5 text-xs font-semibold text-[#ffffff] transition-colors hover:bg-accent-600"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Connect inbox
-            </button>
+              Reload
+            </Link>
+          </div>
+        ) : inboxes.length === 0 ? (
+          // The empty state carries the setup guidance, because this is the
+          // step people get stuck on — especially Gmail/Outlook with 2FA, where
+          // the account password silently fails and an app password is needed.
+          <div className="px-6 py-12">
+            <div className="mx-auto max-w-lg text-center">
+              <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-accent-500/10">
+                <Mail className="h-6 w-6 text-accent-600 dark:text-accent-300" />
+              </div>
+              <p className="text-base font-semibold text-slate-900 dark:text-white">
+                Connect your first inbox
+              </p>
+              <p className="mx-auto mt-1.5 max-w-md text-sm text-slate-500 dark:text-white/55">
+                Campaigns send from your own mailbox, so replies land in your inbox and your domain
+                builds its own reputation. This takes about a minute.
+              </p>
+              <button
+                type="button"
+                onClick={() => setWizardOpen(true)}
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm font-semibold text-[#ffffff] transition-colors hover:bg-accent-600"
+              >
+                <Plus className="h-4 w-4" />
+                Connect inbox
+              </button>
+            </div>
+
+            <div className="mx-auto mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
+              {[
+                { icon: Mail, title: "Gmail", body: "One-click sign-in with Google. No password needed." },
+                { icon: Mail, title: "Outlook / M365", body: "One-click sign-in with Microsoft." },
+                { icon: Server, title: "Any SMTP", body: "Host, port and username — plus an app password if 2FA is on." },
+              ].map((opt) => {
+                const Icon = opt.icon;
+                return (
+                  <div
+                    key={opt.title}
+                    className="rounded-lg border border-slate-200 p-3 text-left dark:border-white/10"
+                  >
+                    <Icon className="mb-2 h-4 w-4 text-slate-400 dark:text-white/40" />
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white/90">{opt.title}</p>
+                    <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-white/45">{opt.body}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="mx-auto mt-6 flex max-w-md items-start justify-center gap-2 text-center text-xs text-slate-400 dark:text-white/35">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Credentials are encrypted at rest and only ever used to send your campaigns.
+              </span>
+            </p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-white/[0.06]">
@@ -385,23 +449,35 @@ function ConnectWizard({
 }
 
 function ProviderPicker({ onPick }: { onPick: (provider: Provider) => void }) {
-  const options: Array<{ id: Provider; title: string; description: string; icon: typeof Mail }> = [
+  // Gmail and Outlook previously shared the same envelope icon, so the list
+  // read as two identical rows. Letter marks in each provider's colour make
+  // them scannable without shipping brand SVGs.
+  const options: Array<{
+    id: Provider;
+    title: string;
+    description: string;
+    icon?: typeof Mail;
+    mark?: string;
+    markClass?: string;
+  }> = [
     {
       id: "GMAIL",
       title: "Gmail",
-      description: "Sign in with Google to connect a Gmail account.",
-      icon: Mail,
+      description: "Sign in with Google — no password needed.",
+      mark: "G",
+      markClass: "bg-red-500/10 text-red-600 dark:text-red-400",
     },
     {
       id: "OUTLOOK",
       title: "Outlook / Microsoft 365",
-      description: "Sign in with Microsoft to connect an Outlook mailbox.",
-      icon: Mail,
+      description: "Sign in with Microsoft — no password needed.",
+      mark: "O",
+      markClass: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
     },
     {
       id: "SMTP",
       title: "Any SMTP mailbox",
-      description: "Connect using host, port, username, and password (or app password).",
+      description: "Host, port and username. Use an app password if 2FA is on.",
       icon: Server,
     },
   ];
@@ -415,7 +491,18 @@ function ProviderPicker({ onPick }: { onPick: (provider: Provider) => void }) {
             onClick={() => onPick(opt.id)}
             className="flex w-full items-center gap-3 rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-white/20 dark:hover:bg-white/[0.05]"
           >
-            <opt.icon className="h-5 w-5 text-slate-500 dark:text-white/60" />
+            {opt.mark ? (
+              <span
+                className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${opt.markClass}`}
+                aria-hidden
+              >
+                {opt.mark}
+              </span>
+            ) : opt.icon ? (
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-white/60">
+                <opt.icon className="h-4 w-4" />
+              </span>
+            ) : null}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-950 dark:text-white">{opt.title}</p>
               <p className="text-xs text-slate-500 dark:text-white/55">{opt.description}</p>

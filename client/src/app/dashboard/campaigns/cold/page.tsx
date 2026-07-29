@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { CampaignCard } from "@/components/campaigns/CampaignBuilder";
+import { NoInboxWarning } from "@/components/campaigns/NoInboxWarning";
 import { WorkerHealthCard } from "@/components/campaigns/WorkerHealthCard";
 import { getCampaignDashboardData } from "@/lib/campaign-data";
 
@@ -25,6 +26,8 @@ export default async function ColdCampaignsPage() {
           New cold campaign
         </Link>
       </header>
+
+      <NoInboxWarning />
 
       <section className="grid gap-4 xl:grid-cols-2">
         {data.campaigns.length === 0 ? (
