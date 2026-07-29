@@ -1,8 +1,10 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronUp, Filter, Search, Upload, X } from "lucide-react";
+import { GooeyFilter } from "@/components/ui/gooey-filter";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 import {
@@ -1353,39 +1355,62 @@ function FilterModalShell({
               </button>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-              <nav className="shrink-0 overflow-y-auto border-b border-slate-100 px-3 py-4 md:w-56 md:border-b-0 md:border-r dark:border-white/10">
-                <ul className="flex gap-1 overflow-x-auto md:block md:space-y-0.5">
+            <div className="flex min-h-0 flex-1 flex-col">
+              {/* Horizontal gooey tab bar. The blue active pill lives on a
+                  gooey-filtered layer so it stretches/merges as it slides
+                  between tabs; the labels sit on a crisp layer above it. */}
+              <GooeyFilter id="vessel-filter-goo" strength={6} />
+              <nav className="shrink-0 overflow-x-auto border-b border-slate-100 px-4 py-3 dark:border-white/10">
+                <div className="relative flex w-max min-w-full gap-1">
+                  {/* Gooey blob layer (behind labels) */}
+                  <div
+                    className="pointer-events-none absolute inset-0 flex gap-1"
+                    style={{ filter: "url(#vessel-filter-goo)" }}
+                    aria-hidden
+                  >
+                    {sections.map((s) => (
+                      <div key={s.key} className="relative flex-1 px-4 py-2">
+                        {s.key === activeSection?.key && (
+                          <motion.div
+                            layoutId="vessel-filter-active-tab"
+                            className="absolute inset-0 rounded-full bg-ocean/15 dark:bg-accent-500/25"
+                            transition={{ type: "spring", bounce: 0.15, duration: 0.5 }}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Crisp interactive labels (above the goo) */}
                   {sections.map((s) => {
                     const isActive = s.key === activeSection?.key;
                     return (
-                      <li key={s.key} className="shrink-0 md:shrink">
-                        <button
-                          type="button"
-                          onClick={() => setActiveKey(s.key)}
-                          className={`flex w-full items-center justify-between gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors md:whitespace-normal ${
-                            isActive
-                              ? "bg-ocean/10 font-semibold text-ocean dark:bg-accent-500/15 dark:text-accent-300"
-                              : "text-slate-600 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                          }`}
-                        >
-                          <span className="truncate">{s.title}</span>
-                          {s.count ? (
-                            <span
-                              className={`rounded-full px-2 text-xs font-semibold ${
-                                isActive
-                                  ? "bg-ocean/15 text-ocean dark:bg-accent-500/20 dark:text-accent-200"
-                                  : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
-                              }`}
-                            >
-                              {s.count}
-                            </span>
-                          ) : null}
-                        </button>
-                      </li>
+                      <button
+                        key={s.key}
+                        type="button"
+                        onClick={() => setActiveKey(s.key)}
+                        className={`relative z-10 flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? "font-semibold text-ocean dark:text-accent-200"
+                            : "text-slate-600 hover:text-slate-900 dark:text-white/65 dark:hover:text-white"
+                        }`}
+                      >
+                        <span>{s.title}</span>
+                        {s.count ? (
+                          <span
+                            className={`rounded-full px-1.5 text-xs font-semibold ${
+                              isActive
+                                ? "bg-ocean/20 text-ocean dark:bg-accent-500/25 dark:text-accent-100"
+                                : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
+                            }`}
+                          >
+                            {s.count}
+                          </span>
+                        ) : null}
+                      </button>
                     );
                   })}
-                </ul>
+                </div>
               </nav>
 
               <div key={activeSection?.key} className="flex-1 overflow-y-auto px-8 py-6 animate-in-fade">
