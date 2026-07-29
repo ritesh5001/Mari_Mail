@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Filter, Loader2, Search, X } from "lucide-react";
+import { Bookmark, BookmarkPlus, Filter, Loader2, Search, Trash2, X } from "lucide-react";
+import { apiFetch } from "@/lib/browser-fetch";
 
 /**
  * Filter shape for the role picker. Callers hold this in state and re-fetch
@@ -121,6 +122,12 @@ export function RoleFilterPanel({
         <p className="w-full text-xs text-slate-500 dark:text-white/60">
           Filter people at your vessels&rsquo; owner / manager companies. Search is free — only revealing an email or phone spends a credit.
         </p>
+
+        {/* Saved filter sets — save the current include/exclude titles + companies
+            as a named preset and reload it with one click next time. */}
+        <div className="w-full">
+          <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
+        </div>
       </div>
 
       <div className="mt-4 space-y-4">
@@ -202,6 +209,219 @@ export function RoleFilterPanel({
       </div>
     </section>
   );
+}
+
+// --- Saved filter sets -----------------------------------------------------
+
+type SavedSet = { id: string; name: string; filterConfig: RoleFilter };
+
+/**
+ * Save the current Role filter (include/exclude titles + companies) as a named
+ * preset, and reload any saved preset with one click. Backed by the generic
+ * SavedFilter table (entityType CONTACT) via /api/saved-filters.
+ */
+function SavedFilterSets({
+  value,
+  onLoad,
+  disabled,
+}: {
+  value: RoleFilter;
+  onLoad: (next: RoleFilter) => void;
+  disabled?: boolean;
+}) {
+  const [sets, setSets] = useState<SavedSet[]>([]);
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const hasFilter =
+    value.includeTitles.length +
+      value.excludeTitles.length +
+      value.includeCompanies.length +
+      value.excludeCompanies.length >
+    0;
+
+  async function load() {
+    try {
+      const res = await apiFetch("/api/saved-filters?entityType=CONTACT");
+      if (!res.ok) return;
+      const body = (await res.json()) as { data?: { filters?: Array<{ id: string; name: string; filterConfig: unknown }> } };
+      const rows = body.data?.filters ?? [];
+      setSets(
+        rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          filterConfig: normalizeRoleFilter(r.filterConfig),
+        })),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Close the dropdown on outside click.
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  async function save() {
+    const trimmed = name.trim();
+    if (trimmed.length < 2) return;
+    setSaving(true);
+    try {
+      const res = await apiFetch("/api/saved-filters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmed,
+          entityType: "CONTACT",
+          filterConfig: {
+            includeTitles: value.includeTitles,
+            excludeTitles: value.excludeTitles,
+            includeCompanies: value.includeCompanies,
+            excludeCompanies: value.excludeCompanies,
+            seniorities: value.seniorities,
+          },
+        }),
+      });
+      if (res.ok) {
+        setName("");
+        setNaming(false);
+        await load();
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove(id: string) {
+    const res = await apiFetch(`/api/saved-filters/${id}`, { method: "DELETE" });
+    if (res.ok) setSets((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  return (
+    <div ref={boxRef} className="relative mt-2 flex flex-wrap items-center gap-2">
+      {/* Saved sets dropdown */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-ocean hover:text-ocean disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+      >
+        <Bookmark className="h-3.5 w-3.5" />
+        Saved sets{sets.length ? ` (${sets.length})` : ""}
+      </button>
+
+      {/* Save current filter */}
+      {naming ? (
+        <span className="inline-flex items-center gap-1">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") {
+                setNaming(false);
+                setName("");
+              }
+            }}
+            placeholder="Set name…"
+            className="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
+          />
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || name.trim().length < 2}
+            className="rounded-md bg-[#4F6DFF] px-2 py-1 text-xs font-semibold text-white hover:bg-[#3B4FE6] disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setNaming(false);
+              setName("");
+            }}
+            className="text-xs text-slate-400 hover:text-slate-600"
+          >
+            Cancel
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setNaming(true)}
+          disabled={disabled || !hasFilter}
+          title={hasFilter ? "Save the current filters as a reusable set" : "Add some filters first"}
+          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:border-ocean hover:text-ocean disabled:opacity-40 dark:border-white/15 dark:text-white/60"
+        >
+          <BookmarkPlus className="h-3.5 w-3.5" />
+          Save set
+        </button>
+      )}
+
+      {open && (
+        <div className="absolute left-0 top-full z-[60] mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
+          {sets.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-slate-400 dark:text-white/40">
+              No saved sets yet. Build a filter and click &ldquo;Save set&rdquo;.
+            </p>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto py-1">
+              {sets.map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-2 px-2 py-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLoad(normalizeRoleFilter(s.filterConfig));
+                      setOpen(false);
+                    }}
+                    className="flex-1 truncate rounded px-2 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-ocean dark:text-white/75 dark:hover:bg-white/[0.05]"
+                    title="Load this set"
+                  >
+                    {s.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(s.id)}
+                    aria-label={`Delete ${s.name}`}
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Coerce arbitrary saved JSON back into a full RoleFilter (missing arrays → []). */
+function normalizeRoleFilter(raw: unknown): RoleFilter {
+  const r = (raw ?? {}) as Partial<RoleFilter>;
+  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  return {
+    includeTitles: arr(r.includeTitles),
+    excludeTitles: arr(r.excludeTitles),
+    includeCompanies: arr(r.includeCompanies),
+    excludeCompanies: arr(r.excludeCompanies),
+    seniorities: arr(r.seniorities),
+  };
 }
 
 function mergeSuggestions(base: string[], extra: string[]): string[] {

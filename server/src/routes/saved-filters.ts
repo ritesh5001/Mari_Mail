@@ -54,3 +54,18 @@ savedFilterRouter.post("/", requireAuth, async (req, res, next) => {
     return next(error);
   }
 });
+
+savedFilterRouter.delete("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const { workspaceId } = (req as AuthedRequest).auth;
+    // Scope the delete to the caller's workspace so one workspace can't remove
+    // another's saved filters.
+    const result = await prisma.savedFilter.deleteMany({
+      where: { AND: [{ id: req.params.id }, workspaceScope(workspaceId)] },
+    });
+    if (result.count === 0) return sendError(res, 404, "NOT_FOUND", "Saved filter not found");
+    return sendData(res, { deleted: true });
+  } catch (error) {
+    return next(error);
+  }
+});
