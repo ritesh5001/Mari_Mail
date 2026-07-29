@@ -803,17 +803,43 @@ type ApolloRolesState =
       loadingMore: boolean;
     };
 
-function buildRoleQuery(filter: RoleFilter, vesselIds?: string[]): URLSearchParams {
-  const params = new URLSearchParams();
-  for (const t of filter.includeTitles) params.append("includeTitle", t);
-  for (const t of filter.excludeTitles) params.append("excludeTitle", t);
-  for (const c of filter.includeCompanies) params.append("includeCompany", c);
-  for (const c of filter.excludeCompanies) params.append("excludeCompany", c);
-  for (const s of filter.seniorities) params.append("seniority", s);
-  // Scopes the Apollo search (and the title suggestions built from it) to just
-  // these vessels' companies. Omitted = every vessel on the list.
-  for (const id of vesselIds ?? []) params.append("vesselId", id);
-  return params;
+/**
+ * Role filter as a JSON body.
+ *
+ * This used to build a query string, appending one param per title, company and
+ * vessel id. A realistic filter — 40+ long job titles plus an id for every
+ * vessel on the list — pushed the URL past the ~8KB request-line limit and the
+ * server answered 414 (URI Too Long), so the search just failed. A body has no
+ * such limit.
+ */
+function buildRoleBody(filter: RoleFilter, vesselIds?: string[]): Record<string, unknown> {
+  return {
+    includeTitle: filter.includeTitles,
+    excludeTitle: filter.excludeTitles,
+    includeCompany: filter.includeCompanies,
+    excludeCompany: filter.excludeCompanies,
+    seniority: filter.seniorities,
+    // Scopes the Apollo search (and the title suggestions built from it) to
+    // just these vessels' companies. Omitted = every vessel on the list.
+    vesselId: vesselIds ?? [],
+  };
+}
+
+/** POST the role filter, carrying paging/extra params in the same body. */
+function roleSearchRequest(
+  listId: string,
+  filter: RoleFilter,
+  vesselIds?: string[],
+  extra?: Record<string, unknown>,
+) {
+  return {
+    path: `/api/contacts/external-by-list/${listId}`,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...buildRoleBody(filter, vesselIds), ...(extra ?? {}) }),
+    } as RequestInit,
+  };
 }
 
 function summarizeFilter(filter: RoleFilter): string {
@@ -1064,9 +1090,8 @@ export function CampaignByRolePanel({
     setState({ status: "loading" });
     setSelected(new Set());
     try {
-      const params = buildRoleQuery(active, vesselIds);
-      params.set("page", "1");
-      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      const { path, init } = roleSearchRequest(listId, active, vesselIds, { page: 1 });
+      const res = await apiFetch(path, init);
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as ApolloListResponse | null;
         setState({ status: "error", message: body?.error?.message ?? `Failed (${res.status})` });
@@ -1099,9 +1124,8 @@ export function CampaignByRolePanel({
     const activeFilter = state.filter;
     setState((prev) => (prev.status === "loaded" ? { ...prev, loadingMore: true } : prev));
     try {
-      const params = buildRoleQuery(activeFilter, vesselIds);
-      params.set("page", String(targetPage));
-      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      const { path, init } = roleSearchRequest(listId, activeFilter, vesselIds, { page: targetPage });
+      const res = await apiFetch(path, init);
       if (!res.ok) {
         setState((prev) => (prev.status === "loaded" ? { ...prev, loadingMore: false } : prev));
         return;
@@ -1265,14 +1289,14 @@ export function CampaignByRolePanel({
       const query = draft.trim();
       if (!query) return [];
       try {
-        const params = new URLSearchParams();
-        params.set("page", "1");
-        params.set("q", query);
         // Suggestions come from the same Apollo search as the results, so they
         // must honour the same vessel scope — otherwise the New Vessels tab
         // would suggest titles that only exist at vessels it doesn't cover.
-        for (const id of vesselIds ?? []) params.append("vesselId", id);
-        const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+        const res = await apiFetch(`/api/contacts/external-by-list/${listId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page: 1, q: query, vesselId: vesselIds ?? [] }),
+        });
         if (!res.ok) return [];
         const payload = (await res.json()) as ApolloListResponse;
         const data = payload.data;
@@ -1307,10 +1331,11 @@ export function CampaignByRolePanel({
   // the caller falls back to the local pool.
   const fetchAllTitles = useCallback(async (): Promise<string[]> => {
     try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      for (const id of vesselIds ?? []) params.append("vesselId", id);
-      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      const res = await apiFetch(`/api/contacts/external-by-list/${listId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: 1, vesselId: vesselIds ?? [] }),
+      });
       if (!res.ok) return [];
       const payload = (await res.json()) as ApolloListResponse;
       const histogram = payload.data?.titleHistogram ?? [];
@@ -1332,10 +1357,11 @@ export function CampaignByRolePanel({
 
   const fetchAllCompanies = useCallback(async (): Promise<string[]> => {
     try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      for (const id of vesselIds ?? []) params.append("vesselId", id);
-      const res = await apiFetch(`/api/contacts/external-by-list/${listId}?${params.toString()}`);
+      const res = await apiFetch(`/api/contacts/external-by-list/${listId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: 1, vesselId: vesselIds ?? [] }),
+      });
       if (!res.ok) return [];
       const payload = (await res.json()) as ApolloListResponse;
       const rows = payload.data?.rows ?? [];

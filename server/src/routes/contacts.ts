@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { Prisma, prisma } from "@marimail/db";
 import type { FilterConfig } from "@marimail/types";
@@ -626,7 +626,17 @@ contactRouter.get("/external-by-vessel/:vesselId", requireAuth, async (req, res,
  *   GET .../external-by-list/:listId?title=Fleet%20Manager&title=Broker
  *     → same shape but rows filtered to the selected titles
  */
-contactRouter.get("/external-by-list/:listId", requireAuth, async (req, res, next) => {
+/**
+ * Role-filter search over a list's vessels.
+ *
+ * Registered on BOTH GET and POST. The filter can carry dozens of long job
+ * titles plus one id per vessel on the list, and as a query string that
+ * regularly exceeded the ~8KB request-line limit — nginx answered 414 (URI Too
+ * Long) and the search simply failed. POST carries the same filter in a JSON
+ * body, which has no such limit. GET is kept so existing links/clients keep
+ * working.
+ */
+const externalByListHandler = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { workspaceId, userId } = (req as AuthedRequest).auth;
     const list = await prisma.contactList.findFirst({
@@ -908,7 +918,25 @@ contactRouter.get("/external-by-list/:listId", requireAuth, async (req, res, nex
   } catch (error) {
     return next(error);
   }
-});
+};
+
+/**
+ * Copy a JSON body onto req.query so the shared handler reads filters the same
+ * way regardless of verb. defineProperty because Express exposes `query` via a
+ * prototype getter in some 4.x builds, where plain assignment silently no-ops.
+ */
+function bodyAsQuery(req: Request, _res: Response, next: NextFunction) {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const merged: Record<string, unknown> = { ...(req.query ?? {}) };
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined && value !== null) merged[key] = value;
+  }
+  Object.defineProperty(req, "query", { value: merged, writable: true, configurable: true });
+  next();
+}
+
+contactRouter.get("/external-by-list/:listId", requireAuth, externalByListHandler);
+contactRouter.post("/external-by-list/:listId", requireAuth, bodyAsQuery, externalByListHandler);
 
 contactRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
