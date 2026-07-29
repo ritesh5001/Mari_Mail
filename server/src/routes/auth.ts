@@ -20,6 +20,7 @@ import {
   registerRateLimit,
   resetTokenRateLimit,
 } from "../auth/rate-limit.js";
+import { captchaEnabled, captchaErrorMessage, verifyCaptcha } from "../auth/captcha.js";
 import {
   breachedPasswordCount,
   clearAuthFailures,
@@ -76,6 +77,9 @@ const registerSchema = z.object({
       z.array(z.string().trim().length(2).transform((c) => c.toUpperCase())).max(50),
     )
     .optional(),
+  // Turnstile/hCaptcha/reCAPTCHA solve token. Optional in the schema because
+  // the check is enforced separately — only when a secret is configured.
+  captchaToken: z.string().max(4000).optional(),
 });
 
 // Country allowance per plan chosen at registration. FLEET here maps to the
@@ -340,6 +344,22 @@ async function loadSession(userId: string) {
   return user ? serializeSession(user) : null;
 }
 
+/**
+ * Public CAPTCHA config for the signup form.
+ *
+ * Served from the API so the client can't drift out of sync with the server:
+ * if the server has a secret but the client never renders a widget, every
+ * registration would fail. One source of truth avoids that. The site key is
+ * public by design — it's embedded in the page for any CAPTCHA provider.
+ */
+authRouter.get("/captcha-config", (_req, res) => {
+  return sendData(res, {
+    enabled: captchaEnabled(),
+    provider: (process.env.CAPTCHA_PROVIDER ?? "turnstile").toLowerCase(),
+    siteKey: process.env.CAPTCHA_SITE_KEY ?? null,
+  });
+});
+
 authRouter.post("/register", registerRateLimit, async (req, res, next) => {
   try {
     const registrationEnabled = await getRegistrationEnabled();
@@ -357,6 +377,20 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
         return res.redirect(303, registerRetryUrl(req.body as Record<string, unknown>, input.error.issues[0]?.message ?? "Invalid input"));
       }
       return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
+    }
+
+    // CAPTCHA first: reject bots before spending a bcrypt hash, an HIBP
+    // round-trip, or a database write.
+    const captcha = await verifyCaptcha(input.data.captchaToken, req);
+    if (!captcha.ok) {
+      const message = captchaErrorMessage(captcha);
+      if (captcha.reason === "rejected") {
+        console.warn(`[captcha] register rejected: ${captcha.detail ?? ""}`);
+      }
+      if (wantsHtmlRedirect(req)) {
+        return res.redirect(303, registerRetryUrl(req.body as Record<string, unknown>, message));
+      }
+      return sendError(res, 400, "CAPTCHA_FAILED", message);
     }
 
     const existing = await prisma.user.findUnique({ where: { email: input.data.email }, select: { id: true } });

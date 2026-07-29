@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
 import { apiUrl } from "@/lib/client-api";
+import { CaptchaField, resetCaptcha } from "./CaptchaField";
 
 type RegisterDefaults = {
   name: string;
@@ -95,6 +96,9 @@ export function RegisterForm({
   const [error, setError] = useState<string | null>(serverError);
   const [pending, setPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // null until the challenge is solved. The widget renders nothing (and this
+  // stays null) when CAPTCHA is disabled server-side, so signup is unaffected.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [countries, setCountries] = useState<Array<{ country: string; countryName: string }>>([]);
   const [countriesLoading, setCountriesLoading] = useState(true);
 
@@ -169,6 +173,7 @@ export function RegisterForm({
         password,
         workspaceName: String(form.get("workspaceName") ?? ""),
         termsAccepted: form.get("termsAccepted") === "on",
+        captchaToken,
         timezone: offsetIana,
         // Keep the single targetPortCountry (primary = first selected) so
         // existing workspace logic still works, and send the full plan +
@@ -184,6 +189,10 @@ export function RegisterForm({
     if (!response.ok) {
       const payload = (await response.json()) as { error?: { message?: string } };
       setError(payload.error?.message ?? "Registration failed. Please try again.");
+      // Solve tokens are single-use — clear and re-render so a retry gets a
+      // fresh one instead of replaying a spent token.
+      setCaptchaToken(null);
+      resetCaptcha();
       return;
     }
 
@@ -347,6 +356,8 @@ export function RegisterForm({
         </div>
       </FloatingField>
       <PasswordStrength password={password} />
+
+      <CaptchaField onToken={setCaptchaToken} className="pt-1" />
 
       <label className="flex items-start gap-2.5 cursor-pointer select-none">
         <input
