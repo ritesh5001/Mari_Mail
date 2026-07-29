@@ -3,6 +3,7 @@ import { registerAnalyticsCrons, startAnalyticsCronWorker } from "./workers/anal
 import { startCampaignSchedulerWorker } from "./workers/campaign-scheduler.worker.js";
 import { startManualSchedulerWorker } from "./workers/campaign-manual-scheduler.worker.js";
 import { startCsvImportWorker } from "./workers/csv-import.worker.js";
+import { requeueStalledCsvImports } from "./services/csv-import-queue.js";
 import { startWarmupWorker } from "./workers/warmup.worker.js";
 import { installRedisQuotaGuard, isQuotaError } from "./workers/redis-quota-guard.js";
 
@@ -70,6 +71,15 @@ export function startBackendWorkers() {
     analyticsCronWorker,
     csvImportWorker,
   ]);
+
+  // Recover imports orphaned in `active` by a previous run. BullMQ's own
+  // stalled checker only runs inside a live, unpaused worker, so it cannot
+  // recover the case where nothing was running at all — which is exactly the
+  // case a restart is fixing.
+  requeueStalledCsvImports().catch((error) => {
+    if (isQuotaError(error)) return;
+    console.error(`Failed to requeue stalled CSV imports: ${error.message}`);
+  });
 
   registerAnalyticsCrons(connection).catch((error) => {
     if (isQuotaError(error)) return; // guard already logged + paused

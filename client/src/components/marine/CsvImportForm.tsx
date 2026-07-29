@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AlertCircle, CheckCircle2, RefreshCw, Upload } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 import { CONTACT_SCHEMA_HEADERS } from "@/lib/contact-schema";
@@ -406,6 +407,20 @@ export function CsvImportForm() {
           Background import job {importJob.jobId} is {importJob.status}
           {importJob.rowCount ? ` for ${importJob.rowCount.toLocaleString("en")} rows` : ""}.
           {importJob.status === "completed" ? " Import completed." : " You can leave this page after the job is queued; the server worker will continue."}
+          {/* Without this, "is active" was the last word the page ever said —
+              there was no way to tell a slow import from a stuck one. */}
+          {importJob.status !== "completed" ? (
+            <>
+              {" "}
+              <Link
+                href="/dashboard/import/jobs"
+                className="font-semibold underline underline-offset-2"
+              >
+                Track progress
+              </Link>
+              .
+            </>
+          ) : null}
         </div>
       ) : null}
 

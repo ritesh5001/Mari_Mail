@@ -48,6 +48,18 @@ type GuardState = {
 
 const LOG_COOLDOWN_MS = 60_000; // one quota log per minute, max
 const PROBE_INTERVAL_MS = 5 * 60_000; // re-check for quota recovery every 5 min
+/** No pause call may block shutdown of the poll loop for longer than this. */
+const PAUSE_TIMEOUT_MS = 10_000;
+
+/** Resolves with the promise, or rejects once `ms` elapses — never hangs. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timed out")), ms).unref?.(),
+    ),
+  ]);
+}
 
 /**
  * Attach quota-exhaustion handling to a set of workers sharing one Redis
@@ -72,11 +84,29 @@ export function installRedisQuotaGuard(connection: Redis, workers: GuardableWork
     if (state.paused) return;
     state.paused = true;
     logOnce(context);
-    // `force: false` lets in-flight jobs finish; new polling stops.
-    await Promise.all(
-      workers.map((w) => w.pause(false).catch(() => undefined)),
-    );
+
+    // Start the recovery probe FIRST. It used to run after the awaits below,
+    // which made recovery depend on the pause completing — and the pause could
+    // hang forever (see the `pause(true)` note), leaving every worker paused
+    // with nothing left alive to ever resume them. Jobs then sat in `wait`
+    // indefinitely. Probing first means recovery is guaranteed regardless of
+    // what the pause calls do.
     startProbe();
+
+    // `true` = doNotWaitActive. This used to pass `false`, which makes BullMQ
+    // `await whenCurrentJobsFinished()` — and the job we are pausing because of
+    // is, by definition, one whose Redis commands are failing. With ioredis
+    // configured `maxRetriesPerRequest: null` those commands retry forever
+    // rather than rejecting, so the active job never finishes, the await never
+    // settles, and `.catch()` never fires because the promise doesn't reject —
+    // it just never resolves. Pausing without waiting stops the poll loop
+    // immediately, which is the entire point; in-flight jobs are left alone to
+    // finish or stall out on their own.
+    await Promise.all(
+      workers.map((w) =>
+        withTimeout(w.pause(true), PAUSE_TIMEOUT_MS).catch(() => undefined),
+      ),
+    );
   };
 
   const resumeAll = () => {
@@ -99,7 +129,7 @@ export function installRedisQuotaGuard(connection: Redis, workers: GuardableWork
       try {
         // One cheap command. If the quota is still gone this rejects and we
         // stay paused; if it succeeds the quota is back.
-        await connection.ping();
+        await withTimeout(connection.ping(), PAUSE_TIMEOUT_MS);
         resumeAll();
       } catch (err) {
         if (isQuotaError(err)) {

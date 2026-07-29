@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { Activity } from "lucide-react";
 import { CsvImportForm } from "@/components/marine/CsvImportForm";
 
 export default function ImportPage() {
@@ -10,6 +12,16 @@ export default function ImportPage() {
         <p className="mt-2 text-sm leading-6 text-slate-600">
           Upload a CSV file or paste rows directly. Vessel and contact imports use the full schemas and auto-map common headers.
         </p>
+        {/* The queued-import message used to be the only feedback, and it said
+            nothing about progress — so a long import looked identical to a
+            stuck one. */}
+        <Link
+          href="/dashboard/import/jobs"
+          className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-accent-600 hover:text-accent-500"
+        >
+          <Activity className="h-4 w-4" />
+          View live import activity
+        </Link>
         <div className="mt-6">
           <CsvImportForm />
         </div>

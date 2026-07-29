@@ -10,7 +10,13 @@ import { sendData, sendError } from "../lib/http.js";
 import { emitWorkspaceEvent } from "../services/realtime.js";
 import { createETATriggers, matchCampaignsToETA } from "../services/campaign-matcher.js";
 import { CONTACT_CSV_HEADERS, contactDataFromRow } from "../services/contact-data.js";
-import { enqueueCsvImport, getCsvImportJob } from "../services/csv-import-queue.js";
+import {
+  enqueueCsvImport,
+  getCsvImportJob,
+  getCsvImportQueue,
+  listCsvImportJobs,
+  requeueStalledCsvImports,
+} from "../services/csv-import-queue.js";
 import { ensureDestinationPort, isResolvableDestination } from "../services/port-resolution.js";
 import { readVesselCsvValue, VESSEL_CSV_HEADERS, vesselDataFromCsvRow } from "../services/vessel-data.js";
 
@@ -686,12 +692,13 @@ async function findOrCreateCompany(
   return company;
 }
 
-async function importVesselRows(rows: CsvRow[], workspaceId: string) {
+async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?: ProgressFn) {
   let created = 0;
   let updated = 0;
   const errors: Array<{ row: number; message: string }> = [];
 
   for (const [index, row] of rows.entries()) {
+    onProgress?.(index);
     const rowNumber = index + 2;
     const vesselData = vesselDataFromCsvRow(row);
     const imoNumber = vesselData.imoNumber;
@@ -850,11 +857,12 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string) {
   return { created, updated, errors };
 }
 
-async function importMarineDataRows(rows: CsvRow[], workspaceId: string) {
+async function importMarineDataRows(rows: CsvRow[], workspaceId: string, onProgress?: ProgressFn) {
   let created = 0;
   const errors: Array<{ row: number; message: string }> = [];
 
   for (const [index, row] of rows.entries()) {
+    onProgress?.(index);
     const values: Record<string, string> = {};
 
     for (const field of MARINE_DATA_ROW_FIELDS) {
@@ -947,12 +955,13 @@ async function resolveContactCompany(row: CsvRow, workspaceId: string) {
   return { companyId: created.id, companyKind: "SHIP_OWNER" as const, companyName: created.companyName };
 }
 
-async function importCompanyRows(rows: CsvRow[], workspaceId: string, importType: ImportType) {
+async function importCompanyRows(rows: CsvRow[], workspaceId: string, importType: ImportType, onProgress?: ProgressFn) {
   let created = 0;
   let updated = 0;
   const errors: Array<{ row: number; message: string }> = [];
 
   for (const [index, row] of rows.entries()) {
+    onProgress?.(index);
     const rowNumber = index + 2;
     const companyName = rowValue(row, "Company Name");
     if (!companyName) {
@@ -1017,12 +1026,13 @@ async function importCompanyRows(rows: CsvRow[], workspaceId: string, importType
   return { created, updated, errors };
 }
 
-async function importContactRows(rows: CsvRow[], workspaceId: string, userId: string) {
+async function importContactRows(rows: CsvRow[], workspaceId: string, userId: string, onProgress?: ProgressFn) {
   let created = 0;
   let updated = 0;
   const errors: Array<{ row: number; message: string }> = [];
 
   for (const [index, row] of rows.entries()) {
+    onProgress?.(index);
     const rowNumber = index + 2;
     const contactData = contactDataFromRow(row);
     const firstName = contactData.firstName;
@@ -1096,7 +1106,7 @@ async function importContactRows(rows: CsvRow[], workspaceId: string, userId: st
 
 const etaConfidences = new Set<ETAConfidence>(["CONFIRMED", "ESTIMATED", "TENTATIVE"]);
 
-async function importVesselEtaRows(rows: CsvRow[], workspaceId: string) {
+async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgress?: ProgressFn) {
   let created = 0;
   let cargoMatches = 0;
   let portMatches = 0;
@@ -1104,6 +1114,7 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string) {
   const errors: Array<{ row: number; message: string }> = [];
 
   for (const [index, row] of rows.entries()) {
+    onProgress?.(index);
     const rowNumber = index + 2;
     const imoNumber = read(row, ["IMO Number", "IMO", "imoNumber"]);
     if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
@@ -1181,10 +1192,40 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string) {
   return { created, cargoMatches, portMatches, suggestions, errors };
 }
 
+/** Called once per row with its zero-based index. */
+export type ProgressFn = (rowIndex: number) => void;
+
+/**
+ * Wraps a raw progress sink in a throttle.
+ *
+ * The sink writes to Redis (`job.updateProgress`), and Upstash bills per
+ * command — a 5,000-row import calling it per row would cost 5,000 writes on
+ * its own. Emitting at most once per second and once per whole percent keeps it
+ * to ~100 writes for any import size while still looking live on screen. The
+ * final row always reports, so a finished job never shows 99%.
+ */
+function throttleProgress(
+  total: number,
+  sink: (done: number, total: number) => void,
+): ProgressFn {
+  let lastAt = 0;
+  let lastPct = -1;
+  return (rowIndex) => {
+    const done = rowIndex + 1;
+    const pct = total > 0 ? Math.floor((done / total) * 100) : 0;
+    const now = Date.now();
+    if (done < total && pct === lastPct && now - lastAt < 1_000) return;
+    lastPct = pct;
+    lastAt = now;
+    sink(done, total);
+  };
+}
+
 export async function processCsvImport(
   input: { importType: ImportType; csv: string; mapping?: Record<string, string> },
   workspaceId: string,
   userId: string,
+  onProgress?: (done: number, total: number) => void,
 ) {
   const preview = await buildImportPreview(input, workspaceId);
 
@@ -1203,16 +1244,17 @@ export async function processCsvImport(
 
   const rows = preview.normalizedRows;
   emitWorkspaceEvent(workspaceId, "import:started", { total: rows.length });
+  const report = onProgress ? throttleProgress(rows.length, onProgress) : undefined;
   const result =
     input.importType === "VESSELS"
-      ? await importVesselRows(rows, workspaceId)
+      ? await importVesselRows(rows, workspaceId, report)
       : input.importType === "CONTACTS"
-        ? await importContactRows(rows, workspaceId, userId)
+        ? await importContactRows(rows, workspaceId, userId, report)
         : input.importType === "VESSEL_ETAS"
-          ? await importVesselEtaRows(rows, workspaceId)
+          ? await importVesselEtaRows(rows, workspaceId, report)
           : input.importType === "MARINE_DATA_ROWS"
-            ? await importMarineDataRows(rows, workspaceId)
-            : await importCompanyRows(rows, workspaceId, input.importType);
+            ? await importMarineDataRows(rows, workspaceId, report)
+            : await importCompanyRows(rows, workspaceId, input.importType, report);
   emitWorkspaceEvent(workspaceId, "import:complete", result);
 
   return result;
@@ -1314,6 +1356,37 @@ importRouter.post("/csv/jobs", requireAuth, async (req, res, next) => {
       status: "queued",
       rowCount: preview.rowCount,
     });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Every recent import for the caller's workspace, for the live status page.
+ * Registered BEFORE `/csv/jobs/:jobId` so the literal path isn't swallowed by
+ * the parameterised one.
+ */
+importRouter.get("/csv/jobs", requireAuth, async (req, res, next) => {
+  try {
+    const { workspaceId } = (req as AuthedRequest).auth;
+    const jobs = await listCsvImportJobs(workspaceId);
+    return sendData(res, { jobs, queueAvailable: getCsvImportQueue() !== null });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Manual escape hatch for a job wedged in `active` — the state a crashed or
+ * paused worker leaves behind, which with `concurrency: 1` blocks every import
+ * behind it. Safe to call at any time: the underlying remove refuses while a
+ * worker still holds the job's lock, so a genuinely-running import cannot be
+ * disturbed.
+ */
+importRouter.post("/csv/jobs/requeue-stalled", requireAuth, async (_req, res, next) => {
+  try {
+    const requeued = await requeueStalledCsvImports();
+    return sendData(res, { requeued });
   } catch (error) {
     return next(error);
   }
