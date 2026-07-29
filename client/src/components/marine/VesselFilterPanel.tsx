@@ -1361,8 +1361,8 @@ function FilterModalShell({
                   edges pinch and stretch like liquid as it moves. The active
                   label flips to white on top of the pill; the goo needs a
                   saturated, opaque shape (not a faint tint) to render. */}
-              <GooeyFilter id="vessel-filter-goo" strength={10} />
-              <nav className="shrink-0 overflow-x-auto border-b border-slate-100 px-4 py-3 dark:border-white/10">
+              <GooeyFilter id="vessel-filter-goo" strength={9} />
+              <nav className="shrink-0 overflow-x-auto overflow-y-visible border-b border-slate-100 px-4 py-4 dark:border-white/10">
                 <div className="relative flex w-max min-w-full gap-1">
                   {/* Gooey pill layer (behind labels) */}
                   <div
