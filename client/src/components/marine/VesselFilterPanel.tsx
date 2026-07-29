@@ -695,60 +695,6 @@ export function VesselFilterPanel({
         </div>
       ) : null}
 
-      {/* -- Confidence & voyage status side-by-side -- */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <FilterCard title="ETA confidence">
-          <div className="flex flex-wrap gap-2">
-            {ETA_CONFIDENCES.map((value) => {
-              const on = state.etaConfidence.includes(value);
-              return (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    on
-                      ? "border-ocean bg-ocean/10 text-ocean dark:border-accent-500 dark:bg-accent-500/15 dark:text-accent-200"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-ocean/60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleListField("etaConfidence", value)}
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
-                  />
-                  {formatVesselEnum(value)}
-                </label>
-              );
-            })}
-          </div>
-        </FilterCard>
-
-        <FilterCard title="Voyage status">
-          <div className="flex flex-wrap gap-2">
-            {VOYAGE_STATUSES.map((value) => {
-              const on = state.voyageStatus.includes(value);
-              return (
-                <label
-                  key={value}
-                  className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    on
-                      ? "border-ocean bg-ocean/10 text-ocean dark:border-accent-500 dark:bg-accent-500/15 dark:text-accent-200"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-ocean/60 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/70"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={() => toggleListField("voyageStatus", value)}
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean focus:ring-ocean"
-                  />
-                  {formatVesselEnum(value)}
-                </label>
-              );
-            })}
-          </div>
-        </FilterCard>
-      </div>
     </>
   );
 
@@ -990,14 +936,10 @@ export function VesselFilterPanel({
   const sectionList: Array<{ key: string; title: string; count: number; body: React.ReactNode; defaultOpen?: boolean }> = [
     { key: "eta", title: "ETA & voyage", count: etaVoyageCount, body: etaVoyageBody, defaultOpen: true },
     { key: "type", title: "Vessel type", count: typeCount, body: vesselTypeBody },
-    { key: "identity", title: "Identity", count: identityCount, body: identityBody },
     { key: "status", title: "Status", count: state.status.length, body: statusBody },
     { key: "size", title: "Size & specs", count: sizeCount, body: sizeSpecsBody },
-    { key: "ais", title: "AIS & position", count: aisCount, body: aisBody },
     { key: "owner", title: "Owner & manager", count: ownerCount, body: ownerBody },
     { key: "builders", title: "Builders & class", count: buildersCount, body: buildersBody },
-    { key: "cargo", title: "Cargo & market", count: cargoCount, body: cargoBody },
-    { key: "quality", title: "Data quality", count: qualityCount, body: qualityBody },
   ];
 
   const sections = (

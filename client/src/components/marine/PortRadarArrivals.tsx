@@ -55,12 +55,13 @@ function formatEnum(value: string) {
 }
 
 function formatEta(value: string) {
-  return new Date(value).toLocaleString("en-IN", {
+  // Format in UTC to match the "ETA (UTC)" column header (was Asia/Kolkata/IST).
+  return new Date(value).toLocaleString("en-GB", {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-    timeZone: "Asia/Kolkata",
+    timeZone: "UTC",
   });
 }
 
@@ -587,7 +588,7 @@ export function PortRadarArrivals({
                     ) : null}
                     {isVisible("etaUtc") ? (
                       <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                        {formatEta(eta.eta)} IST
+                        {formatEta(eta.eta)}
                       </td>
                     ) : null}
                     {isVisible("destination") ? (
