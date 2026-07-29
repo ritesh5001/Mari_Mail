@@ -13,7 +13,6 @@ import { SortableHeader } from "@/components/table/SortableHeader";
 import type { SortState } from "@/hooks/useClientSort";
 import { ContactAddToListModal } from "./ContactAddToListModal";
 import { MotionButton } from "@/components/ui/motion-button";
-import { LaunchCampaignFromSelection } from "@/components/campaigns/LaunchCampaignButton";
 import { VesselAddToListModal } from "@/components/marine/VesselAddToListModal";
 import type { AssociatedVesselView, AssociatedVesselsResponse, AssociationCountsResponse } from "@/lib/marine-row-views";
 
@@ -486,7 +485,6 @@ export function ContactFinder() {
                   label={`Add to List${selected.size > 0 ? ` (${selected.size})` : ""}`}
                 />
                 <button className="rounded-md border border-slate-200 px-2 py-1">Export CSV</button>
-                <LaunchCampaignFromSelection contactIds={selectedIds} />
                 <button className="rounded-md border border-slate-200 px-2 py-1">Bulk Tag</button>
               </div>
             </div>

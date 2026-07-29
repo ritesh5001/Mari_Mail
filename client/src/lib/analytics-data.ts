@@ -16,8 +16,17 @@ function rate(numerator: number, denominator: number) {
   return Number((numerator / denominator).toFixed(4));
 }
 
+// Below this baseline a percentage swing is statistically meaningless — going
+// from 3 to 19 is "+533%", which reads as either a bug or hype and erodes
+// trust in the whole dashboard. We return NaN so the UI can degrade to a
+// neutral label instead of printing a nonsense number.
+const MIN_TREND_BASELINE = 10;
+
 function trend(current: number, previous: number) {
-  if (!previous) return current > 0 ? 100 : 0;
+  // No prior data at all: there is no percentage to compute.
+  if (!previous) return current > 0 ? Number.NaN : 0;
+  // Prior period too small for the percentage to mean anything.
+  if (previous < MIN_TREND_BASELINE) return Number.NaN;
   return Number((((current - previous) / previous) * 100).toFixed(1));
 }
 
@@ -597,6 +606,24 @@ export function formatTrend(value: number) {
   if (!Number.isFinite(value)) return "—";
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}%`;
+}
+
+/**
+ * Full "trend + period" caption for a KPI card. When the baseline was too
+ * small to produce a meaningful percentage (see MIN_TREND_BASELINE) we say so
+ * in words rather than printing a wild number like "+520.7%".
+ */
+export function formatTrendDetail(value: number, suffix: string) {
+  if (!Number.isFinite(value)) return "Not enough history to compare";
+  return `${formatTrend(value)} ${suffix}`;
+}
+
+/** Direction of a trend, for coloring. `null` when there's nothing to compare. */
+export function trendDirection(value: number): "up" | "down" | "flat" | null {
+  if (!Number.isFinite(value)) return null;
+  if (value > 0) return "up";
+  if (value < 0) return "down";
+  return "flat";
 }
 
 export const _unused: Prisma.VesselWhereInput = {};

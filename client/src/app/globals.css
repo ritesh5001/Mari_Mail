@@ -333,7 +333,25 @@ html.dark .bg-slate-100 { background-color: #0F0F11; color: #C7C7CF; }
 html.dark .divide-slate-200 > * + * { border-color: rgba(255,255,255,0.08); }
 html.dark .bg-slate-50\/70:hover,
 html.dark .hover\:bg-slate-50\/70:hover,
+html.dark .hover\:bg-slate-200:hover,
 html.dark .hover\:bg-slate-100:hover { background-color: rgba(255,255,255,0.03); }
+
+/* Brand tokens. `--navy` is #0A0A0C in dark mode, so `text-navy` rendered
+   near-black on the near-black card surface (~1.03:1 contrast) — every KPI
+   value on the dashboard was effectively invisible. Map the *text* use of the
+   navy token to the light ink instead; `bg-navy` stays a dark surface. */
+html.dark .text-navy { color: #EDEDF0; }
+html.dark .bg-navy { background-color: #1E2A5E; }
+
+/* Shadows are black-based and read as smudges on dark surfaces — elevation on
+   dark comes from lighter surfaces + borders, not drop shadows. */
+html.dark .shadow-sm,
+html.dark .shadow,
+html.dark .shadow-md,
+html.dark .shadow-shell {
+  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.08);
+}
 html.dark input,
 html.dark select,
 html.dark textarea {
