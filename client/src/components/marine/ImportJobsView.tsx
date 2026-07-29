@@ -206,7 +206,7 @@ export function ImportJobsView() {
         ) : (
           <ul className="divide-y divide-slate-100 dark:divide-white/[0.06]">
             {jobs.map((job) => (
-              <JobRow key={job.jobId} job={job} />
+              <JobRow key={job.jobId} job={job} onRetried={() => void load()} />
             ))}
           </ul>
         )}
@@ -215,7 +215,8 @@ export function ImportJobsView() {
   );
 }
 
-function JobRow({ job }: { job: ImportJob }) {
+function JobRow({ job, onRetried }: { job: ImportJob; onRetried: () => void }) {
+  const [retrying, setRetrying] = useState(false);
   const total = job.total ?? 0;
   const done = job.done ?? 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : null;
@@ -248,11 +249,7 @@ function JobRow({ job }: { job: ImportJob }) {
                 <span className="ml-2 text-xs text-slate-400 dark:text-white/35">{pct}%</span>
               ) : null}
             </>
-          ) : job.status === "completed" ? (
-            <span className="text-xs text-slate-400 dark:text-white/35">done</span>
-          ) : (
-            <span className="text-xs text-slate-400 dark:text-white/35">waiting to start</span>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -275,14 +272,36 @@ function JobRow({ job }: { job: ImportJob }) {
         <p className="mt-2 text-xs text-slate-500 dark:text-white/45">
           {(job.created ?? 0).toLocaleString()} created
           {job.updated != null ? ` · ${job.updated.toLocaleString()} updated` : ""}
-          {job.errorCount ? ` · ${job.errorCount.toLocaleString()} row(s) skipped` : ""}
+          {job.errorCount ? ` · ${job.errorCount.toLocaleString()} row issue(s)` : ""}
         </p>
       ) : null}
 
       {job.failedReason ? (
-        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300">
-          {job.failedReason}
-        </p>
+        <div className="mt-2 rounded-md bg-red-50 px-3 py-2 dark:bg-red-500/10">
+          <p className="text-xs text-red-700 dark:text-red-300">{job.failedReason}</p>
+          {/* The CSV is kept on the job for 14 days, so a failed import can be
+              re-run without hunting down the original file. Importers upsert on
+              IMO, so replaying one that died partway through updates what
+              already landed instead of duplicating it. */}
+          <button
+            type="button"
+            disabled={retrying}
+            onClick={async () => {
+              setRetrying(true);
+              try {
+                await apiFetchJson(`/api/import/csv/jobs/${job.jobId}/retry`, { method: "POST" });
+              } catch {
+                // Surfaced by the row simply not changing; the poll will catch up.
+              }
+              setRetrying(false);
+              onRetried();
+            }}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1 text-xs font-semibold text-[#ffffff] transition-colors hover:bg-red-700 disabled:opacity-60"
+          >
+            <RotateCcw className={cn("h-3 w-3", retrying && "animate-spin")} />
+            {retrying ? "Requeueing…" : "Retry this import"}
+          </button>
+        </div>
       ) : null}
     </li>
   );

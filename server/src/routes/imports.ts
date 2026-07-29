@@ -16,6 +16,7 @@ import {
   getCsvImportQueue,
   listCsvImportJobs,
   requeueStalledCsvImports,
+  retryCsvImport,
 } from "../services/csv-import-queue.js";
 import { ensureDestinationPort, isResolvableDestination } from "../services/port-resolution.js";
 import { readVesselCsvValue, VESSEL_CSV_HEADERS, vesselDataFromCsvRow } from "../services/vessel-data.js";
@@ -700,147 +701,187 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?
   for (const [index, row] of rows.entries()) {
     onProgress?.(index);
     const rowNumber = index + 2;
-    const vesselData = vesselDataFromCsvRow(row);
-    const imoNumber = vesselData.imoNumber;
-    // IMO is the unique key and is mandatory — skip rows without a valid one.
-    if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
-      errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
-      continue;
-    }
-    // Vessel name is required by the schema but optional in the CSV: fall back to
-    // the IMO as a placeholder name so an IMO-only row still imports (rename later).
-    const vesselName = vesselData.vesselName || `IMO ${imoNumber}`;
+    // One bad row must not destroy the import. Before this, any throw from
+    // the upsert — most often the MMSI unique-constraint collision below —
+    // escaped the loop, failed the whole BullMQ job, and discarded every row
+    // that had already been processed AND every row after it. Jobs #3, #5 and
+    // #6 each burned 15-35 minutes and imported nothing for that reason.
+    try {
+      const vesselData = vesselDataFromCsvRow(row);
+      const imoNumber = vesselData.imoNumber;
+      // IMO is the unique key and is mandatory — skip rows without a valid one.
+      if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
+        errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
+        continue;
+      }
+      // Vessel name is required by the schema but optional in the CSV: fall back to
+      // the IMO as a placeholder name so an IMO-only row still imports (rename later).
+      const vesselName = vesselData.vesselName || `IMO ${imoNumber}`;
 
-    const shipOwnerName =
-      readVesselCsvValue(row, "Ship Owner") ??
-      vesselData.registeredOwnerName ??
-      vesselData.beneficialOwnerName;
-    const ismManagerName = vesselData.ismManagerName ?? readVesselCsvValue(row, "ISM Manager");
-    const commercialManagerName = vesselData.commercialManagerName ?? readVesselCsvValue(row, "Commercial Manager");
+      const shipOwnerName =
+        readVesselCsvValue(row, "Ship Owner") ??
+        vesselData.registeredOwnerName ??
+        vesselData.beneficialOwnerName;
+      const ismManagerName = vesselData.ismManagerName ?? readVesselCsvValue(row, "ISM Manager");
+      const commercialManagerName = vesselData.commercialManagerName ?? readVesselCsvValue(row, "Commercial Manager");
 
-    const shipOwner = shipOwnerName
-      ? await findOrCreateCompany("shipOwner", workspaceId, shipOwnerName, {
-          email: readVesselCsvValue(row, "Ship Owner Email") ?? vesselData.registeredOwnerEmail ?? vesselData.beneficialOwnerEmail,
-          phone: readVesselCsvValue(row, "Ship Owner Phone"),
-          website: readVesselCsvValue(row, "Ship Owner Website"),
-          city: vesselData.registeredOwnerCity ?? vesselData.beneficialOwnerCity,
-          country: readVesselCsvValue(row, "Ship Owner Country") ?? vesselData.registeredOwnerCountry ?? vesselData.beneficialOwnerCountry,
-        })
-      : null;
-    const ismManager = ismManagerName
-      ? await findOrCreateCompany("ismManager", workspaceId, ismManagerName, {
-          email: vesselData.ismManagerEmail,
-          phone: readVesselCsvValue(row, "ISM Manager Phone"),
-          website: readVesselCsvValue(row, "ISM Manager Website"),
-          city: vesselData.ismManagerCity,
-          country: vesselData.ismManagerCountry,
-        })
-      : null;
-    const commercialManager = commercialManagerName
-      ? await findOrCreateCompany(
-          "commercialManager",
-          workspaceId,
-          commercialManagerName,
-          {
-            email: vesselData.commercialManagerEmail,
-            phone: readVesselCsvValue(row, "Commercial Manager Phone"),
-            website: readVesselCsvValue(row, "Commercial Manager Website"),
-            city: vesselData.commercialManagerCity,
-            country: vesselData.commercialManagerCountry,
-          },
-        )
-      : null;
-
-    // Vessels are global: keyed by IMO across every workspace. If the IMO
-    // exists we refresh its fields with the latest CSV values; if it doesn't
-    // we create it as workspaceId=null so every workspace can see it. The
-    // caller's workspaceId is deliberately NOT written onto the vessel row —
-    // that would privatize a shared record.
-    const existing = await prisma.vessel.findUnique({ where: { imoNumber }, select: { id: true } });
-    const vessel = await prisma.vessel.upsert({
-      where: { imoNumber },
-      update: {
-        ...vesselData,
-        shipOwnerCompanyId: shipOwner?.id,
-        ismManagerCompanyId: ismManager?.id,
-        commercialManagerCompanyId: commercialManager?.id,
-        source: "CSV_IMPORT",
-      },
-      create: {
-        ...vesselData,
-        imoNumber,
-        vesselName,
-        shipOwnerCompanyId: shipOwner?.id,
-        ismManagerCompanyId: ismManager?.id,
-        commercialManagerCompanyId: commercialManager?.id,
-        workspaceId: null,
-        source: "CSV_IMPORT",
-      },
-      select: { id: true },
-    });
-
-    const etaRaw = readVesselCsvValue(row, "ETA (UTC)");
-    if (etaRaw) {
-      const etaDate = new Date(etaRaw);
-      if (Number.isNaN(etaDate.getTime())) {
-        errors.push({ row: rowNumber, message: `Invalid ETA timestamp: ${etaRaw}` });
-      } else if (!vesselData.destination) {
-        errors.push({ row: rowNumber, message: "Destination is required when ETA (UTC) is present" });
-      } else {
-        const port = await ensureDestinationPort(vesselData.destination);
-        if (!port) {
-          errors.push({ row: rowNumber, message: "Destination must contain letters or numbers" });
-          continue;
-        }
-        try {
-          // ETAs are global (like vessels): keyed by (vessel, destinationPort).
-          // A re-import from CSV for the same voyage overwrites the ETA time
-          // with the newer value rather than stacking a second row — the "arrive
-          // 03:30 → arrive 04:30 → arrive 05:15" refinement flow shipmasters
-          // actually do in practice. Different destination = different voyage,
-          // so that gets a new row.
-          const existingEta = await prisma.vesselETA.findFirst({
-            where: {
-              vesselId: vessel.id,
-              destinationPort: port.portCode,
+      const shipOwner = shipOwnerName
+        ? await findOrCreateCompany("shipOwner", workspaceId, shipOwnerName, {
+            email: readVesselCsvValue(row, "Ship Owner Email") ?? vesselData.registeredOwnerEmail ?? vesselData.beneficialOwnerEmail,
+            phone: readVesselCsvValue(row, "Ship Owner Phone"),
+            website: readVesselCsvValue(row, "Ship Owner Website"),
+            city: vesselData.registeredOwnerCity ?? vesselData.beneficialOwnerCity,
+            country: readVesselCsvValue(row, "Ship Owner Country") ?? vesselData.registeredOwnerCountry ?? vesselData.beneficialOwnerCountry,
+          })
+        : null;
+      const ismManager = ismManagerName
+        ? await findOrCreateCompany("ismManager", workspaceId, ismManagerName, {
+            email: vesselData.ismManagerEmail,
+            phone: readVesselCsvValue(row, "ISM Manager Phone"),
+            website: readVesselCsvValue(row, "ISM Manager Website"),
+            city: vesselData.ismManagerCity,
+            country: vesselData.ismManagerCountry,
+          })
+        : null;
+      const commercialManager = commercialManagerName
+        ? await findOrCreateCompany(
+            "commercialManager",
+            workspaceId,
+            commercialManagerName,
+            {
+              email: vesselData.commercialManagerEmail,
+              phone: readVesselCsvValue(row, "Commercial Manager Phone"),
+              website: readVesselCsvValue(row, "Commercial Manager Website"),
+              city: vesselData.commercialManagerCity,
+              country: vesselData.commercialManagerCountry,
             },
-            orderBy: { createdAt: "desc" },
-            select: { id: true },
+          )
+        : null;
+
+      // Vessels are global: keyed by IMO across every workspace. If the IMO
+      // exists we refresh its fields with the latest CSV values; if it doesn't
+      // we create it as workspaceId=null so every workspace can see it. The
+      // caller's workspaceId is deliberately NOT written onto the vessel row —
+      // that would privatize a shared record.
+      const existing = await prisma.vessel.findUnique({ where: { imoNumber }, select: { id: true } });
+
+      // MMSI is UNIQUE on Vessel, but unlike IMO it is not permanent: it is
+      // issued by the flag state and is reissued when a ship re-flags, so the
+      // number in an up-to-date CSV routinely still sits on a stale record for
+      // a different IMO. The upsert keys on imoNumber and therefore had no way
+      // to see the clash coming — Postgres raised a unique violation on `mmsi`
+      // and the entire import died.
+      //
+      // IMO is the durable identity, so the incoming row wins: release the
+      // MMSI from whoever is holding it and note it, rather than dropping the
+      // row or silently discarding the field.
+      if (vesselData.mmsi) {
+        const mmsiHolder = await prisma.vessel.findUnique({
+          where: { mmsi: vesselData.mmsi },
+          select: { id: true, imoNumber: true },
+        });
+        if (mmsiHolder && mmsiHolder.imoNumber !== imoNumber) {
+          await prisma.vessel.update({
+            where: { id: mmsiHolder.id },
+            data: { mmsi: null },
           });
-          if (existingEta) {
-            await prisma.vesselETA.update({
-              where: { id: existingEta.id },
-              data: {
-                destinationPortName: port.portName,
-                eta: etaDate,
-                etaSource: "CSV_IMPORT",
-                etaConfidence: "ESTIMATED",
-                workspaceId: null,
-              },
-            });
-          } else {
-            await prisma.vesselETA.create({
-              data: {
-                vesselId: vessel.id,
-                destinationPort: port.portCode,
-                destinationPortName: port.portName,
-                eta: etaDate,
-                etaSource: "CSV_IMPORT",
-                etaConfidence: "ESTIMATED",
-                workspaceId: null,
-              },
-            });
-          }
-        } catch (error) {
-          errors.push({ row: rowNumber, message: error instanceof Error ? error.message : "Unable to create ETA record" });
+          errors.push({
+            row: rowNumber,
+            message: `MMSI ${vesselData.mmsi} was registered to IMO ${mmsiHolder.imoNumber}; reassigned to IMO ${imoNumber}.`,
+          });
         }
       }
-    }
 
-    if (existing) {
-      updated += 1;
-    } else {
-      created += 1;
+      const vessel = await prisma.vessel.upsert({
+        where: { imoNumber },
+        update: {
+          ...vesselData,
+          shipOwnerCompanyId: shipOwner?.id,
+          ismManagerCompanyId: ismManager?.id,
+          commercialManagerCompanyId: commercialManager?.id,
+          source: "CSV_IMPORT",
+        },
+        create: {
+          ...vesselData,
+          imoNumber,
+          vesselName,
+          shipOwnerCompanyId: shipOwner?.id,
+          ismManagerCompanyId: ismManager?.id,
+          commercialManagerCompanyId: commercialManager?.id,
+          workspaceId: null,
+          source: "CSV_IMPORT",
+        },
+        select: { id: true },
+      });
+
+      const etaRaw = readVesselCsvValue(row, "ETA (UTC)");
+      if (etaRaw) {
+        const etaDate = new Date(etaRaw);
+        if (Number.isNaN(etaDate.getTime())) {
+          errors.push({ row: rowNumber, message: `Invalid ETA timestamp: ${etaRaw}` });
+        } else if (!vesselData.destination) {
+          errors.push({ row: rowNumber, message: "Destination is required when ETA (UTC) is present" });
+        } else {
+          const port = await ensureDestinationPort(vesselData.destination);
+          if (!port) {
+            errors.push({ row: rowNumber, message: "Destination must contain letters or numbers" });
+            continue;
+          }
+          try {
+            // ETAs are global (like vessels): keyed by (vessel, destinationPort).
+            // A re-import from CSV for the same voyage overwrites the ETA time
+            // with the newer value rather than stacking a second row — the "arrive
+            // 03:30 → arrive 04:30 → arrive 05:15" refinement flow shipmasters
+            // actually do in practice. Different destination = different voyage,
+            // so that gets a new row.
+            const existingEta = await prisma.vesselETA.findFirst({
+              where: {
+                vesselId: vessel.id,
+                destinationPort: port.portCode,
+              },
+              orderBy: { createdAt: "desc" },
+              select: { id: true },
+            });
+            if (existingEta) {
+              await prisma.vesselETA.update({
+                where: { id: existingEta.id },
+                data: {
+                  destinationPortName: port.portName,
+                  eta: etaDate,
+                  etaSource: "CSV_IMPORT",
+                  etaConfidence: "ESTIMATED",
+                  workspaceId: null,
+                },
+              });
+            } else {
+              await prisma.vesselETA.create({
+                data: {
+                  vesselId: vessel.id,
+                  destinationPort: port.portCode,
+                  destinationPortName: port.portName,
+                  eta: etaDate,
+                  etaSource: "CSV_IMPORT",
+                  etaConfidence: "ESTIMATED",
+                  workspaceId: null,
+                },
+              });
+            }
+          } catch (error) {
+            errors.push({ row: rowNumber, message: error instanceof Error ? error.message : "Unable to create ETA record" });
+          }
+        }
+      }
+
+      if (existing) {
+        updated += 1;
+      } else {
+        created += 1;
+      }
+    } catch (error) {
+      errors.push({
+        row: rowNumber,
+        message: error instanceof Error ? error.message : "Could not import this row",
+      });
     }
 
     if ((index + 1) % 25 === 0 || index === rows.length - 1) {
@@ -863,52 +904,62 @@ async function importMarineDataRows(rows: CsvRow[], workspaceId: string, onProgr
 
   for (const [index, row] of rows.entries()) {
     onProgress?.(index);
-    const values: Record<string, string> = {};
+    // Guarded per row: an unexpected throw here used to escape the loop
+    // and fail the whole job, discarding every row already imported. A row
+    // that cannot be imported is recorded and skipped instead.
+    try {
+      const values: Record<string, string> = {};
 
-    for (const field of MARINE_DATA_ROW_FIELDS) {
-      const value = readMarineDataValue(row, field);
-      if (value) {
-        values[field] = value;
+      for (const field of MARINE_DATA_ROW_FIELDS) {
+        const value = readMarineDataValue(row, field);
+        if (value) {
+          values[field] = value;
+        }
       }
-    }
 
-    for (const [key, rawValue] of Object.entries(row)) {
-      const value = rawValue?.trim();
-      if (key && value && !values[key]) {
-        values[key] = value;
+      for (const [key, rawValue] of Object.entries(row)) {
+        const value = rawValue?.trim();
+        if (key && value && !values[key]) {
+          values[key] = value;
+        }
       }
-    }
 
-    if (Object.keys(values).length === 0) {
-      errors.push({ row: index + 2, message: "Row is empty" });
-      continue;
-    }
+      if (Object.keys(values).length === 0) {
+        errors.push({ row: index + 2, message: "Row is empty" });
+        continue;
+      }
 
-    await prisma.marineDataRow.create({
-      data: {
-        workspaceId,
-        values,
-        vesselName: values["Vessel Name"],
-        imoNumber: values.Imo ?? readVesselCsvValue(values, "IMO"),
-        mmsi: values.Mmsi ?? readVesselCsvValue(values, "MMSI"),
-        companyName: values.Company,
-        email: values.Email?.toLowerCase(),
-        firstName: values["First Name"],
-        lastName: values["Last Name"],
-        title: values.Title,
-        country: values.Country,
-        source: "CSV_IMPORT",
-      },
-    });
-    created += 1;
+      await prisma.marineDataRow.create({
+        data: {
+          workspaceId,
+          values,
+          vesselName: values["Vessel Name"],
+          imoNumber: values.Imo ?? readVesselCsvValue(values, "IMO"),
+          mmsi: values.Mmsi ?? readVesselCsvValue(values, "MMSI"),
+          companyName: values.Company,
+          email: values.Email?.toLowerCase(),
+          firstName: values["First Name"],
+          lastName: values["Last Name"],
+          title: values.Title,
+          country: values.Country,
+          source: "CSV_IMPORT",
+        },
+      });
+      created += 1;
 
-    if ((index + 1) % 25 === 0 || index === rows.length - 1) {
-      emitWorkspaceEvent(workspaceId, "import:progress", {
-        processed: index + 1,
-        total: rows.length,
-        created,
-        updated: 0,
-        errors: errors.length,
+      if ((index + 1) % 25 === 0 || index === rows.length - 1) {
+        emitWorkspaceEvent(workspaceId, "import:progress", {
+          processed: index + 1,
+          total: rows.length,
+          created,
+          updated: 0,
+          errors: errors.length,
+        });
+      }
+    } catch (error) {
+      errors.push({
+        row: index + 2,
+        message: error instanceof Error ? error.message : "Could not import this row",
       });
     }
   }
@@ -962,63 +1013,73 @@ async function importCompanyRows(rows: CsvRow[], workspaceId: string, importType
 
   for (const [index, row] of rows.entries()) {
     onProgress?.(index);
-    const rowNumber = index + 2;
-    const companyName = rowValue(row, "Company Name");
-    if (!companyName) {
-      errors.push({ row: rowNumber, message: "Company Name is required" });
-      continue;
-    }
-
-    const data = {
-      companyName,
-      phone: rowValue(row, "Phone"),
-      email: rowValue(row, "Email"),
-      website: normalizeWebsiteForStorage(rowValue(row, "Website")),
-      country: rowValue(row, "Country"),
-      city: rowValue(row, "City"),
-      address: rowValue(row, "Address"),
-      linkedinUrl: rowValue(row, "Linkedin Url"),
-      workspaceId,
-    };
-
-    if (importType === "ISM_MANAGER_COMPANIES") {
-      const existing = await prisma.iSMManagerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
-      if (existing) {
-        await prisma.iSMManagerCompany.update({ where: { id: existing.id }, data });
-        updated += 1;
-      } else {
-        await prisma.iSMManagerCompany.create({ data });
-        created += 1;
+    // Guarded per row: an unexpected throw here used to escape the loop
+    // and fail the whole job, discarding every row already imported. A row
+    // that cannot be imported is recorded and skipped instead.
+    try {
+      const rowNumber = index + 2;
+      const companyName = rowValue(row, "Company Name");
+      if (!companyName) {
+        errors.push({ row: rowNumber, message: "Company Name is required" });
+        continue;
       }
-    } else if (importType === "COMMERCIAL_MANAGER_COMPANIES") {
-      const existing = await prisma.commercialManagerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
-      if (existing) {
-        await prisma.commercialManagerCompany.update({ where: { id: existing.id }, data });
-        updated += 1;
-      } else {
-        await prisma.commercialManagerCompany.create({ data });
-        created += 1;
-      }
-    } else {
-      const existing = await prisma.shipOwnerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
-      if (existing) {
-        await prisma.shipOwnerCompany.update({ where: { id: existing.id }, data });
-        updated += 1;
-      } else {
-        await prisma.shipOwnerCompany.create({ data });
-        created += 1;
-      }
-    }
 
-    await safeBackfillContactsForCompanyWebsite(workspaceId, data.website);
+      const data = {
+        companyName,
+        phone: rowValue(row, "Phone"),
+        email: rowValue(row, "Email"),
+        website: normalizeWebsiteForStorage(rowValue(row, "Website")),
+        country: rowValue(row, "Country"),
+        city: rowValue(row, "City"),
+        address: rowValue(row, "Address"),
+        linkedinUrl: rowValue(row, "Linkedin Url"),
+        workspaceId,
+      };
 
-    if ((index + 1) % 25 === 0 || index === rows.length - 1) {
-      emitWorkspaceEvent(workspaceId, "import:progress", {
-        processed: index + 1,
-        total: rows.length,
-        created,
-        updated,
-        errors: errors.length,
+      if (importType === "ISM_MANAGER_COMPANIES") {
+        const existing = await prisma.iSMManagerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
+        if (existing) {
+          await prisma.iSMManagerCompany.update({ where: { id: existing.id }, data });
+          updated += 1;
+        } else {
+          await prisma.iSMManagerCompany.create({ data });
+          created += 1;
+        }
+      } else if (importType === "COMMERCIAL_MANAGER_COMPANIES") {
+        const existing = await prisma.commercialManagerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
+        if (existing) {
+          await prisma.commercialManagerCompany.update({ where: { id: existing.id }, data });
+          updated += 1;
+        } else {
+          await prisma.commercialManagerCompany.create({ data });
+          created += 1;
+        }
+      } else {
+        const existing = await prisma.shipOwnerCompany.findFirst({ where: { companyName, workspaceId }, select: { id: true } });
+        if (existing) {
+          await prisma.shipOwnerCompany.update({ where: { id: existing.id }, data });
+          updated += 1;
+        } else {
+          await prisma.shipOwnerCompany.create({ data });
+          created += 1;
+        }
+      }
+
+      await safeBackfillContactsForCompanyWebsite(workspaceId, data.website);
+
+      if ((index + 1) % 25 === 0 || index === rows.length - 1) {
+        emitWorkspaceEvent(workspaceId, "import:progress", {
+          processed: index + 1,
+          total: rows.length,
+          created,
+          updated,
+          errors: errors.length,
+        });
+      }
+    } catch (error) {
+      errors.push({
+        row: index + 2,
+        message: error instanceof Error ? error.message : "Could not import this row",
       });
     }
   }
@@ -1033,70 +1094,80 @@ async function importContactRows(rows: CsvRow[], workspaceId: string, userId: st
 
   for (const [index, row] of rows.entries()) {
     onProgress?.(index);
-    const rowNumber = index + 2;
-    const contactData = contactDataFromRow(row);
-    const firstName = contactData.firstName;
-    const lastName = contactData.lastName;
-    const email = contactData.email;
-    const website = normalizeWebsiteForStorage(contactData.website);
-
-    if (!firstName || !lastName || !email) {
-      errors.push({ row: rowNumber, message: "First Name, Last Name, and Email are required" });
-      continue;
-    }
-
-    const company = await resolveContactCompany(row, workspaceId);
-    const existing = await prisma.contact.findUnique({
-      where: { email_workspaceId: { email, workspaceId } },
-      select: { id: true },
-    });
-
+    // Guarded per row: an unexpected throw here used to escape the loop
+    // and fail the whole job, discarding every row already imported. A row
+    // that cannot be imported is recorded and skipped instead.
     try {
-      await prisma.contact.upsert({
+      const rowNumber = index + 2;
+      const contactData = contactDataFromRow(row);
+      const firstName = contactData.firstName;
+      const lastName = contactData.lastName;
+      const email = contactData.email;
+      const website = normalizeWebsiteForStorage(contactData.website);
+
+      if (!firstName || !lastName || !email) {
+        errors.push({ row: rowNumber, message: "First Name, Last Name, and Email are required" });
+        continue;
+      }
+
+      const company = await resolveContactCompany(row, workspaceId);
+      const existing = await prisma.contact.findUnique({
         where: { email_workspaceId: { email, workspaceId } },
-        update: {
-          ...contactData,
-          website,
-          firstName,
-          lastName,
-          email,
-          ...company,
-          contactOwnerId: userId,
-          seniority: enumValue(read(row, ["Seniority", "seniority"]), seniorities, "MID"),
-          marineRole: enumValue(read(row, ["Marine Role", "marineRole"]), marineRoles, "OTHER"),
-          emailStatus: enumValue(read(row, ["Email Status", "emailStatus"]), emailStatuses, "UNKNOWN"),
-          source: "CSV_IMPORT",
-        },
-        create: {
-          ...contactData,
-          website,
-          firstName,
-          lastName,
-          email,
-          ...company,
-          contactOwnerId: userId,
-          seniority: enumValue(read(row, ["Seniority", "seniority"]), seniorities, "MID"),
-          marineRole: enumValue(read(row, ["Marine Role", "marineRole"]), marineRoles, "OTHER"),
-          emailStatus: enumValue(read(row, ["Email Status", "emailStatus"]), emailStatuses, "UNKNOWN"),
-          workspaceId,
-          source: "CSV_IMPORT",
-        },
+        select: { id: true },
       });
+
+      try {
+        await prisma.contact.upsert({
+          where: { email_workspaceId: { email, workspaceId } },
+          update: {
+            ...contactData,
+            website,
+            firstName,
+            lastName,
+            email,
+            ...company,
+            contactOwnerId: userId,
+            seniority: enumValue(read(row, ["Seniority", "seniority"]), seniorities, "MID"),
+            marineRole: enumValue(read(row, ["Marine Role", "marineRole"]), marineRoles, "OTHER"),
+            emailStatus: enumValue(read(row, ["Email Status", "emailStatus"]), emailStatuses, "UNKNOWN"),
+            source: "CSV_IMPORT",
+          },
+          create: {
+            ...contactData,
+            website,
+            firstName,
+            lastName,
+            email,
+            ...company,
+            contactOwnerId: userId,
+            seniority: enumValue(read(row, ["Seniority", "seniority"]), seniorities, "MID"),
+            marineRole: enumValue(read(row, ["Marine Role", "marineRole"]), marineRoles, "OTHER"),
+            emailStatus: enumValue(read(row, ["Email Status", "emailStatus"]), emailStatuses, "UNKNOWN"),
+            workspaceId,
+            source: "CSV_IMPORT",
+          },
+        });
+      } catch (error) {
+        errors.push({ row: rowNumber, message: error instanceof Error ? error.message : "Unable to import contact row" });
+        continue;
+      }
+
+      if (existing) updated += 1;
+      else created += 1;
+
+      if ((index + 1) % 25 === 0 || index === rows.length - 1) {
+        emitWorkspaceEvent(workspaceId, "import:progress", {
+          processed: index + 1,
+          total: rows.length,
+          created,
+          updated,
+          errors: errors.length,
+        });
+      }
     } catch (error) {
-      errors.push({ row: rowNumber, message: error instanceof Error ? error.message : "Unable to import contact row" });
-      continue;
-    }
-
-    if (existing) updated += 1;
-    else created += 1;
-
-    if ((index + 1) % 25 === 0 || index === rows.length - 1) {
-      emitWorkspaceEvent(workspaceId, "import:progress", {
-        processed: index + 1,
-        total: rows.length,
-        created,
-        updated,
-        errors: errors.length,
+      errors.push({
+        row: index + 2,
+        message: error instanceof Error ? error.message : "Could not import this row",
       });
     }
   }
@@ -1115,76 +1186,86 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgre
 
   for (const [index, row] of rows.entries()) {
     onProgress?.(index);
-    const rowNumber = index + 2;
-    const imoNumber = read(row, ["IMO Number", "IMO", "imoNumber"]);
-    if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
-      errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
-      continue;
-    }
-    const vessel = await prisma.vessel.findFirst({ where: { imoNumber, workspaceId } });
-    if (!vessel) {
-      errors.push({ row: rowNumber, message: `Vessel ${imoNumber} not found in workspace` });
-      continue;
-    }
-    const destinationPortRaw = read(row, ["Destination Port", "Port", "destinationPort"]);
-    if (!destinationPortRaw) {
-      errors.push({ row: rowNumber, message: "Destination Port is required" });
-      continue;
-    }
-    const destinationPort = await ensureDestinationPort(destinationPortRaw);
-    if (!destinationPort) {
-      errors.push({ row: rowNumber, message: "Destination Port must contain letters or numbers" });
-      continue;
-    }
-    const etaStr = read(row, ["ETA (UTC)", "ETA UTC", "ETA", "eta"]);
-    if (!etaStr) {
-      errors.push({ row: rowNumber, message: "ETA is required" });
-      continue;
-    }
-    const etaDate = new Date(etaStr);
-    if (Number.isNaN(etaDate.getTime())) {
-      errors.push({ row: rowNumber, message: `Invalid ETA timestamp: ${etaStr}` });
-      continue;
-    }
-    const previousCargo = read(row, ["Previous Cargo", "previousCargo"])?.toUpperCase() ?? null;
-    const nextCargo = read(row, ["Next Cargo", "nextCargo"])?.toUpperCase() ?? null;
-    const confidenceRaw = read(row, ["Confidence", "ETA Confidence"]);
-    const confidence: ETAConfidence = confidenceRaw && etaConfidences.has(confidenceRaw.toUpperCase() as ETAConfidence)
-      ? (confidenceRaw.toUpperCase() as ETAConfidence)
-      : "ESTIMATED";
+    // Guarded per row: an unexpected throw here used to escape the loop
+    // and fail the whole job, discarding every row already imported. A row
+    // that cannot be imported is recorded and skipped instead.
+    try {
+      const rowNumber = index + 2;
+      const imoNumber = read(row, ["IMO Number", "IMO", "imoNumber"]);
+      if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
+        errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
+        continue;
+      }
+      const vessel = await prisma.vessel.findFirst({ where: { imoNumber, workspaceId } });
+      if (!vessel) {
+        errors.push({ row: rowNumber, message: `Vessel ${imoNumber} not found in workspace` });
+        continue;
+      }
+      const destinationPortRaw = read(row, ["Destination Port", "Port", "destinationPort"]);
+      if (!destinationPortRaw) {
+        errors.push({ row: rowNumber, message: "Destination Port is required" });
+        continue;
+      }
+      const destinationPort = await ensureDestinationPort(destinationPortRaw);
+      if (!destinationPort) {
+        errors.push({ row: rowNumber, message: "Destination Port must contain letters or numbers" });
+        continue;
+      }
+      const etaStr = read(row, ["ETA (UTC)", "ETA UTC", "ETA", "eta"]);
+      if (!etaStr) {
+        errors.push({ row: rowNumber, message: "ETA is required" });
+        continue;
+      }
+      const etaDate = new Date(etaStr);
+      if (Number.isNaN(etaDate.getTime())) {
+        errors.push({ row: rowNumber, message: `Invalid ETA timestamp: ${etaStr}` });
+        continue;
+      }
+      const previousCargo = read(row, ["Previous Cargo", "previousCargo"])?.toUpperCase() ?? null;
+      const nextCargo = read(row, ["Next Cargo", "nextCargo"])?.toUpperCase() ?? null;
+      const confidenceRaw = read(row, ["Confidence", "ETA Confidence"]);
+      const confidence: ETAConfidence = confidenceRaw && etaConfidences.has(confidenceRaw.toUpperCase() as ETAConfidence)
+        ? (confidenceRaw.toUpperCase() as ETAConfidence)
+        : "ESTIMATED";
 
-    const eta = await prisma.vesselETA.create({
-      data: {
-        vesselId: vessel.id,
-        destinationPort: destinationPort.portCode,
-        destinationPortName: destinationPort.portName,
-        eta: etaDate,
-        etaSource: "CSV_IMPORT",
-        etaConfidence: confidence,
-        previousPort: read(row, ["Previous Port", "previousPort"])?.toUpperCase() ?? undefined,
-        previousCargo: previousCargo ?? undefined,
-        nextCargo: nextCargo ?? undefined,
-        workspaceId,
-      },
-    });
-    created += 1;
-    if (previousCargo && nextCargo && previousCargo !== nextCargo) cargoMatches += 1;
+      const eta = await prisma.vesselETA.create({
+        data: {
+          vesselId: vessel.id,
+          destinationPort: destinationPort.portCode,
+          destinationPortName: destinationPort.portName,
+          eta: etaDate,
+          etaSource: "CSV_IMPORT",
+          etaConfidence: confidence,
+          previousPort: read(row, ["Previous Port", "previousPort"])?.toUpperCase() ?? undefined,
+          previousCargo: previousCargo ?? undefined,
+          nextCargo: nextCargo ?? undefined,
+          workspaceId,
+        },
+      });
+      created += 1;
+      if (previousCargo && nextCargo && previousCargo !== nextCargo) cargoMatches += 1;
 
-    const matches = await matchCampaignsToETA(eta.id);
-    if (matches.length > 0) {
-      const autoIds = matches.filter((m) => m.autoEnroll).map((m) => m.campaignId);
-      if (autoIds.length > 0) await createETATriggers(eta.id, autoIds);
-      suggestions += matches.length;
-      portMatches += matches.filter((m) => m.ruleType === "PORT").length;
-    }
+      const matches = await matchCampaignsToETA(eta.id);
+      if (matches.length > 0) {
+        const autoIds = matches.filter((m) => m.autoEnroll).map((m) => m.campaignId);
+        if (autoIds.length > 0) await createETATriggers(eta.id, autoIds);
+        suggestions += matches.length;
+        portMatches += matches.filter((m) => m.ruleType === "PORT").length;
+      }
 
-    if ((index + 1) % 25 === 0 || index === rows.length - 1) {
-      emitWorkspaceEvent(workspaceId, "import:progress", {
-        processed: index + 1,
-        total: rows.length,
-        created,
-        suggestions,
-        errors: errors.length,
+      if ((index + 1) % 25 === 0 || index === rows.length - 1) {
+        emitWorkspaceEvent(workspaceId, "import:progress", {
+          processed: index + 1,
+          total: rows.length,
+          created,
+          suggestions,
+          errors: errors.length,
+        });
+      }
+    } catch (error) {
+      errors.push({
+        row: index + 2,
+        message: error instanceof Error ? error.message : "Could not import this row",
       });
     }
   }
@@ -1387,6 +1468,30 @@ importRouter.post("/csv/jobs/requeue-stalled", requireAuth, async (_req, res, ne
   try {
     const requeued = await requeueStalledCsvImports();
     return sendData(res, { requeued });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Re-runs a failed import from the CSV stored on the original job, so a job
+ * that died partway through doesn't require finding and re-uploading the file.
+ */
+importRouter.post("/csv/jobs/:jobId/retry", requireAuth, async (req, res, next) => {
+  try {
+    const { workspaceId } = (req as AuthedRequest).auth;
+    const outcome = await retryCsvImport(req.params.jobId, workspaceId);
+    if (!outcome.ok) {
+      return outcome.reason === "not-found"
+        ? sendError(res, 404, "IMPORT_JOB_NOT_FOUND", "Import job was not found.")
+        : sendError(
+            res,
+            400,
+            "IMPORT_JOB_NOT_FAILED",
+            "Only a failed import can be retried.",
+          );
+    }
+    return sendData(res, { jobId: outcome.jobId });
   } catch (error) {
     return next(error);
   }

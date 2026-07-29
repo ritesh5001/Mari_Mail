@@ -69,6 +69,28 @@ export async function getCsvImportJob(jobId: string) {
   return Job.fromId<CsvImportJobData, CsvImportJobResult>(csvQueue, jobId);
 }
 
+/**
+ * Re-runs a failed import from its original payload.
+ *
+ * The CSV lives in the job's own data and is retained for 14 days after a
+ * failure (`removeOnFail`), so a job that died partway through can be re-run
+ * without the operator having to find and re-upload the file. Importers are
+ * idempotent — vessels upsert on IMO — so replaying a partially-applied import
+ * updates what landed the first time rather than duplicating it.
+ */
+export async function retryCsvImport(jobId: string, workspaceId: string) {
+  const job = await getCsvImportJob(jobId);
+  if (!job) return { ok: false as const, reason: "not-found" as const };
+  if (job.data.workspaceId !== workspaceId) {
+    return { ok: false as const, reason: "not-found" as const };
+  }
+  const state = await job.getState();
+  if (state !== "failed") return { ok: false as const, reason: "not-failed" as const };
+
+  const replacement = await enqueueCsvImport(job.data);
+  return { ok: true as const, jobId: replacement?.id ?? null };
+}
+
 export type CsvImportJobView = {
   jobId: string;
   importType: CsvImportType;
