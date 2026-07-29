@@ -92,6 +92,16 @@ const REGISTER_PLAN_TO_BILLING = {
   FLEET: "BUSINESS",
 } as const;
 
+/**
+ * Hard-block sign-in until the email address is confirmed.
+ *
+ * Off by default: switching it on without first backfilling
+ * `emailVerified` for pre-existing accounts would lock out every current
+ * customer, since they registered when verification didn't exist. Set
+ * REQUIRE_EMAIL_VERIFICATION=true once the backfill has run.
+ */
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === "true";
+
 const TRIAL_DAYS = 14;
 const TRIAL_CREDITS = 500;
 
@@ -660,6 +670,24 @@ authRouter.post("/login", loginRateLimit, async (req, res, next) => {
         });
         return sendError(res, 401, "MFA_INVALID", "That code isn't valid. Try again.");
       }
+    }
+
+    // Placed AFTER the credential + MFA checks so it never reveals whether an
+    // address is registered to someone who can't already authenticate.
+    if (REQUIRE_EMAIL_VERIFICATION && !credentials.emailVerified) {
+      await recordAuthEvent({
+        type: "LOGIN_FAILED",
+        req,
+        userId: credentials.id,
+        email: input.data.email,
+        detail: "email not verified",
+      });
+      return sendError(
+        res,
+        403,
+        "EMAIL_NOT_VERIFIED",
+        "Please confirm your email address. Check your inbox for the verification link.",
+      );
     }
 
     const user = await loadUserWithSession({ id: credentials.id });

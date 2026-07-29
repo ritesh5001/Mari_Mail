@@ -31,6 +31,10 @@ export function LoginForm({
   // we keep the credentials to replay them alongside the code.
   const [mfaRequired, setMfaRequired] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  // Shown when sign-in is refused because the address isn't confirmed, so the
+  // user can get a fresh link without leaving the page.
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
   const pendingCredentials = useRef<{ email: string; password: string; remember: boolean } | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -72,7 +76,10 @@ export function LoginForm({
 
     if (!response.ok) {
       if (isJson) {
-        const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: { message?: string; code?: string } }
+          | null;
+        if (payload?.error?.code === "EMAIL_NOT_VERIFIED") setNeedsVerification(true);
         setError(payload?.error?.message ?? "Login failed. Check your email and password.");
       } else if (response.status >= 500) {
         setError(`MariMail service is temporarily unavailable (${response.status}). Please try again shortly.`);
@@ -204,6 +211,34 @@ export function LoginForm({
       {error ? (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-400">
           {error}
+          {needsVerification ? (
+            <button
+              type="button"
+              disabled={resendState !== "idle"}
+              onClick={async () => {
+                setResendState("sending");
+                try {
+                  await fetch(`${apiUrl}/auth/resend-verification`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: pendingCredentials.current?.email ?? "" }),
+                  });
+                } catch {
+                  // Endpoint always reports success; a network blip shouldn't
+                  // imply the address is or isn't registered.
+                }
+                setResendState("sent");
+              }}
+              className="mt-2 block text-xs font-semibold text-accent-300 underline underline-offset-2 disabled:opacity-60"
+            >
+              {resendState === "sent"
+                ? "Verification link sent — check your inbox"
+                : resendState === "sending"
+                  ? "Sending…"
+                  : "Resend verification link"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
