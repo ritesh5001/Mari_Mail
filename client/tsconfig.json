@@ -12,6 +12,7 @@
       "@marimail/db": ["../packages/db/src/index.ts"],
       "@marimail/types": ["../packages/types/src/index.ts"],
       "@marimail/utils": ["../packages/utils/src/index.ts"],
+      "@marimail/utils/password-policy": ["../packages/utils/src/password-policy.ts"],
       "@marimail/email": ["../packages/email/src/index.ts"]
     }
   },
