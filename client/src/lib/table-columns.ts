@@ -78,7 +78,6 @@ export function vesselTableColumns(): TableColumn[] {
 
 export function contactTableColumns(): TableColumn[] {
   return [
-    { id: "associatedVessels", label: "Associated Ships", group: "Marine", sortable: false },
     ...CONTACT_SCHEMA_FIELDS.map<TableColumn>((field, index) => ({
       id: String(field.key),
       label: field.label,

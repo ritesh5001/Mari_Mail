@@ -487,15 +487,7 @@ export function ContactFinder() {
                 />
                 <button className="rounded-md border border-slate-200 px-2 py-1">Export CSV</button>
                 <LaunchCampaignFromSelection contactIds={selectedIds} />
-                <button
-                  onClick={() => { if (selectedVesselIds.length > 0) setShowVesselModal(true); }}
-                  disabled={selectedVesselIds.length === 0}
-                  className="rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean"
-                >
-                  Add Ships to List{selectedVesselIds.length ? ` (${selectedVesselIds.length})` : ""}
-                </button>
                 <button className="rounded-md border border-slate-200 px-2 py-1">Bulk Tag</button>
-                <button className="rounded-md border border-slate-200 px-2 py-1">Update Owner</button>
               </div>
             </div>
             <div className="max-h-[calc(100vh-260px)] overflow-auto overscroll-x-contain">
@@ -579,19 +571,6 @@ export function ContactFinder() {
                           />
                         </td>
                         {columns.map((col) => {
-                          if (col.id === "associatedVessels") {
-                            return (
-                              <td key={col.id} className="whitespace-nowrap px-4 py-3">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExpand(contact.id)}
-                                  className="rounded bg-ocean/10 px-2 py-1 text-xs font-semibold text-ocean hover:bg-ocean/15"
-                                >
-                                  {(associationCounts[contact.id] ?? 0).toLocaleString("en")}
-                                </button>
-                              </td>
-                            );
-                          }
                           if (col.id === "marineRole") {
                             return <td key={col.id} className="px-4 py-3 text-slate-600">{formatEnum(contact.marineRole)}</td>;
                           }
