@@ -1,10 +1,12 @@
 import { prisma } from "@marimail/db";
 import {
+  getPortRadarCountryBreakdown,
   getPortRadarTabCounts,
   listLatestBatchEtas,
   listPortRadarFeed,
   portCountryWhere,
   requireEtaWorkspaceId,
+  scopeToList,
   PORT_RADAR_DEFAULT_PAGE_SIZE,
   type PagedFeed,
 } from "@/lib/eta-data";
@@ -28,14 +30,27 @@ export default async function PortRadarPage({
   const countryScope = isSuperAdmin ? null : workspaceCountryScope;
 
   // Cheap tab-badge totals + the port list for the map — no full feed rows yet.
-  const [counts, ports] = await Promise.all([
+  const [counts, countryBreakdown, ports] = await Promise.all([
     getPortRadarTabCounts(searchParams, {
       includeAllCountries: isSuperAdmin,
     }),
+    getPortRadarCountryBreakdown(searchParams, {
+      includeAllCountries: isSuperAdmin,
+    }),
+    // Ports for the map. Only ports WITH coordinates are usable — the sole
+    // consumer filters on exactly that — so the filter moves into the query.
+    // The old `take: 200` spent its budget alphabetically across the whole
+    // grant, and countries with large port registries (JP 1503, US 848, GB 504)
+    // exhausted it before a two-country user's second country appeared at all.
     prisma.port.findMany({
-      where: isSuperAdmin ? {} : portCountryWhere(countryScope),
+      where: {
+        AND: [
+          isSuperAdmin ? {} : portCountryWhere(countryScope),
+          { latitude: { not: null }, longitude: { not: null } },
+        ],
+      },
       orderBy: { portName: "asc" },
-      take: isSuperAdmin ? 1000 : 200,
+      take: 2000,
       select: { portCode: true, portName: true, countryName: true, latitude: true, longitude: true },
     }),
   ]);
@@ -64,10 +79,20 @@ export default async function PortRadarPage({
     initial = { etas: feed.etas, count: feed.count, page: feed.page, pageSize: feed.pageSize };
   }
 
-  const countryLabel = isSuperAdmin ? "All" : ports[0]?.countryName ?? "All";
-  const portsWithCoordinates = ports
-    .filter((port) => port.latitude !== null && port.longitude !== null)
-    .map((port) => port.portCode);
+  // The tab used to be labelled `ports[0].countryName` — the country owning the
+  // alphabetically-first port name in a truncated list, which for a multi-
+  // country workspace named ONE of them and hid the rest ("Upcoming Brazil
+  // arrivals" over a table half full of Indian arrivals). Naming a single
+  // country is only honest when the grant is a single country.
+  // Name a country in the tab ONLY when the grant is exactly one country —
+  // that's the single case where one name describes the whole table. Multi-
+  // country grants get the neutral label plus the switcher chips below it.
+  const grantedCountries = scopeToList(countryScope);
+  const countryLabel =
+    !isSuperAdmin && grantedCountries?.length === 1
+      ? (ports.find((port) => port.countryName)?.countryName ?? null)
+      : null;
+  const portsWithCoordinates = ports.map((port) => port.portCode);
 
   // Contact counts load lazily client-side after rows render, so seed with 0.
   const initialRows = initial.etas.map((eta) => serializeRadarEta(eta, 0));
@@ -83,6 +108,7 @@ export default async function PortRadarPage({
 
       <PortRadarTabs
         countryLabel={countryLabel}
+        countryBreakdown={countryBreakdown}
         isSuperAdmin={isSuperAdmin}
         portsWithCoordinates={portsWithCoordinates}
         counts={counts}

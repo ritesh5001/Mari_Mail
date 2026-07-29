@@ -122,9 +122,41 @@ async function listPortCountries() {
   return countries;
 }
 
-workspaceRouter.get("/port-countries", requireAuth, async (_req, res, next) => {
+/**
+ * The countries THIS workspace may filter by — its plan grant, not the global
+ * list. The filter panel is built from this response, so it used to offer all
+ * 210 countries to a workspace that had paid for two. Ticking one it didn't own
+ * then produced results, because the feed query substituted the request for the
+ * grant instead of intersecting them (fixed in `country-scope.ts`); scoping the
+ * list here means the UI stops advertising access that doesn't exist.
+ *
+ * Super-admins keep the full list — the radar deliberately shows them every
+ * country.
+ */
+workspaceRouter.get("/port-countries", requireAuth, async (req, res, next) => {
   try {
-    return sendData(res, await listPortCountries());
+    const { workspaceId, isSuperAdmin } = (req as AuthedRequest).auth;
+    const all = await listPortCountries();
+    if (isSuperAdmin) return sendData(res, all);
+
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { allowedCountries: true, targetPortCountry: true },
+    });
+    const allowed = workspace?.allowedCountries?.length
+      ? workspace.allowedCountries
+      : workspace?.targetPortCountry
+        ? [workspace.targetPortCountry]
+        : null;
+    // No grant recorded = legacy unscoped workspace; the feed doesn't restrict
+    // it either, so narrowing the picker here would be a lie in the other
+    // direction.
+    if (!allowed) return sendData(res, all);
+
+    return sendData(
+      res,
+      all.filter((row) => allowed.includes(row.country)),
+    );
   } catch (error) {
     return next(error);
   }

@@ -3,6 +3,16 @@ import { Prisma, prisma, ETAConfidence, VoyageStatus } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
 import { associationVesselInclude } from "@/lib/association-data";
 import { buildVesselFilterClauses } from "@/lib/marine-data";
+import {
+  requestedCountries,
+  resolveCountryFilter,
+  scopeToList,
+  workspaceCountryScope,
+  type CountryScope,
+} from "@/lib/country-scope";
+
+export type { CountryScope };
+export { scopeToList, resolveCountryFilter, requestedCountries };
 
 export async function requireEtaWorkspaceId() {
   const session = await getServerSession();
@@ -13,8 +23,7 @@ export async function requireEtaWorkspaceId() {
   // (chosen at signup, e.g. 2 countries), else fall back to the legacy single
   // targetPortCountry, else null (no restriction — un-scoped workspace).
   const allowed = session.activeWorkspace.allowedCountries ?? [];
-  const countryScope: CountryScope =
-    allowed.length > 0 ? allowed : session.activeWorkspace.targetPortCountry;
+  const countryScope = workspaceCountryScope(session.activeWorkspace);
 
   return {
     workspaceId: session.activeWorkspace.id,
@@ -25,26 +34,25 @@ export async function requireEtaWorkspaceId() {
   };
 }
 
-/** A country restriction: one country (legacy), many (plan allowlist), or none. */
-export type CountryScope = string | string[] | null | undefined;
-
 /**
  * Returns the `port.country` clause for a country scope: `{ in: [...] }` for a
  * multi-country plan allowlist, `= country` for a single legacy country, or
  * `{}` (no restriction) when the workspace hasn't picked any.
  */
 function countryClause(scope: CountryScope): Prisma.VesselETAWhereInput {
-  if (Array.isArray(scope)) {
-    return scope.length > 0 ? { port: { is: { country: { in: scope } } } } : {};
-  }
+  // An EMPTY array means "no country qualifies" and must match nothing. It used
+  // to return `{}` (unrestricted) — harmless while empty arrays never occurred,
+  // but `resolveCountryFilter` now produces one whenever a user requests only
+  // countries their plan doesn't grant, and `{}` there would hand them the
+  // entire database. Only `null`/`undefined` means unrestricted.
+  if (Array.isArray(scope)) return { port: { is: { country: { in: scope } } } };
   return scope ? { port: { is: { country: scope } } } : {};
 }
 
 /** Same scope, applied directly to the Port model (`port.findMany`). */
 export function portCountryWhere(scope: CountryScope): Prisma.PortWhereInput {
-  if (Array.isArray(scope)) {
-    return scope.length > 0 ? { country: { in: scope } } : {};
-  }
+  // Same empty-array rule as `countryClause` — see the note there.
+  if (Array.isArray(scope)) return { country: { in: scope } };
   return scope ? { country: scope } : {};
 }
 
@@ -59,6 +67,7 @@ export type RadarEta = Prisma.VesselETAGetPayload<{
         portName: true;
         region: true;
         country: true;
+        countryName: true;
         latitude: true;
         longitude: true;
       };
@@ -99,40 +108,6 @@ function etaWindowUpper(window: string, now: Date) {
   if (window === "tomorrow") return new Date(now.getTime() + 2 * 86_400_000);
   if (window === "month") return new Date(now.getTime() + 30 * 86_400_000);
   return new Date(now.getTime() + 7 * 86_400_000);
-}
-
-function buildPortStats(etas: RadarEta[]) {
-  const stats = new Map<
-    string,
-    {
-      portCode: string;
-      total: number;
-      live: number;
-      urgent: number;
-      nextEta: Date | null;
-    }
-  >();
-  const in48h = new Date(Date.now() + 48 * 3_600_000);
-
-  for (const eta of etas) {
-    const existing = stats.get(eta.destinationPort) ?? {
-      portCode: eta.destinationPort,
-      total: 0,
-      live: 0,
-      urgent: 0,
-      nextEta: null,
-    };
-    existing.total += 1;
-    if (eta.currentLat !== null && eta.currentLon !== null) existing.live += 1;
-    if (eta.eta <= in48h) existing.urgent += 1;
-    if (!existing.nextEta || eta.eta < existing.nextEta)
-      existing.nextEta = eta.eta;
-    stats.set(eta.destinationPort, existing);
-  }
-
-  return Array.from(stats.values()).sort((a, b) =>
-    a.portCode.localeCompare(b.portCode),
-  );
 }
 
 function parseListParam(value: string | string[] | undefined): string[] {
@@ -211,33 +186,26 @@ function radarOrderBy(
  * silently ignored every param except `port`, `vesselType`, and `window`, so
  * clicking Apply on the filter panel appeared to do nothing.
  */
-export async function listPortRadarFeed(
+/**
+ * Every filter the Upcoming feed applies EXCEPT the country scope.
+ *
+ * Split out so the per-country chip counts and the feed itself are built from
+ * one expression: a chip that says "Brazil 312" and a table that then shows 280
+ * is worse than no chip at all, and that drift is exactly what happens when two
+ * call sites assemble the same filter list by hand.
+ */
+function upcomingFeedClauses(
   searchParams: Record<string, string | string[] | undefined>,
-  options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
-) {
-  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
-  // Super-admin view: drop the workspace's country restriction so the radar
-  // shows every ETA in the DB. Regular users stay scoped to the countries their
-  // plan grants (allowedCountries), or the legacy single targetPortCountry.
-  const effectiveTargetCountry = options.includeAllCountries ? null : countryScope;
-
+  workspaceId: string,
+): Prisma.VesselETAWhereInput[] {
   const port =
-    typeof searchParams.port === "string"
-      ? searchParams.port.trim().toUpperCase()
-      : "";
-  // No upper cap on the default ETA window — Port Radar shows every future
-  // ETA on file so long-lead schedules (weeks out) don't disappear from the
-  // count. Users still filter by explicit `?window=today|tomorrow|week|month`
-  // or by the ETA-window date pickers in the filter panel when they want a
-  // narrower view.
+    typeof searchParams.port === "string" ? searchParams.port.trim().toUpperCase() : "";
   const window =
     typeof searchParams.window === "string" ? searchParams.window.trim() : "all";
   const q = typeof searchParams.q === "string" ? searchParams.q.trim() : "";
-
   const now = new Date();
   const upper = etaWindowUpper(window, now);
 
-  // ETA-level clauses (apply to the VesselETA row itself)
   const etaClauses: Prisma.VesselETAWhereInput[] = [];
   const etaFrom = parseDateParam(searchParams.etaFrom);
   const etaTo = parseDateParam(searchParams.etaTo);
@@ -247,13 +215,6 @@ export async function listPortRadarFeed(
     etaClauses.push({ eta: range });
   } else {
     etaClauses.push({ eta: upper ? { gte: now, lte: upper } : { gte: now } });
-  }
-
-  const destCountries = parseListParam(searchParams.destCountry)
-    .map((c) => c.toUpperCase())
-    .filter((c) => /^[A-Z]{2}$/.test(c));
-  if (destCountries.length) {
-    etaClauses.push({ port: { is: { country: { in: destCountries } } } });
   }
 
   const destPorts = parseListParam(searchParams.destPort).map((p) => p.toUpperCase());
@@ -274,9 +235,7 @@ export async function listPortRadarFeed(
   }
 
   // "Missed opportunities" is now a filter chip, not a dedicated tab: ETAs
-  // with no campaign trigger attached. Combined with an ETA-window preset
-  // (e.g. `?noCampaign=1&etaTo=<today+2d>`) it reproduces the old
-  // Missed-Opportunities tab exactly, but any window works now.
+  // with no campaign trigger attached.
   if (isTrue(searchParams.noCampaign)) {
     etaClauses.push({ triggers: { none: {} } });
   }
@@ -293,23 +252,38 @@ export async function listPortRadarFeed(
   }
 
   // Vessel-level clauses (type, flag, status, size, owner/manager, data
-  // quality). Delegate to the shared helper used by the Vessels page — same
-  // filter surface, same behavior.
+  // quality). Delegate to the shared helper used by the Vessels page.
   const vesselClauses = buildVesselFilterClauses(searchParams);
   const vesselWhere: Prisma.VesselETAWhereInput =
     vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};
 
+  return [
+    etaVisibilityWhere(workspaceId),
+    port ? { destinationPort: port } : {},
+    vesselWhere,
+    ...etaClauses,
+  ];
+}
+
+export async function listPortRadarFeed(
+  searchParams: Record<string, string | string[] | undefined>,
+  options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
+) {
+  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
+  // Super-admin view: drop the workspace's country restriction so the radar
+  // shows every ETA in the DB. Regular users stay scoped to the countries their
+  // plan grants (allowedCountries), or the legacy single targetPortCountry.
+  const effectiveTargetCountry = options.includeAllCountries ? null : countryScope;
+
+  // Requested countries are CLAMPED to the plan's grant, never substituted for
+  // it — see `resolveCountryFilter`.
+  const effectiveCountries = resolveCountryFilter(
+    requestedCountries(searchParams),
+    effectiveTargetCountry,
+  );
+
   const where: Prisma.VesselETAWhereInput = {
-    AND: [
-      etaVisibilityWhere(workspaceId),
-      // Only apply the workspace's target country when the user hasn't
-      // picked their own countries — otherwise the two AND together and
-      // filter everything out (see marine-data.ts for the same pattern).
-      destCountries.length > 0 ? {} : countryClause(effectiveTargetCountry),
-      port ? { destinationPort: port } : {},
-      vesselWhere,
-      ...etaClauses,
-    ],
+    AND: [countryClause(effectiveCountries), ...upcomingFeedClauses(searchParams, workspaceId)],
   };
 
   // Only the visible page is fetched. Loading the whole feed (up to 5000 rows)
@@ -321,7 +295,7 @@ export async function listPortRadarFeed(
   const page = options.page ?? clampPage(searchParams.page);
 
   try {
-    const [etas, count, ports] = await Promise.all([
+    const [etas, count] = await Promise.all([
       prisma.vesselETA.findMany({
         where,
         orderBy: radarOrderBy(searchParams, { eta: "asc" }),
@@ -337,6 +311,7 @@ export async function listPortRadarFeed(
               portName: true,
               region: true,
               country: true,
+              countryName: true,
               latitude: true,
               longitude: true,
             },
@@ -352,25 +327,15 @@ export async function listPortRadarFeed(
         },
       }),
       prisma.vesselETA.count({ where }),
-      prisma.port.findMany({
-        where: portCountryWhere(effectiveTargetCountry),
-        orderBy: { portName: "asc" },
-        take: options.includeAllCountries ? 1000 : 200,
-        select: {
-          portCode: true,
-          portName: true,
-          country: true,
-          countryName: true,
-          region: true,
-          latitude: true,
-          longitude: true,
-        },
-      }),
     ]);
-    return { etas, count, ports, portStats: buildPortStats(etas), page, pageSize };
+    // `ports` and `portStats` used to be returned alongside these. Neither
+    // consumer — the SSR page nor the pager API — ever read them, so every page
+    // load and every "Next" click paid for a second query plus a full pass over
+    // the rows to build stats that were thrown away.
+    return { etas, count, page, pageSize };
   } catch (err) {
     console.error("[eta] listPortRadarFeed failed:", err);
-    return { etas: [], count: 0, ports: [], portStats: [], page, pageSize };
+    return { etas: [], count: 0, page, pageSize };
   }
 }
 
@@ -413,7 +378,13 @@ export async function listLatestBatchEtas(
   options: { includeAllCountries?: boolean; page?: number; pageSize?: number } = {},
 ): Promise<PagedFeed> {
   const { workspaceId, countryScope } = await requireEtaWorkspaceId();
-  const targetPortCountry: CountryScope = countryScope;
+  // The "Newly added" tab used to ignore `?destCountry` completely, so picking
+  // a country in the filter panel changed the Upcoming tab and silently did
+  // nothing here. Both tabs now read the same clamped scope.
+  const targetPortCountry: CountryScope = resolveCountryFilter(
+    requestedCountries(searchParams),
+    options.includeAllCountries ? null : countryScope,
+  );
   const MIN_BATCH_SIZE = 5;
   const SCAN_WINDOW = 500;
   const pageSize = options.pageSize ?? PORT_RADAR_DEFAULT_PAGE_SIZE;
@@ -489,7 +460,7 @@ export async function listLatestBatchEtas(
     const batchWhere: Prisma.VesselETAWhereInput = {
       AND: [
         { id: { in: batchIds } },
-        options.includeAllCountries ? {} : countryClause(targetPortCountry),
+        countryClause(targetPortCountry),
       ],
     };
     const [batch, count] = await Promise.all([
@@ -508,6 +479,7 @@ export async function listLatestBatchEtas(
               portName: true,
               region: true,
               country: true,
+              countryName: true,
               latitude: true,
               longitude: true,
             },
@@ -550,7 +522,12 @@ export async function getPortRadarTabCounts(
 ): Promise<{ newly: number; upcoming: number }> {
   const { workspaceId, countryScope } = await requireEtaWorkspaceId();
   const now = new Date();
-  const effectiveCountry = options.includeAllCountries ? null : countryScope;
+  // Counts must use the SAME clamped scope as the feeds, or the badge promises
+  // 435 rows and the table shows 312.
+  const effectiveCountry = resolveCountryFilter(
+    requestedCountries(searchParams),
+    options.includeAllCountries ? null : countryScope,
+  );
   const vesselClauses = buildVesselFilterClauses(searchParams);
   const vesselWhere: Prisma.VesselETAWhereInput =
     vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};
@@ -595,6 +572,64 @@ export async function getPortRadarTabCounts(
   } catch (err) {
     console.error("[eta] getPortRadarTabCounts failed:", err);
     return { newly: 0, upcoming: 0 };
+  }
+}
+
+/**
+ * Upcoming-arrival totals per granted country, for the country switcher.
+ *
+ * Deliberately ignores the caller's own `?destCountry` selection so the chips
+ * stay a stable switcher — a chip reading "India 123" must still say 123 while
+ * Brazil is the active selection, otherwise every chip but the active one
+ * collapses to zero and the control becomes unusable. Every OTHER filter is
+ * honoured, via the same `upcomingFeedClauses` the feed uses.
+ *
+ * Returns `[]` when the switcher wouldn't help: a single-country grant (nothing
+ * to switch between), an unscoped workspace, or a super-admin. Enterprise
+ * grants above `MAX_COUNTRY_CHIPS` also opt out — 40 chips is not a switcher,
+ * and those users have the filter panel.
+ */
+const MAX_COUNTRY_CHIPS = 12;
+
+export async function getPortRadarCountryBreakdown(
+  searchParams: Record<string, string | string[] | undefined> = {},
+  options: { includeAllCountries?: boolean } = {},
+): Promise<Array<{ country: string; countryName: string; count: number }>> {
+  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
+  if (options.includeAllCountries) return [];
+
+  const granted = scopeToList(countryScope);
+  if (!granted || granted.length < 2 || granted.length > MAX_COUNTRY_CHIPS) return [];
+
+  try {
+    const shared = upcomingFeedClauses(searchParams, workspaceId);
+    const [names, counts] = await Promise.all([
+      prisma.port.findMany({
+        where: { country: { in: granted } },
+        distinct: ["country"],
+        select: { country: true, countryName: true },
+      }),
+      Promise.all(
+        granted.map((country) =>
+          prisma.vesselETA.count({
+            where: { AND: [countryClause([country]), ...shared] },
+          }),
+        ),
+      ),
+    ]);
+    const nameOf = new Map(names.map((row) => [row.country, row.countryName]));
+
+    return granted
+      .map((country, i) => ({
+        country,
+        countryName: nameOf.get(country) ?? country,
+        count: counts[i],
+      }))
+      .sort((a, b) => b.count - a.count);
+  } catch (err) {
+    // The switcher is an enhancement; the radar must still render without it.
+    console.error("[eta] getPortRadarCountryBreakdown failed:", err);
+    return [];
   }
 }
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { CountrySwitcher } from "@/components/marine/CountrySwitcher";
 import { Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
 import type { SortState } from "@/hooks/useClientSort";
@@ -65,6 +66,7 @@ type TabState = {
  */
 export function PortRadarTabs({
   countryLabel,
+  countryBreakdown,
   isSuperAdmin,
   portsWithCoordinates,
   counts,
@@ -73,7 +75,10 @@ export function PortRadarTabs({
   initialCount,
   pageSize,
 }: {
-  countryLabel: string;
+  /** Set only when the workspace's grant is exactly one country. */
+  countryLabel: string | null;
+  /** Per-country arrival totals; empty unless the grant spans 2–12 countries. */
+  countryBreakdown: Array<{ country: string; countryName: string; count: number }>;
   isSuperAdmin: boolean;
   portsWithCoordinates: string[];
   counts: { newly: number; upcoming: number };
@@ -429,7 +434,7 @@ export function PortRadarTabs({
           active={tab === "upcoming"}
           onClick={() => void openTab("upcoming")}
           icon={<Radar className="h-4 w-4" />}
-          label={`Upcoming ${countryLabel} arrivals`}
+          label={countryLabel ? `Upcoming ${countryLabel} arrivals` : "Upcoming arrivals"}
           count={badgeCount("upcoming")}
         />
       </div>
@@ -441,6 +446,12 @@ export function PortRadarTabs({
             upload — visible until the next batch arrives.
           </p>
         ) : null}
+        {/* Country switcher sits above BOTH feeds — the filter applies to each,
+            so hiding it on one tab would look like it had been reset. */}
+        {countryBreakdown.length > 0 ? (
+          <CountrySwitcher countries={countryBreakdown} />
+        ) : null}
+
         {tab === "upcoming" ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600 dark:text-white/55">
@@ -470,6 +481,7 @@ export function PortRadarTabs({
           </div>
         ) : (
           <PortRadarArrivals
+            showCountry={countryBreakdown.length > 0}
             etas={state.rows}
             count={state.count}
             page={state.page}

@@ -16,6 +16,8 @@ export type IndiaRadarEta = {
   createdAt: string;
   destinationPort: string;
   destinationPortName: string;
+  destinationCountry: string | null;
+  destinationCountryName: string | null;
   currentLat: number | null;
   currentLon: number | null;
   speedOverGround: number | null;
@@ -149,6 +151,7 @@ export function PortRadarArrivals({
   sort = null,
   onSort,
   portsWithCoordinates,
+  showCountry = false,
   isSuperAdmin = false,
 }: {
   etas: IndiaRadarEta[];
@@ -164,6 +167,8 @@ export function PortRadarArrivals({
   sort?: SortState;
   onSort?: (key: string) => void;
   portsWithCoordinates: string[];
+  /** Show each row's country — only useful when the workspace spans several. */
+  showCountry?: boolean;
   isSuperAdmin?: boolean;
 }) {
   const [selectedVessels, setSelectedVessels] = useState<Set<string>>(new Set());
@@ -597,9 +602,26 @@ export function PortRadarArrivals({
                       </td>
                     ) : null}
                     {isVisible("destination") ? (
-                      <td className="max-w-[200px] truncate px-4 py-3 text-slate-600" title={eta.destinationPortName}>
-                        {eta.destinationPortName}{" "}
-                        <span className="text-xs text-slate-400">({eta.destinationPort})</span>
+                      <td
+                        className="max-w-[200px] px-4 py-3 text-slate-600"
+                        title={
+                          eta.destinationCountryName
+                            ? `${eta.destinationPortName}, ${eta.destinationCountryName}`
+                            : eta.destinationPortName
+                        }
+                      >
+                        <span className="block truncate">
+                          {eta.destinationPortName}{" "}
+                          <span className="text-xs text-slate-400">({eta.destinationPort})</span>
+                        </span>
+                        {/* Only shown for multi-country workspaces — for a
+                            single-country plan every row would repeat the same
+                            word for no information. */}
+                        {showCountry && eta.destinationCountryName ? (
+                          <span className="mt-0.5 block truncate text-xs text-slate-400 dark:text-white/40">
+                            {eta.destinationCountryName}
+                          </span>
+                        ) : null}
                       </td>
                     ) : null}
                     {isVisible("eta") ? (

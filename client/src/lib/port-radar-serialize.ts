@@ -19,6 +19,11 @@ export function serializeRadarEta(
     createdAt: eta.createdAt.toISOString(),
     destinationPort: eta.destinationPort,
     destinationPortName: eta.destinationPortName,
+    // Needed so a multi-country workspace can tell at a glance which market a
+    // row belongs to. The UN/LOCODE prefix technically encodes it (BRSSZ = BR),
+    // but only to someone who reads UN/LOCODE.
+    destinationCountry: eta.port?.country ?? null,
+    destinationCountryName: eta.port?.countryName ?? null,
     currentLat: eta.currentLat,
     currentLon: eta.currentLon,
     speedOverGround: eta.speedOverGround,

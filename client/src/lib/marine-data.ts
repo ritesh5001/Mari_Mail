@@ -1,5 +1,11 @@
 import { notFound } from "next/navigation";
 import {
+  requestedCountries,
+  resolveCountryFilter,
+  workspaceCountryScope,
+  type CountryScope,
+} from "@/lib/country-scope";
+import {
   Prisma,
   prisma,
   VesselType,
@@ -299,30 +305,38 @@ async function requireWorkspaceContext() {
   if (!session?.activeWorkspace) {
     notFound();
   }
+  // Mirror Port Radar's scope resolution: the plan's multi-country allowlist
+  // first, then the legacy single country, then null. This page used to read
+  // `targetPortCountry` alone — which registration sets to `countries[0]` —
+  // so a Pro workspace granted Brazil + India saw Brazilian vessels only.
+  const countryScope: CountryScope = workspaceCountryScope(session.activeWorkspace);
+
   return {
     workspaceId: session.activeWorkspace.id,
-    targetPortCountry: session.activeWorkspace.targetPortCountry,
+    countryScope,
   };
 }
 
 export async function listVessels(searchParams: Record<string, string | string[] | undefined>) {
-  const { workspaceId, targetPortCountry } = await requireWorkspaceContext();
+  const { workspaceId, countryScope } = await requireWorkspaceContext();
   const q = typeof searchParams.q === "string" ? searchParams.q.trim() : "";
   const textMatch = q ? { contains: q, mode: "insensitive" as const } : undefined;
   const numericQuery = q && /^\d+(\.\d+)?$/.test(q) ? Number(q) : null;
   const intQuery = numericQuery !== null && Number.isInteger(numericQuery) ? numericQuery : null;
-  // When the user picks countries in the filter panel, the filter takes
-  // over from the workspace default — otherwise a Togo-default user
-  // picking Singapore would AND both and get nothing.
-  const filterCountries = parseList(searchParams.destCountry)
-    .map((c) => c.toUpperCase())
-    .filter((c) => /^[A-Z]{2}$/.test(c));
-  const targetCountryClause: Prisma.VesselWhereInput | null =
-    filterCountries.length > 0
-      ? null
-      : targetPortCountry
-        ? { etas: { some: { port: { is: { country: targetPortCountry } } } } }
-        : null;
+  // The filter is INTERSECTED with the plan's grant, not substituted for it.
+  // Substituting was a bypass: `?destCountry=US` on a Brazil-only workspace
+  // dropped the restriction and returned US vessels.
+  const effectiveCountries = resolveCountryFilter(
+    requestedCountries(searchParams),
+    countryScope,
+  );
+  const targetCountryClause: Prisma.VesselWhereInput | null = Array.isArray(effectiveCountries)
+    ? // Includes the empty case on purpose — asking only for countries you
+      // don't have must return nothing, not everything.
+      { etas: { some: { port: { is: { country: { in: effectiveCountries } } } } } }
+    : effectiveCountries
+      ? { etas: { some: { port: { is: { country: effectiveCountries } } } } }
+      : null;
 
   const where: Prisma.VesselWhereInput = {
     AND: [

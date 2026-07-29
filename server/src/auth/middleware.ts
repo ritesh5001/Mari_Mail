@@ -8,6 +8,8 @@ export type AuthedRequest = Request & {
   auth: {
     userId: string;
     workspaceId: string;
+    /** Sourced from the ban-check lookup below, so it costs no extra query. */
+    isSuperAdmin: boolean;
   };
 };
 
@@ -27,7 +29,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     // deleted user kept working until it expired.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { bannedAt: true },
+      select: { bannedAt: true, isSuperAdmin: true },
     });
     if (!user) {
       return sendError(res, 401, "INVALID_SESSION", "Session expired");
@@ -39,6 +41,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     (req as AuthedRequest).auth = {
       userId: payload.sub,
       workspaceId: payload.workspaceId,
+      isSuperAdmin: user.isSuperAdmin,
     };
     return next();
   } catch {
@@ -71,6 +74,7 @@ export async function requireSuperAdmin(req: Request, res: Response, next: NextF
     (req as AuthedRequest).auth = {
       userId: payload.sub,
       workspaceId: payload.workspaceId,
+      isSuperAdmin: true,
     };
     return next();
   } catch {
