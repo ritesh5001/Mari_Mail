@@ -1,3 +1,4 @@
+export { renderEmailLayout, escapeHtml, type EmailLayoutOptions } from "./layout.js";
 import { Resend } from "resend";
 
 type SendEmailInput = {

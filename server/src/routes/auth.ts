@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { Router } from "express";
 import { z } from "zod";
 import { Prisma, prisma } from "@marimail/db";
-import { sendTransactionalEmail } from "@marimail/email";
+import { renderEmailLayout, sendTransactionalEmail } from "@marimail/email";
 import { randomToken, sha256, slugify } from "@marimail/utils";
 import { clearAuthCookies, refreshCookieName, setAuthCookies } from "../lib/cookies.js";
 import { sendData, sendError } from "../lib/http.js";
@@ -550,8 +550,17 @@ async function sendVerificationEmail(userId: string, email: string) {
     await sendTransactionalEmail({
       to: email,
       subject: "Confirm your MariMail email address",
-      html: `<p>Confirm your email address by opening <a href="${link}">this link</a>. It expires in 24 hours.</p>`,
-      text: `Confirm your MariMail email address: ${link} (expires in 24 hours)`,
+      html: renderEmailLayout({
+        preheader: "Confirm your email to activate your MariMail workspace.",
+        heading: "Confirm your email address",
+        body: [
+          "Welcome to MariMail. Confirm this address to activate your workspace and start tracking vessel arrivals.",
+        ],
+        cta: { label: "Confirm email address", url: link },
+        footnote:
+          "This link expires in 24 hours. If you didn't create a MariMail account, you can safely ignore this email.",
+      }),
+      text: `Confirm your MariMail email address: ${link}\n\nThis link expires in 24 hours. If you didn't create a MariMail account, ignore this email.`,
     });
   } catch (error) {
     // Don't fail signup because the mail provider hiccuped — the user can
@@ -811,8 +820,15 @@ authRouter.post("/forgot-password", passwordResetRateLimit, async (req, res, nex
         await sendTransactionalEmail({
           to: user.email,
           subject: "Reset your MariMail password",
-          html: `<p>Reset your password by opening <a href="${link}">this secure link</a>.</p>`,
-          text: `Reset your MariMail password: ${link}`,
+          html: renderEmailLayout({
+            preheader: "Use this link to choose a new MariMail password.",
+            heading: "Reset your password",
+            body: ["We received a request to reset the password for this MariMail account."],
+            cta: { label: "Choose a new password", url: link },
+            footnote:
+              "This link expires in 1 hour and can be used once. If you didn't request a reset, you can safely ignore this email — your password won't change.",
+          }),
+          text: `Reset your MariMail password: ${link}\n\nThis link expires in 1 hour. If you didn't request it, ignore this email.`,
         });
       } catch (error) {
         // In development, surface a useful warning + fallback link so developers can complete flows locally.
