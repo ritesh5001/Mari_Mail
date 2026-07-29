@@ -47,7 +47,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, alwaysVisible: true },
   { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
   { href: "/dashboard/contacts", label: "Contacts", icon: Users },
-  { href: "/dashboard/saved", label: "Saved", icon: Bookmark },
+  { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
   { href: "/dashboard/port-radar", label: "ETA / Port Radar", icon: Radar },
   { href: "/dashboard/lists", label: "Lists", icon: List },
   { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
@@ -217,6 +217,9 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
   const breadcrumb = useMemo(() => {
     const [, , child] = pathname.split("/");
     if (!child) return "Overview";
+    // Friendly overrides where the URL segment doesn't match the display name.
+    const overrides: Record<string, string> = { saved: "Revealed contacts" };
+    if (overrides[child]) return overrides[child];
     return child
       .split("-")
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

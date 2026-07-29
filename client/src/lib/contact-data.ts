@@ -176,6 +176,25 @@ export async function listSavedContacts(): Promise<ContactModel[]> {
   }
 }
 
+/**
+ * Contacts the workspace has revealed — i.e. an email reveal was resolved, so
+ * emailStatus is no longer UNKNOWN. This surfaces every revealed contact across
+ * all lists in one place (the "Revealed contacts" page).
+ */
+export async function listRevealedContacts(): Promise<ContactModel[]> {
+  const { workspaceId } = await requireContactWorkspaceId();
+  try {
+    return await prisma.contact.findMany({
+      where: { workspaceId, emailStatus: { not: "UNKNOWN" } },
+      orderBy: { updatedAt: "desc" },
+      take: 1000,
+    });
+  } catch (err) {
+    console.error("[contacts] listRevealedContacts failed:", err);
+    return [];
+  }
+}
+
 export type ListCompanyRow = {
   companyId: string;
   companyKind: CompanyKindString;

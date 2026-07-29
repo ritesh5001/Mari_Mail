@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Bookmark } from "lucide-react";
 import type { ContactModel } from "@/lib/contact-data";
-import { apiFetch } from "@/lib/browser-fetch";
 import { useClientSort } from "@/hooks/useClientSort";
 import { SortableHeader } from "@/components/table/SortableHeader";
 
@@ -16,8 +14,7 @@ function formatEnum(value: string | null | undefined) {
   return value ? value.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase()) : "-";
 }
 
-export function SavedContactsView({ contacts: initial }: { contacts: ContactModel[] }) {
-  const [contacts, setContacts] = useState<ContactModel[]>(initial);
+export function SavedContactsView({ contacts }: { contacts: ContactModel[] }) {
   const { sorted, sort, toggle } = useClientSort(contacts, {
     name: (c) => fullName(c),
     title: (c) => c.title,
@@ -27,22 +24,13 @@ export function SavedContactsView({ contacts: initial }: { contacts: ContactMode
     role: (c) => c.marineRole,
   });
 
-  async function unsave(id: string) {
-    setContacts((prev) => prev.filter((c) => c.id !== id));
-    try {
-      await apiFetch(`/api/saved/${id}`, { method: "DELETE" });
-    } catch {
-      // best-effort; a refresh restores accurate state
-    }
-  }
-
   if (contacts.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white py-16 text-center dark:border-white/10 dark:bg-white/[0.02]">
         <Bookmark className="mb-4 h-10 w-10 text-slate-300 dark:text-white/20" />
-        <h3 className="text-base font-semibold text-slate-900 dark:text-white">No saved contacts yet</h3>
+        <h3 className="text-base font-semibold text-slate-900 dark:text-white">No revealed contacts yet</h3>
         <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-white/50">
-          Tap the bookmark on any contact in People to keep it here.
+          Reveal a contact&rsquo;s email from any list or search and it shows up here.
         </p>
         <Link href="/dashboard/contacts" className="mt-5 rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-ocean dark:bg-accent-600 dark:hover:bg-accent-500">
           Browse contacts
@@ -63,7 +51,6 @@ export function SavedContactsView({ contacts: initial }: { contacts: ContactMode
               <SortableHeader label="Email" sortKey="email" sort={sort} onSort={toggle} />
               <SortableHeader label="Country" sortKey="country" sort={sort} onSort={toggle} />
               <SortableHeader label="Role" sortKey="role" sort={sort} onSort={toggle} />
-              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -79,17 +66,6 @@ export function SavedContactsView({ contacts: initial }: { contacts: ContactMode
                 <td className="px-4 py-3 text-slate-600 dark:text-white/60">{c.email}</td>
                 <td className="px-4 py-3 text-slate-600 dark:text-white/60">{c.country ?? "-"}</td>
                 <td className="px-4 py-3 text-slate-600 dark:text-white/60">{formatEnum(c.marineRole)}</td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={() => unsave(c.id)}
-                    title="Remove from saved"
-                    aria-label="Remove from saved"
-                    className="rounded p-1 text-ocean hover:bg-slate-100 dark:hover:bg-white/10"
-                  >
-                    <Bookmark className="h-4 w-4 fill-ocean" />
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>
