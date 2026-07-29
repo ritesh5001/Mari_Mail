@@ -7,13 +7,31 @@ import { randomToken, sha256, slugify } from "@marimail/utils";
 import { clearAuthCookies, refreshCookieName, setAuthCookies } from "../lib/cookies.js";
 import { sendData, sendError } from "../lib/http.js";
 import { requireAuth, type AuthedRequest } from "../auth/middleware.js";
-import { issueTokenPair, revokeRefreshToken, rotateRefreshToken } from "../auth/jwt.js";
+import {
+  issueTokenPair,
+  revokeAllUserRefreshTokens,
+  revokeRefreshToken,
+  rotateRefreshToken,
+} from "../auth/jwt.js";
+import {
+  loginRateLimit,
+  passwordResetRateLimit,
+  refreshRateLimit,
+  registerRateLimit,
+  resetTokenRateLimit,
+} from "../auth/rate-limit.js";
 import { planLimits } from "../services/billing.service.js";
 import { deleteToken, getToken, setToken } from "../services/token-store.js";
 
 export const authRouter = Router();
 
 const SETTINGS_ID = "singleton";
+
+// A real bcrypt hash (cost 12) of a value nobody can supply. Compared against
+// when the submitted email has no account, so the response time of a failed
+// login doesn't reveal whether the address is registered.
+const DUMMY_PASSWORD_HASH =
+  "$2a$12$C6UzMDM.H6dfI/f/IKcEe.9Z7cVfLZbLp9x1Kk0N2mQbT2Rk5m1Yu";
 
 const registerSchema = z.object({
   name: z.string().trim().min(2),
@@ -294,7 +312,7 @@ async function loadSession(userId: string) {
   return user ? serializeSession(user) : null;
 }
 
-authRouter.post("/register", async (req, res, next) => {
+authRouter.post("/register", registerRateLimit, async (req, res, next) => {
   try {
     const registrationEnabled = await getRegistrationEnabled();
     if (!registrationEnabled) {
@@ -415,7 +433,7 @@ authRouter.post("/register", async (req, res, next) => {
   }
 });
 
-authRouter.post("/login", async (req, res, next) => {
+authRouter.post("/login", loginRateLimit, async (req, res, next) => {
   try {
     const input = loginSchema.safeParse(req.body);
     if (!input.success) {
@@ -427,14 +445,26 @@ authRouter.post("/login", async (req, res, next) => {
 
     const credentials = await prisma.user.findUnique({
       where: { email: input.data.email },
-      select: { id: true, passwordHash: true },
+      select: { id: true, passwordHash: true, bannedAt: true },
     });
 
-    if (!credentials?.passwordHash || !(await bcrypt.compare(input.data.password, credentials.passwordHash))) {
+    // Constant-time-ish comparison. Previously a missing user short-circuited
+    // before bcrypt.compare, so "no such account" answered ~100ms faster than
+    // "wrong password" — a reliable timing oracle for enumerating which emails
+    // are registered. Always spend a comparison, against a dummy hash when the
+    // account doesn't exist.
+    const hashToCheck = credentials?.passwordHash ?? DUMMY_PASSWORD_HASH;
+    const passwordOk = await bcrypt.compare(input.data.password, hashToCheck);
+
+    if (!credentials?.passwordHash || !passwordOk) {
       if (wantsHtmlRedirect(req)) {
         return res.redirect(303, loginRetryUrl(req.body as Record<string, unknown>, "Email or password is incorrect"));
       }
       return sendError(res, 401, "INVALID_CREDENTIALS", "Email or password is incorrect");
+    }
+
+    if (credentials.bannedAt) {
+      return sendError(res, 403, "ACCOUNT_SUSPENDED", "This account has been suspended.");
     }
 
     const user = await loadUserWithSession({ id: credentials.id });
@@ -462,7 +492,7 @@ authRouter.post("/login", async (req, res, next) => {
   }
 });
 
-authRouter.post("/refresh", async (req, res, next) => {
+authRouter.post("/refresh", refreshRateLimit, async (req, res, next) => {
   try {
     const refreshToken = req.cookies?.[refreshCookieName];
     if (!refreshToken) {
@@ -483,7 +513,7 @@ authRouter.post("/refresh", async (req, res, next) => {
   }
 });
 
-authRouter.post("/forgot-password", async (req, res, next) => {
+authRouter.post("/forgot-password", passwordResetRateLimit, async (req, res, next) => {
   try {
     const input = forgotPasswordSchema.safeParse(req.body);
     if (!input.success) {
@@ -530,7 +560,7 @@ authRouter.post("/forgot-password", async (req, res, next) => {
   }
 });
 
-authRouter.post("/reset-password", async (req, res, next) => {
+authRouter.post("/reset-password", resetTokenRateLimit, async (req, res, next) => {
   try {
     const input = resetPasswordSchema.safeParse(req.body);
     if (!input.success) {
@@ -550,8 +580,23 @@ authRouter.post("/reset-password", async (req, res, next) => {
         where: { tokenHash, usedAt: null },
         data: { usedAt: new Date() },
       }),
+      // Password reset is the account-recovery path: if someone else had the
+      // account, changing the password MUST end their access. Previously every
+      // existing refresh token stayed valid, so an attacker kept their session
+      // even after the owner reset the password.
+      prisma.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
     ]);
     await deleteToken(`password-reset:${tokenHash}`);
+    await revokeAllUserRefreshTokens(userId);
+
+    // Any other outstanding reset links are now stale too.
+    await prisma.passwordResetToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
 
     return sendData(res, { reset: true });
   } catch (error) {

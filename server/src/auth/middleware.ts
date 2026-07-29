@@ -11,7 +11,7 @@ export type AuthedRequest = Request & {
   };
 };
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "");
   const token = bearer ?? req.cookies?.[accessCookieName];
 
@@ -21,6 +21,21 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     const payload = verifyAccessToken(token);
+
+    // A ban must take effect immediately. The access token is a signed JWT that
+    // stays valid for its full 15-minute TTL, so without this check a banned or
+    // deleted user kept working until it expired.
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { bannedAt: true },
+    });
+    if (!user) {
+      return sendError(res, 401, "INVALID_SESSION", "Session expired");
+    }
+    if (user.bannedAt) {
+      return sendError(res, 403, "ACCOUNT_SUSPENDED", "This account has been suspended.");
+    }
+
     (req as AuthedRequest).auth = {
       userId: payload.sub,
       workspaceId: payload.workspaceId,
@@ -43,9 +58,12 @@ export async function requireSuperAdmin(req: Request, res: Response, next: NextF
     const payload = verifyAccessToken(token);
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, isSuperAdmin: true },
+      select: { id: true, isSuperAdmin: true, bannedAt: true },
     });
 
+    if (user?.bannedAt) {
+      return sendError(res, 403, "ACCOUNT_SUSPENDED", "This account has been suspended.");
+    }
     if (!user?.isSuperAdmin) {
       return sendError(res, 403, "FORBIDDEN", "Super admin access required");
     }

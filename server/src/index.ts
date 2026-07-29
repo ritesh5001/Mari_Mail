@@ -2,6 +2,7 @@ import { config as loadEnv } from "dotenv";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import { csrfGuard } from "./auth/csrf.js";
 import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
@@ -98,12 +99,33 @@ app.use(
     credentials: true,
   }),
 );
+// Baseline security headers. Cheap, no dependency, and closes off the obvious
+// content-type/framing/referrer footguns.
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-site");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  next();
+});
+
+// Stripe signs its own payloads and sends no Origin header — it is mounted
+// before both the body parsers (it needs the raw body) and the CSRF guard.
 app.use("/api/billing", billingWebhookRouter);
 app.use(compression());
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: bodyLimit }));
 app.use(express.text({ type: "text/csv", limit: bodyLimit }));
 app.use(cookieParser());
+
+// CSRF: cookies are SameSite=None and every POST accepts form-encoding, so a
+// cross-site form post would otherwise carry the user's session. Verify the
+// browser-supplied Origin on every state-changing request.
+app.use(csrfGuard(allowedOrigins.length > 0 ? allowedOrigins : [webOrigin]));
 
 async function getQueueDepths() {
   if (!process.env.REDIS_URL) return { depths: {}, stall: null as null | Record<string, { overdueJobs: number; oldestAddedAtIso: string | null }> };

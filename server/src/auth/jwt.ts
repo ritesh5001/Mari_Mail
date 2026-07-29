@@ -58,15 +58,60 @@ export async function issueTokenPair(userId: string, workspaceId: string) {
   return { accessToken, refreshToken };
 }
 
+/**
+ * Revoke every session for a user — used after a password reset and on
+ * detected refresh-token reuse. Clears both the DB sessions and the Redis
+ * lookup keys so no outstanding refresh token can be redeemed.
+ */
+export async function revokeAllUserRefreshTokens(userId: string) {
+  const sessions = await prisma.session.findMany({
+    where: { userId, revokedAt: null },
+    select: { id: true, refreshTokenHash: true },
+  });
+  await Promise.all(
+    sessions
+      .map((session) => session.refreshTokenHash)
+      .filter((hash): hash is string => Boolean(hash))
+      .flatMap((hash) => [deleteToken(`refresh:${hash}`), deleteToken(`refresh-used:${hash}`)]),
+  );
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+
 export async function rotateRefreshToken(refreshToken: string) {
   const oldHash = sha256(refreshToken);
   const raw = await getToken(`refresh:${oldHash}`);
   if (!raw) {
+    // The token isn't live. If we've seen it rotated before, this is a REPLAY:
+    // either the user's token was stolen and the thief is using it, or the
+    // thief rotated first and the legitimate client is now replaying. We can't
+    // tell which, so we assume breach and kill every session for that user —
+    // the standard response for refresh-token reuse. Previously this just
+    // returned null, letting a thief keep a rotating token indefinitely.
+    const usedBy = await getToken(`refresh-used:${oldHash}`);
+    if (usedBy) {
+      try {
+        const { userId } = JSON.parse(usedBy) as { userId: string };
+        console.warn(`[auth] refresh-token reuse detected for user ${userId} — revoking all sessions`);
+        await revokeAllUserRefreshTokens(userId);
+      } catch {
+        // Malformed marker — nothing safe to revoke.
+      }
+    }
     return null;
   }
 
   const state = JSON.parse(raw) as RefreshState;
   await deleteToken(`refresh:${oldHash}`);
+  // Remember that this exact token was already spent, so a later replay is
+  // recognisable as reuse rather than just "unknown token".
+  await setToken(
+    `refresh-used:${oldHash}`,
+    JSON.stringify({ userId: state.userId, sessionId: state.sessionId }),
+    refreshTtlSeconds,
+  );
 
   const nextRefreshToken = randomToken(48);
   const nextRefreshTokenHash = sha256(nextRefreshToken);
