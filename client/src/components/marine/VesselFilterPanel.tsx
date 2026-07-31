@@ -9,7 +9,6 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 import {
   ETA_CONFIDENCES,
-  VESSEL_STATUSES,
   VESSEL_TYPE_CATEGORIES,
   VOYAGE_STATUSES,
   formatVesselEnum,
@@ -29,7 +28,6 @@ type FilterState = {
   q: string;
   vesselType: string[];
   flag: string;
-  status: string[];
   dwtMin: string;
   dwtMax: string;
   gtMin: string;
@@ -107,7 +105,6 @@ function searchParamsToState(sp: SearchParams): FilterState {
     q: str(sp.q),
     vesselType: list(sp.vesselType),
     flag: list(sp.flag).join(", "),
-    status: list(sp.status),
     dwtMin: str(sp.dwtMin),
     dwtMax: str(sp.dwtMax),
     gtMin: str(sp.gtMin),
@@ -163,7 +160,6 @@ function stateToParams(state: FilterState): URLSearchParams {
   if (state.vesselType.length) params.set("vesselType", state.vesselType.join(","));
   const flags = list(state.flag).map((f) => f.toUpperCase());
   if (flags.length) params.set("flag", flags.join(","));
-  if (state.status.length) params.set("status", state.status.join(","));
   setStr("dwtMin", state.dwtMin);
   setStr("dwtMax", state.dwtMax);
   setStr("gtMin", state.gtMin);
@@ -218,7 +214,6 @@ function countActive(state: FilterState): number {
   if (state.q.trim()) n++;
   if (state.vesselType.length) n++;
   if (state.flag.trim()) n++;
-  if (state.status.length) n++;
   if (state.dwtMin.trim() || state.dwtMax.trim()) n++;
   if (state.gtMin.trim() || state.gtMax.trim()) n++;
   if (state.builtMin.trim() || state.builtMax.trim()) n++;
@@ -438,13 +433,6 @@ export function VesselFilterPanel({
       vesselType: prev.vesselType.includes(type)
         ? prev.vesselType.filter((t) => t !== type)
         : [...prev.vesselType, type],
-    }));
-  }
-
-  function toggleStatus(value: string) {
-    setState((prev) => ({
-      ...prev,
-      status: prev.status.includes(value) ? prev.status.filter((s) => s !== value) : [...prev.status, value],
     }));
   }
 
@@ -808,25 +796,6 @@ export function VesselFilterPanel({
     </>
   );
 
-  const statusBody = (
-    <div className="space-y-1">
-      {VESSEL_STATUSES.map((value) => (
-        <label
-          key={value}
-          className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-        >
-          <input
-            type="checkbox"
-            checked={state.status.includes(value)}
-            onChange={() => toggleStatus(value)}
-            className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-          />
-          {formatVesselEnum(value)}
-        </label>
-      ))}
-    </div>
-  );
-
   const sizeSpecsBody = (
     <>
       <RangeRow label="DWT" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
@@ -948,7 +917,6 @@ export function VesselFilterPanel({
   const sectionList: Array<{ key: string; title: string; count: number; body: React.ReactNode; defaultOpen?: boolean }> = [
     { key: "eta", title: "ETA & voyage", count: etaVoyageCount, body: etaVoyageBody, defaultOpen: true },
     { key: "type", title: "Vessel type", count: typeCount, body: vesselTypeBody },
-    { key: "status", title: "Status", count: state.status.length, body: statusBody },
     { key: "size", title: "Size & specs", count: sizeCount, body: sizeSpecsBody },
     { key: "owner", title: "Owner & manager", count: ownerCount, body: ownerBody },
     { key: "builders", title: "Builders & class", count: buildersCount, body: buildersBody },

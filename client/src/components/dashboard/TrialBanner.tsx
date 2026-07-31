@@ -22,8 +22,16 @@ import { cn } from "@/lib/cn";
  * Deliberately absent for a healthy ACTIVE plan with time to spare — this is a
  * "you need to act" surface, not a persistent billing widget. `MembershipStatus`
  * on the billing page itself is the always-visible version of this same state.
+ * Also absent for super-admins, who have no plan of their own to act on.
  */
-export function TrialBanner({ workspace }: { workspace: WorkspaceSummary | null }) {
+export function TrialBanner({
+  workspace,
+  isSuperAdmin = false,
+}: {
+  workspace: WorkspaceSummary | null;
+  /** Platform staff never see plan or trial messaging — see `canViewNavItem`. */
+  isSuperAdmin?: boolean;
+}) {
   const [dismissedUntil, setDismissedUntil] = useState<number | null>(null);
 
   // Re-read on mount only — the dismissal key is scoped to today's date, so a
@@ -35,7 +43,10 @@ export function TrialBanner({ workspace }: { workspace: WorkspaceSummary | null 
     setDismissedUntil(raw ? Number(raw) : null);
   }, [workspace?.id]);
 
-  if (!workspace) return null;
+  // Suppressed for platform staff: they manage customers rather than being
+  // customers, and the "Choose a plan" link below now redirects them away
+  // anyway — a banner whose only action bounces you is worse than no banner.
+  if (!workspace || isSuperAdmin) return null;
 
   const membership = describeMembership({
     plan: workspace.plan as PlanKey,

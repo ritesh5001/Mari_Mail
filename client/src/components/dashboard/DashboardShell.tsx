@@ -41,7 +41,7 @@ type NavItem = {
   label: string;
   icon: typeof LayoutDashboard;
   superAdminOnly?: boolean;
-  /** Visible to a super-admin OR the active workspace's own OWNER/ADMIN — see `canViewNavItem`. */
+  /** Visible to the active workspace's OWNER/ADMIN — not to platform staff. See `canViewNavItem`. */
   billingManagerOnly?: boolean;
   alwaysVisible?: boolean;
 };
@@ -67,17 +67,22 @@ const navItems: NavItem[] = [
 
 /**
  * A nav item is visible if it has no restriction, or the session clears
- * whichever restriction it does have. `billingManagerOnly` matches the exact
- * rule enforced server-side in app/dashboard/billing/layout.tsx — super-admin,
- * or OWNER/ADMIN of the active workspace — so the sidebar never advertises a
- * link a MEMBER would immediately be redirected away from.
+ * whichever restriction it does have. Matches the rules enforced server-side,
+ * so the sidebar never advertises a link the user would be redirected away
+ * from.
+ *
+ * `billingManagerOnly` is the OWNER/ADMIN of the active workspace and
+ * deliberately EXCLUDES super-admins. Platform staff run the admin panel —
+ * they manage customers, they are not customers, and a plan or an invoice is
+ * not theirs to look at. Their billing-adjacent work (granting country access,
+ * issuing payment links) lives in the admin routes instead.
  */
 function canViewNavItem(item: NavItem, session: AuthSession): boolean {
   if (item.superAdminOnly && !session.user.isSuperAdmin) return false;
   if (item.billingManagerOnly) {
+    if (session.user.isSuperAdmin) return false;
     const role = session.activeWorkspace?.role;
-    const canManageBilling = session.user.isSuperAdmin || role === "OWNER" || role === "ADMIN";
-    if (!canManageBilling) return false;
+    if (role !== "OWNER" && role !== "ADMIN") return false;
   }
   return true;
 }
@@ -362,7 +367,7 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
         </header>
 
         <main className="min-h-[calc(100vh-4rem)] bg-transparent px-5 py-6 dark:bg-[#050507]">
-          <TrialBanner workspace={activeWorkspace} />
+          <TrialBanner workspace={activeWorkspace} isSuperAdmin={session.user.isSuperAdmin} />
           {children}
         </main>
       </div>
