@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Eye, EyeOff, Search, X } from "lucide-react";
 import { PasswordStrength } from "./PasswordStrength";
+import {
+  PLANS as SHARED_PLANS,
+  SIGNUP_PLANS,
+  SIGNUP_PLAN_TO_BILLING,
+  planPriceLabel,
+  type SignupPlanKey,
+} from "@marimail/utils/plans";
 import { PASSWORD_MIN_LENGTH, evaluatePassword } from "@marimail/utils/password-policy";
 import { apiUrl } from "@/lib/client-api";
 import { CaptchaField, resetCaptcha } from "./CaptchaField";
@@ -18,14 +25,34 @@ export type RegisterDefaults = {
   plan?: string;
 };
 
-/** Plans offered at signup — each grants a 14-day free trial + N countries. */
-type PlanKey = "STARTER" | "PRO" | "FLEET";
-const PLANS: { key: PlanKey; name: string; price: string; countries: number; blurb: string }[] = [
-  { key: "STARTER", name: "Starter", price: "$25/mo", countries: 1, blurb: "1 country · solo operator" },
-  { key: "PRO", name: "Pro", price: "$45/mo", countries: 2, blurb: "2 countries · growing desk" },
-  { key: "FLEET", name: "Fleet", price: "$85/mo", countries: 4, blurb: "4 countries · brokerage" },
-];
-const PLAN_COUNTRIES: Record<PlanKey, number> = { STARTER: 1, PRO: 2, FLEET: 4 };
+/**
+ * Plans offered at signup — each grants a 14-day free trial + N countries.
+ *
+ * Prices, country allowances and the FLEET→BUSINESS mapping all come from the
+ * shared catalog. They used to be a hand-kept copy that agreed with nothing
+ * else in the codebase, which stopped being cosmetic the moment a gateway
+ * started charging cards.
+ */
+type PlanKey = SignupPlanKey;
+const BLURBS: Record<PlanKey, string> = {
+  STARTER: "solo operator",
+  PRO: "growing desk",
+  FLEET: "brokerage",
+};
+const PLANS: { key: PlanKey; name: string; price: string; countries: number; blurb: string }[] =
+  SIGNUP_PLANS.map((key) => {
+    const def = SHARED_PLANS[SIGNUP_PLAN_TO_BILLING[key]];
+    return {
+      key,
+      name: def.label,
+      price: planPriceLabel(def.key),
+      countries: def.countryLimit,
+      blurb: `${def.countryLimit} ${def.countryLimit === 1 ? "country" : "countries"} · ${BLURBS[key]}`,
+    };
+  });
+const PLAN_COUNTRIES: Record<PlanKey, number> = Object.fromEntries(
+  SIGNUP_PLANS.map((key) => [key, SHARED_PLANS[SIGNUP_PLAN_TO_BILLING[key]].countryLimit]),
+) as Record<PlanKey, number>;
 
 /**
  * Curated UTC-offset list surfaced in the timezone picker. We ship offsets
@@ -127,7 +154,7 @@ export function RegisterForm({
 
   // Plan selection → country allowance. Default to the plan from a retry, else
   // Pro (the "most popular" tier).
-  const initialPlan = (["STARTER", "PRO", "FLEET"] as const).includes(defaults.plan as PlanKey)
+  const initialPlan = SIGNUP_PLANS.includes(defaults.plan as PlanKey)
     ? (defaults.plan as PlanKey)
     : "PRO";
   const [plan, setPlan] = useState<PlanKey>(initialPlan);

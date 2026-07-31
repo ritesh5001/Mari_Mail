@@ -11,6 +11,8 @@ import {
   grantCredits,
 } from "../services/billing.service.js";
 import { fulfilPaymentLink } from "../services/payment-link.service.js";
+import { describeMembership } from "../services/membership.service.js";
+import { isRazorpayConfigured } from "../services/razorpay.service.js";
 
 export const billingRouter = Router();
 export const billingWebhookRouter = Router();
@@ -19,6 +21,10 @@ billingRouter.get("/plans", requireAuth, async (_req, res) => {
   return sendData(res, {
     plans: Object.values(PLAN_CATALOG),
     creditPacks: CREDIT_PACK_CATALOG,
+    gateways: {
+      razorpay: isRazorpayConfigured(),
+      stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+    },
   });
 });
 
@@ -36,6 +42,10 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
         emailLimit: true,
         inboxLimit: true,
         teamLimit: true,
+        countryLimit: true,
+        allowedCountries: true,
+        trialEndsAt: true,
+        paymentProvider: true,
         stripeCustomerId: true,
       },
     });
@@ -45,7 +55,7 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
     sinceMonth.setUTCDate(1);
     sinceMonth.setUTCHours(0, 0, 0, 0);
 
-    const [vesselCount, monthlySent, ledger] = await Promise.all([
+    const [vesselCount, monthlySent, ledger, payments] = await Promise.all([
       prisma.vessel.count({ where: { workspaceId } }),
       prisma.emailEvent.count({ where: { workspaceId, eventType: "SENT", occurredAt: { gte: sinceMonth } } }),
       prisma.creditLedger.findMany({
@@ -53,15 +63,42 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
         orderBy: { createdAt: "desc" },
         take: 20,
       }),
+      prisma.payment.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: {
+          id: true,
+          provider: true,
+          status: true,
+          purpose: true,
+          amountCents: true,
+          currency: true,
+          grantPlan: true,
+          grantCredits: true,
+          failureReason: true,
+          paidAt: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
     return sendData(res, {
       workspace,
+      // Derived rather than read off billingStatus: a period that ended an
+      // hour ago is functionally past due whether or not the hourly sweep has
+      // run yet, and the billing page must not claim otherwise.
+      membership: describeMembership(workspace),
       usage: {
         vessels: vesselCount,
         emailsThisMonth: monthlySent,
       },
       creditLedger: ledger,
+      payments,
+      gateways: {
+        razorpay: isRazorpayConfigured(),
+        stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+      },
     });
   } catch (error) {
     return next(error);
@@ -163,7 +200,9 @@ billingWebhookRouter.post(
       if (!signature) return sendError(res, 400, "MISSING_SIGNATURE", "Missing stripe-signature header");
       const event = stripe.webhooks.constructEvent(req.body as Buffer, signature, secret);
 
-      const existing = await prisma.billingEvent.findUnique({ where: { stripeEventId: event.id } });
+      const existing = await prisma.billingEvent.findUnique({
+        where: { provider_providerEventId: { provider: "STRIPE", providerEventId: event.id } },
+      });
       if (existing) return res.json({ ok: true, duplicate: true });
 
       const workspaceId =
@@ -175,6 +214,10 @@ billingWebhookRouter.post(
         await prisma.billingEvent.create({
           data: {
             workspaceId,
+            provider: "STRIPE",
+            providerEventId: event.id,
+            // Legacy column, still written so historical rows and new ones
+            // read the same way.
             stripeEventId: event.id,
             eventType: event.type,
             payload: event.data.object as unknown as object,

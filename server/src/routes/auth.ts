@@ -38,6 +38,13 @@ import {
 } from "../auth/totp.js";
 import { encryptSecret, decryptSecret, parseEncryptedSecret } from "@marimail/utils";
 import { passwordProblem } from "@marimail/utils/password-policy";
+import {
+  PLANS,
+  SIGNUP_PLAN_TO_BILLING,
+  TRIAL_CREDITS,
+  TRIAL_DAYS,
+  type SignupPlanKey,
+} from "@marimail/utils/plans";
 import { planLimits } from "../services/billing.service.js";
 import { deleteToken, getToken, setToken } from "../services/token-store.js";
 
@@ -93,19 +100,14 @@ const registerSchema = z.object({
   captchaToken: z.string().max(4000).optional(),
 });
 
-// Country allowance per plan chosen at registration. FLEET here maps to the
-// BUSINESS billing plan internally (the marketing "Fleet" tier).
-const PLAN_COUNTRY_LIMIT: Record<"STARTER" | "PRO" | "FLEET", number> = {
-  STARTER: 1,
-  PRO: 2,
-  FLEET: 4,
-};
+// Plan data comes from the shared catalog so signup, the marketing page and
+// the payment gateways cannot disagree about what a plan includes. These used
+// to be a second hand-maintained copy of the country allowances.
+const REGISTER_PLAN_TO_BILLING = SIGNUP_PLAN_TO_BILLING;
 
-const REGISTER_PLAN_TO_BILLING = {
-  STARTER: "STARTER",
-  PRO: "PRO",
-  FLEET: "BUSINESS",
-} as const;
+function registerPlanCountryLimit(plan: SignupPlanKey): number {
+  return PLANS[SIGNUP_PLAN_TO_BILLING[plan]].countryLimit;
+}
 
 /**
  * Hard-block sign-in until the email address is confirmed.
@@ -117,8 +119,7 @@ const REGISTER_PLAN_TO_BILLING = {
  */
 const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === "true";
 
-const TRIAL_DAYS = 14;
-const TRIAL_CREDITS = 500;
+
 
 const loginSchema = z.object({
   email: z.string().trim().email().toLowerCase(),
@@ -434,7 +435,7 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
     // 14-day free trial (plan features + 500 credits, then we start charging).
     const chosenPlan = input.data.plan ?? "STARTER";
     const billingPlan = REGISTER_PLAN_TO_BILLING[chosenPlan];
-    const countryLimit = PLAN_COUNTRY_LIMIT[chosenPlan];
+    const countryLimit = registerPlanCountryLimit(chosenPlan);
     const limits = planLimits(billingPlan);
     // Only grant as many countries as the plan allows.
     const allowedCountries = (input.data.countries ?? []).slice(0, countryLimit);

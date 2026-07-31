@@ -22,7 +22,11 @@ import {
   classifyTransportError,
   resolveFromAddress,
 } from "../services/email-account.service.js";
-import { workspaceHasSendingInbox } from "../services/sending-readiness.js";
+import {
+  MEMBERSHIP_LAPSED_MESSAGE,
+  workspaceHasSendingInbox,
+  workspaceMembershipAllowsSending,
+} from "../services/sending-readiness.js";
 
 const NO_SENDING_INBOX_MESSAGE =
   "Connect at least one sending mailbox under /dashboard/inboxes before creating or activating a campaign.";
@@ -451,6 +455,10 @@ campaignRouter.post("/", requireAuth, async (req, res, next) => {
     }
     const { workspaceId } = (req as AuthedRequest).auth;
 
+    if (!(await workspaceMembershipAllowsSending(workspaceId))) {
+      return sendError(res, 402, "MEMBERSHIP_LAPSED", MEMBERSHIP_LAPSED_MESSAGE);
+    }
+
     if (!(await workspaceHasSendingInbox(workspaceId))) {
       return sendError(res, 409, "NO_SENDING_INBOX", NO_SENDING_INBOX_MESSAGE);
     }
@@ -807,6 +815,10 @@ campaignRouter.post("/:id/activate", requireAuth, async (req, res, next) => {
     if (!campaign)
       return sendError(res, 404, "NOT_FOUND", "Campaign not found");
 
+    if (!(await workspaceMembershipAllowsSending(workspaceId))) {
+      return sendError(res, 402, "MEMBERSHIP_LAPSED", MEMBERSHIP_LAPSED_MESSAGE);
+    }
+
     if (!(await workspaceHasSendingInbox(workspaceId))) {
       return sendError(res, 409, "NO_SENDING_INBOX", NO_SENDING_INBOX_MESSAGE);
     }
@@ -974,6 +986,10 @@ campaignRouter.post("/:id/launch", requireAuth, async (req, res, next) => {
         "INVALID_STATUS",
         `Campaign is ${campaign.status}; only DRAFT, PAUSED, or ACTIVE campaigns can be launched.`,
       );
+    }
+
+    if (!(await workspaceMembershipAllowsSending(workspaceId))) {
+      return sendError(res, 402, "MEMBERSHIP_LAPSED", MEMBERSHIP_LAPSED_MESSAGE);
     }
 
     if (!(await workspaceHasSendingInbox(workspaceId))) {
@@ -1395,6 +1411,10 @@ campaignRouter.post("/:id/staged/confirm", requireAuth, async (req, res, next) =
     });
     if (!campaign) return sendError(res, 404, "NOT_FOUND", "Campaign not found");
 
+    if (!(await workspaceMembershipAllowsSending(workspaceId))) {
+      return sendError(res, 402, "MEMBERSHIP_LAPSED", MEMBERSHIP_LAPSED_MESSAGE);
+    }
+
     if (!(await workspaceHasSendingInbox(workspaceId))) {
       return sendError(res, 409, "NO_SENDING_INBOX", NO_SENDING_INBOX_MESSAGE);
     }
@@ -1535,6 +1555,10 @@ campaignRouter.post("/:id/send-now", requireAuth, async (req, res, next) => {
       where: { id: req.params.id, workspaceId },
     });
     if (!campaign) return sendError(res, 404, "NOT_FOUND", "Campaign not found");
+
+    if (!(await workspaceMembershipAllowsSending(workspaceId))) {
+      return sendError(res, 402, "MEMBERSHIP_LAPSED", MEMBERSHIP_LAPSED_MESSAGE);
+    }
 
     if (!(await workspaceHasSendingInbox(workspaceId))) {
       return sendError(res, 409, "NO_SENDING_INBOX", NO_SENDING_INBOX_MESSAGE);

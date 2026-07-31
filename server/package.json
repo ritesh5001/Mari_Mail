@@ -9,7 +9,8 @@
     "start": "node dist/server/src/index.js",
     "worker": "tsx src/worker.ts",
     "lint": "eslint src --ext .ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:payments": "node scripts/razorpay-signature.test.mjs && node scripts/membership.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",

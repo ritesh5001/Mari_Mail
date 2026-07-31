@@ -2,11 +2,12 @@ import { Queue, Worker, type Job } from "bullmq";
 import type { Redis } from "ioredis";
 import { recomputeEngagementScores } from "../services/engagement-scoring.service.js";
 import { sendWeeklyDigests } from "../services/digest.service.js";
+import { sweepMemberships } from "../services/membership-sweep.service.js";
 import { workerOptionsFor } from "./shared-worker-options.js";
 
 const QUEUE_NAME = "analytics-cron";
 
-type CronJobName = "engagement-score" | "weekly-digest";
+type CronJobName = "engagement-score" | "weekly-digest" | "membership-sweep";
 
 export async function registerAnalyticsCrons(connection: Redis) {
   const queue = new Queue<Record<string, never>, void, CronJobName>(QUEUE_NAME, { connection });
@@ -33,6 +34,21 @@ export async function registerAnalyticsCrons(connection: Redis) {
     },
   );
 
+  // Membership lifecycle: renewal reminders, past-due transitions and
+  // post-grace downgrades. Hourly rather than daily so a workspace that renews
+  // mid-morning isn't told it lapsed, and so a missed run costs an hour rather
+  // than a day. Every step is idempotent, so extra runs are free.
+  await queue.add(
+    "membership-sweep",
+    {},
+    {
+      jobId: "membership-sweep",
+      repeat: { pattern: "15 * * * *" },
+      removeOnComplete: true,
+      removeOnFail: false,
+    },
+  );
+
   return queue;
 }
 
@@ -40,6 +56,10 @@ export function startAnalyticsCronWorker(connection: Redis) {
   return new Worker<Record<string, never>, { ok: boolean; detail?: unknown }, CronJobName>(
     QUEUE_NAME,
     async (job: Job<Record<string, never>, { ok: boolean; detail?: unknown }, CronJobName>) => {
+      if (job.name === "membership-sweep") {
+        const result = await sweepMemberships();
+        return { ok: true, detail: result };
+      }
       if (job.name === "engagement-score") {
         const result = await recomputeEngagementScores();
         return { ok: true, detail: result };

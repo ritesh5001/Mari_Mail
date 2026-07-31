@@ -277,12 +277,41 @@ enum BillingStatus {
 
 enum PaymentLinkKind {
   STRIPE // hosted Stripe Payment Link generated from the admin panel
+  RAZORPAY // hosted Razorpay Payment Link generated from the admin panel
   MANUAL // any external/off-platform URL pasted by the admin
 }
 
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+  /// Recorded off-platform (bank transfer, cash) and marked paid by an admin.
+  MANUAL
+}
+
+enum PaymentStatus {
+  /// Order created at the gateway; the customer has not paid yet.
+  CREATED
+  /// Money captured and the purchase provisioned.
+  PAID
+  /// The gateway reported the attempt failed.
+  FAILED
+  /// Abandoned at the checkout sheet.
+  CANCELED
+  REFUNDED
+}
+
+enum PaymentPurpose {
+  /// A month of a subscription plan.
+  PLAN
+  /// A one-off credit top-up.
+  CREDITS
+  /// An admin-created payment link with bespoke grants.
+  PAYMENT_LINK
+}
+
 enum PaymentLinkStatus {
-  PENDING  // created, awaiting payment
-  PAID     // paid (Stripe webhook, or admin manually marked paid) → provisioned
+  PENDING // created, awaiting payment
+  PAID // paid (Stripe webhook, or admin manually marked paid) → provisioned
   CANCELED // voided by an admin
 }
 
@@ -347,6 +376,7 @@ model User {
   serviceRecords      ServiceRecord[]      @relation("ServiceRecordCreator")
   creditLedger        CreditLedger[]       @relation("CreditLedgerActor")
   paymentLinks        PaymentLink[]        @relation("PaymentLinkCreator")
+  payments            Payment[]            @relation("PaymentInitiator")
   adminAuditLog       AdminAuditLog[]      @relation("AdminAuditActor")
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
@@ -373,70 +403,87 @@ model Account {
 }
 
 model Workspace {
-  id                   String                     @id @default(cuid())
-  name                 String
-  slug                 String                     @unique
-  companyType          CompanyType                @default(MARINE_SERVICE_COMPANY)
-  primaryService       String?
-  timezone             String                     @default("UTC")
-  targetPortCountry    String?
+  id                       String                     @id @default(cuid())
+  name                     String
+  slug                     String                     @unique
+  companyType              CompanyType                @default(MARINE_SERVICE_COMPANY)
+  primaryService           String?
+  timezone                 String                     @default("UTC")
+  targetPortCountry        String?
   // Default random send-gap range (seconds) seeded onto every new campaign so
   // outgoing mail is paced like a human by default. 300–1200 = 5–20 minutes.
-  defaultSendGapMinSeconds Int                    @default(300)
-  defaultSendGapMaxSeconds Int                    @default(1200)
-  onboardedAt          DateTime?
-  ownerId              String
-  plan                 BillingPlan                @default(STARTER)
-  billingStatus        BillingStatus              @default(TRIALING)
-  stripeCustomerId     String?                    @unique
-  stripeSubscriptionId String?                    @unique
-  stripePriceId        String?
-  currentPeriodEnd     DateTime?
-  trialEndsAt          DateTime?
-  creditBalance        Int                        @default(500)
-  vesselLimit          Int                        @default(50)
-  emailLimit           Int                        @default(5000)
-  inboxLimit           Int                        @default(1)
-  teamLimit            Int                        @default(1)
+  defaultSendGapMinSeconds Int                        @default(300)
+  defaultSendGapMaxSeconds Int                        @default(1200)
+  onboardedAt              DateTime?
+  ownerId                  String
+  plan                     BillingPlan                @default(STARTER)
+  billingStatus            BillingStatus              @default(TRIALING)
+  stripeCustomerId         String?                    @unique
+  stripeSubscriptionId     String?                    @unique
+  stripePriceId            String?
+  // Razorpay has no subscription object in this integration — renewals are
+  // one-off orders — so only the customer handle is worth persisting, to keep
+  // the prefill and payment history tied to one identity.
+  razorpayCustomerId       String?                    @unique
+  currentPeriodEnd         DateTime?
+  trialEndsAt              DateTime?
+  // Which gateway last took money for this workspace. Drives which "manage
+  // billing" affordance the UI offers, since Stripe has a hosted portal and
+  // Razorpay one-off orders do not.
+  paymentProvider          PaymentProvider?
+  // Set when a renewal reminder goes out, so the daily sweep can't email the
+  // same workspace twice for the same expiry.
+  lastRenewalReminderAt    DateTime?
+  // Set when the grace period expires and access is actually reduced.
+  downgradedAt             DateTime?
+  creditBalance            Int                        @default(500)
+  vesselLimit              Int                        @default(50)
+  emailLimit               Int                        @default(5000)
+  inboxLimit               Int                        @default(1)
+  teamLimit                Int                        @default(1)
   // How many target countries this workspace may access. Set per plan and,
   // for Enterprise, negotiated per-deal by an admin. Stored + admin-controlled;
   // not yet hard-enforced in product flows.
-  countryLimit         Int                        @default(1)
+  countryLimit             Int                        @default(1)
   // The specific countries granted (ISO names / codes), up to countryLimit.
-  allowedCountries     String[]                   @default([])
-  createdAt            DateTime                   @default(now())
-  updatedAt            DateTime                   @updatedAt
-  owner                User                       @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-  members              WorkspaceMember[]
-  sessions             Session[]
-  vessels              Vessel[]
-  shipOwners           ShipOwnerCompany[]
-  ismManagers          ISMManagerCompany[]
-  commercialManagers   CommercialManagerCompany[]
-  contacts             Contact[]
-  contactLists         ContactList[]
-  savedContacts        SavedContact[]
-  savedFilters         SavedFilter[]
-  vesselEtas           VesselETA[]
-  campaigns            Campaign[]
-  campaignContacts     CampaignContact[]
-  emailEvents          EmailEvent[]
-  etaTriggers          ETATrigger[]
-  portCampaignRules    PortCampaignRule[]
-  cargoChangeTriggers  CargoChangeTrigger[]
-  emailAccounts        EmailAccount[]
-  sendingDomains       SendingDomain[]
-  suppressions         GlobalSuppression[]
-  serviceRecords       ServiceRecord[]
-  creditLedger         CreditLedger[]
-  billingEvents        BillingEvent[]
-  marineDataRows       MarineDataRow[]
-  sentMessages         SentMessage[]
-  paymentLinks         PaymentLink[]
+  allowedCountries         String[]                   @default([])
+  createdAt                DateTime                   @default(now())
+  updatedAt                DateTime                   @updatedAt
+  owner                    User                       @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  members                  WorkspaceMember[]
+  sessions                 Session[]
+  vessels                  Vessel[]
+  shipOwners               ShipOwnerCompany[]
+  ismManagers              ISMManagerCompany[]
+  commercialManagers       CommercialManagerCompany[]
+  contacts                 Contact[]
+  contactLists             ContactList[]
+  savedContacts            SavedContact[]
+  savedFilters             SavedFilter[]
+  vesselEtas               VesselETA[]
+  campaigns                Campaign[]
+  campaignContacts         CampaignContact[]
+  emailEvents              EmailEvent[]
+  etaTriggers              ETATrigger[]
+  portCampaignRules        PortCampaignRule[]
+  cargoChangeTriggers      CargoChangeTrigger[]
+  emailAccounts            EmailAccount[]
+  sendingDomains           SendingDomain[]
+  suppressions             GlobalSuppression[]
+  serviceRecords           ServiceRecord[]
+  creditLedger             CreditLedger[]
+  billingEvents            BillingEvent[]
+  marineDataRows           MarineDataRow[]
+  sentMessages             SentMessage[]
+  paymentLinks             PaymentLink[]
+  payments                 Payment[]
 
   @@index([ownerId])
   @@index([plan])
   @@index([stripeCustomerId])
+  // The renewal sweep scans by status + period end every day; without this it
+  // is a full table scan of every workspace.
+  @@index([billingStatus, currentPeriodEnd])
 }
 
 model WorkspaceMember {
@@ -1344,15 +1391,73 @@ model ServiceRecord {
   @@index([serviceDate])
 }
 
-model BillingEvent {
-  id            String    @id @default(cuid())
-  workspaceId   String
-  stripeEventId String    @unique
-  eventType     String
-  payload       Json
-  processedAt   DateTime  @default(now())
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+/// One attempt to take money, from any gateway.
+///
+/// Created BEFORE the customer is sent to checkout, so an abandoned or failed
+/// payment leaves a trace rather than vanishing. The row also carries what to
+/// provision on success, which is what makes fulfilment idempotent: the webhook
+/// and the browser callback both race to mark the same row PAID, and only the
+/// transition CREATED -> PAID grants anything.
+model Payment {
+  id          String          @id @default(cuid())
+  workspaceId String
+  /// Who started the checkout. Kept for audit; deleting the user keeps the row.
+  userId      String?
+  provider    PaymentProvider
+  status      PaymentStatus   @default(CREATED)
+  purpose     PaymentPurpose
 
+  /// Charged amount in the smallest currency unit (cents for USD). Integer —
+  /// never a float, and never re-derived from the catalog at fulfilment time,
+  /// so a later price change cannot retroactively alter a past charge.
+  amountCents Int
+  currency    String @default("USD")
+
+  /// What success provisions. Snapshotted at creation for the same reason.
+  grantPlan    BillingPlan?
+  grantCredits Int?
+  /// Days of access this payment buys.
+  periodDays   Int?
+
+  /// Gateway handles. Unique so a replayed webhook can't double-provision.
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
+  stripeSessionId   String? @unique
+  /// Present for admin payment links (PAYMENT_LINK purpose).
+  paymentLinkId     String?
+
+  /// Gateway-reported failure, shown in payment history.
+  failureReason String?
+  /// Set exactly once, when the payment is provisioned.
+  paidAt        DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?     @relation("PaymentInitiator", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([status])
+}
+
+/// Webhook receipts, used purely for idempotency and audit.
+///
+/// `stripeEventId` was the unique key, which only worked while Stripe was the
+/// only gateway. Razorpay event ids come from a different namespace and could
+/// in principle collide, so the key is now (provider, providerEventId).
+model BillingEvent {
+  id              String          @id @default(cuid())
+  workspaceId     String
+  provider        PaymentProvider @default(STRIPE)
+  providerEventId String
+  /// Legacy column, retained so historical Stripe receipts stay readable.
+  stripeEventId   String?         @unique
+  eventType       String
+  payload         Json
+  processedAt     DateTime        @default(now())
+  workspace       Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerEventId])
   @@index([workspaceId])
   @@index([eventType])
 }
@@ -1364,29 +1469,29 @@ model BillingEvent {
 // or an admin manually marking it paid) the grants are provisioned onto the
 // workspace.
 model PaymentLink {
-  id               String            @id @default(cuid())
-  workspaceId      String
-  createdById      String?
-  kind             PaymentLinkKind
-  status           PaymentLinkStatus @default(PENDING)
-  description      String?
+  id                  String            @id @default(cuid())
+  workspaceId         String
+  createdById         String?
+  kind                PaymentLinkKind
+  status              PaymentLinkStatus @default(PENDING)
+  description         String?
   // Amount in the smallest currency unit (cents) so Stripe math is exact.
-  amountCents      Int
-  currency         String            @default("usd")
-  url              String // the payment URL (Stripe-generated or admin-pasted)
+  amountCents         Int
+  currency            String            @default("usd")
+  url                 String // the payment URL (Stripe-generated or admin-pasted)
   // What to provision on payment:
-  grantPlan        BillingPlan? // optional plan to apply
-  grantCountryLimit Int? // optional new country allowance
-  grantCountries   String[]          @default([]) // specific countries to grant
-  grantCredits     Int? // optional credit top-up
+  grantPlan           BillingPlan? // optional plan to apply
+  grantCountryLimit   Int? // optional new country allowance
+  grantCountries      String[]          @default([]) // specific countries to grant
+  grantCredits        Int? // optional credit top-up
   // Stripe references (STRIPE kind only):
-  stripePaymentLinkId String?        @unique
-  stripeSessionId  String?           @unique
-  paidAt           DateTime?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy        User?             @relation("PaymentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  stripePaymentLinkId String?           @unique
+  stripeSessionId     String?           @unique
+  paidAt              DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  workspace           Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy           User?             @relation("PaymentLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([workspaceId])
   @@index([status])
@@ -1468,42 +1573,42 @@ model DemoSettings {
 }
 
 model MaribizSettings {
-  id                  String   @id @default("singleton")
-  enabled             Boolean  @default(false)
-  cacheTtlSeconds     Int      @default(1800)
-  maxResultsPerQuery  Int      @default(25)
-  lastTestAt          DateTime?
-  lastTestStatus      String?
-  lastTestError       String?
-  lastTestTotalRows   Int?
-  lastTestLatencyMs   Int?
-  updatedAt           DateTime @updatedAt
-  updatedById         String?
+  id                 String    @id @default("singleton")
+  enabled            Boolean   @default(false)
+  cacheTtlSeconds    Int       @default(1800)
+  maxResultsPerQuery Int       @default(25)
+  lastTestAt         DateTime?
+  lastTestStatus     String?
+  lastTestError      String?
+  lastTestTotalRows  Int?
+  lastTestLatencyMs  Int?
+  updatedAt          DateTime  @updatedAt
+  updatedById        String?
 }
 
 model DataSourceSettings {
-  id                       String   @id @default("singleton")
-  internalEnabled          Boolean  @default(true)
-  persistApolloSearchRows  Boolean  @default(true)
-  updatedAt                DateTime @updatedAt
-  updatedById              String?
+  id                      String   @id @default("singleton")
+  internalEnabled         Boolean  @default(true)
+  persistApolloSearchRows Boolean  @default(true)
+  updatedAt               DateTime @updatedAt
+  updatedById             String?
 }
 
 model ApolloSettings {
-  id                      String   @id @default("singleton")
-  enabled                 Boolean  @default(false)
-  apiKey                  Json?
-  apiBaseUrl              String   @default("https://api.apollo.io/api/v1")
-  cacheTtlSeconds         Int      @default(1800)
-  maxResultsPerQuery      Int      @default(25)
-  creditsPerEmailReveal   Int      @default(1)
-  creditsPerPhoneReveal   Int      @default(1)
-  lastTestAt              DateTime?
-  lastTestStatus          String?
-  lastTestError           String?
-  lastTestLatencyMs       Int?
-  updatedAt               DateTime @updatedAt
-  updatedById             String?
+  id                    String    @id @default("singleton")
+  enabled               Boolean   @default(false)
+  apiKey                Json?
+  apiBaseUrl            String    @default("https://api.apollo.io/api/v1")
+  cacheTtlSeconds       Int       @default(1800)
+  maxResultsPerQuery    Int       @default(25)
+  creditsPerEmailReveal Int       @default(1)
+  creditsPerPhoneReveal Int       @default(1)
+  lastTestAt            DateTime?
+  lastTestStatus        String?
+  lastTestError         String?
+  lastTestLatencyMs     Int?
+  updatedAt             DateTime  @updatedAt
+  updatedById           String?
 }
 
 // Platform-wide cache of Apollo persons we've paid to reveal. Keyed by the

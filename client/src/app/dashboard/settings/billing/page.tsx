@@ -1,110 +1,179 @@
-import Link from "next/link";
-import { CreditCard, Check } from "lucide-react";
-import { BillingActions } from "@/components/billing/BillingActions";
-import { CREDIT_PACKS, PLAN_CATALOG, getBillingOverview, requireBillingWorkspace } from "@/lib/billing-data";
+import { Check } from "lucide-react";
+import { formatUsdCents, planRank, type PlanKey } from "@marimail/utils/plans";
+import { CheckoutButton } from "@/components/billing/CheckoutButton";
+import { MembershipStatus } from "@/components/billing/MembershipStatus";
+import { PaymentHistory } from "@/components/billing/PaymentHistory";
+import { StripePortalLink } from "@/components/billing/StripePortalLink";
+import { UsageBar } from "@/components/billing/UsageBar";
+import {
+  CREDIT_PACKS,
+  GRACE_PERIOD_DAYS,
+  PLAN_CATALOG,
+  getBillingOverview,
+  requireBillingWorkspace,
+} from "@/lib/billing-data";
 
 export const dynamic = "force-dynamic";
 
 export default async function BillingPage() {
-  const { workspaceId } = await requireBillingWorkspace();
-  const { workspace, usage, ledger } = await getBillingOverview(workspaceId);
+  const { workspaceId, userName, userEmail } = await requireBillingWorkspace();
+  const { workspace, membership, usage, ledger, payments } = await getBillingOverview(workspaceId);
+
+  const currentRank = planRank(workspace.plan as PlanKey);
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-shell">
-        <div className="flex items-center gap-3">
-          <CreditCard className="h-6 w-6 text-ocean" />
-          <div>
-            <h2 className="text-2xl font-semibold text-slate-950">Billing & Credits</h2>
-            <p className="text-sm text-slate-600">Manage your plan, monitor usage, and top up MariMail DB credits.</p>
-          </div>
+      <header>
+        <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Plan &amp; billing</h1>
+        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
+          Your membership, what you&rsquo;re using it for, and every payment on record.
+        </p>
+      </header>
+
+      <MembershipStatus membership={membership} gracePeriodDays={GRACE_PERIOD_DAYS} />
+
+      {/* Usage against the plan's limits, as bars. The question a customer
+          actually has is "how close am I to needing the next tier", and two
+          bare numbers side by side don't answer it at a glance. */}
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">This month</h2>
+          <p className="text-sm text-slate-500 dark:text-white/50">
+            <span className="font-semibold text-slate-900 dark:text-white">
+              {workspace.creditBalance.toLocaleString("en-US")}
+            </span>{" "}
+            contact credits remaining
+          </p>
         </div>
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-          <Stat label="Plan" value={workspace.plan} />
-          <Stat label="Status" value={workspace.billingStatus} />
-          <Stat label="Credits" value={workspace.creditBalance.toLocaleString("en")} />
-          <Stat label="Renews" value={workspace.currentPeriodEnd ? new Date(workspace.currentPeriodEnd).toLocaleDateString() : "—"} />
-        </dl>
-        <p className="mt-3 text-xs text-slate-500">Usage this month: {usage.vessels.toLocaleString("en")} vessels (of {workspace.vesselLimit.toLocaleString("en")}) · {usage.emails.toLocaleString("en")} emails (of {workspace.emailLimit.toLocaleString("en")}).</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <BillingActions stripeCustomerConnected={Boolean(workspace.stripeCustomerId)} />
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <UsageBar label="Vessels tracked" used={usage.vessels} limit={workspace.vesselLimit} />
+          <UsageBar label="Emails sent" used={usage.emails} limit={workspace.emailLimit} />
+          <UsageBar label="Sending inboxes" used={usage.inboxes} limit={workspace.inboxLimit} />
+          <UsageBar
+            label="Countries"
+            used={workspace.allowedCountries.length}
+            limit={workspace.countryLimit}
+          />
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {PLAN_CATALOG.map((plan) => {
-          const isCurrent = workspace.plan === plan.plan;
-          return (
-            <article key={plan.plan} className={`flex flex-col rounded-lg border bg-white p-5 shadow-sm ${isCurrent ? "border-ocean ring-1 ring-ocean" : "border-slate-200"}`}>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-ocean">{plan.label}</p>
-                <p className="mt-2 text-3xl font-semibold text-navy">{plan.priceUsd ? `$${plan.priceUsd}` : "Custom"}<span className="text-sm font-normal text-slate-500">{plan.priceUsd ? "/mo" : ""}</span></p>
-              </div>
-              <ul className="mt-3 flex-1 space-y-1 text-sm text-slate-600">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 text-emerald-500" />{feature}</li>
-                ))}
-              </ul>
-              <BillingActions inlinePlan={plan.plan} disabled={isCurrent} stripeCustomerConnected={Boolean(workspace.stripeCustomerId)} />
-            </article>
-          );
-        })}
+      <section id="plans" className="scroll-mt-6">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Plans</h2>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">
+          Each payment covers 30 days. Renewing early adds to the time you already have — you never
+          lose unused days.
+        </p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {PLAN_CATALOG.map((plan) => {
+            const isCurrent = workspace.plan === plan.key;
+            const rank = planRank(plan.key);
+            return (
+              <article
+                key={plan.key}
+                className={`flex flex-col rounded-lg border p-5 ${
+                  isCurrent
+                    ? "border-accent-500 bg-white ring-1 ring-accent-500 dark:bg-[#0a0a0c]"
+                    : "border-slate-200 bg-white dark:border-white/[0.08] dark:bg-[#0a0a0c]"
+                }`}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-accent-600 dark:text-accent-300">
+                    {plan.label}
+                  </p>
+                  {isCurrent ? (
+                    <span className="rounded-full bg-accent-500/10 px-2 py-0.5 text-[11px] font-semibold text-accent-600 dark:text-accent-300">
+                      Current
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-3xl font-semibold text-slate-950 dark:text-white">
+                  {plan.priceCents === null ? "Custom" : formatUsdCents(plan.priceCents)}
+                  {plan.priceCents !== null ? (
+                    <span className="text-sm font-normal text-slate-500 dark:text-white/45">
+                      /mo
+                    </span>
+                  ) : null}
+                </p>
+
+                <ul className="mt-3 flex-1 space-y-1.5 text-sm text-slate-600 dark:text-white/60">
+                  {plan.features.map((feature) => (
+                    <li key={feature} className="flex items-start gap-2">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-4">
+                  {plan.priceCents === null ? (
+                    <a
+                      href="/book-demo"
+                      className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50 dark:border-white/15 dark:text-white/80 dark:hover:bg-white/[0.06]"
+                    >
+                      Talk to sales
+                    </a>
+                  ) : (
+                    <CheckoutButton
+                      target={{ plan: plan.key }}
+                      user={{ name: userName, email: userEmail }}
+                      variant={rank >= currentRank ? "primary" : "secondary"}
+                      label={
+                        isCurrent
+                          ? "Renew for 30 days"
+                          : rank > currentRank
+                            ? `Upgrade to ${plan.label}`
+                            : `Switch to ${plan.label}`
+                      }
+                    />
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Credit add-on packs</h3>
-        <p className="text-xs text-slate-500">Credits replenish monthly with your plan. Buy add-on packs anytime — they don't expire.</p>
-        <div className="mt-3 grid gap-3 md:grid-cols-3">
+      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Credit top-ups</h2>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">
+          Your plan replenishes credits every paid month. Top-ups are one-off and never expire.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
           {CREDIT_PACKS.map((pack) => (
-            <article key={pack.packKey} className="flex flex-col rounded-md border border-slate-200 p-4">
-              <p className="text-sm text-slate-500">{pack.credits.toLocaleString("en")} credits</p>
-              <p className="mt-1 text-2xl font-semibold text-navy">${pack.priceUsd}</p>
-              <BillingActions inlineCreditPack={pack.packKey} stripeCustomerConnected={Boolean(workspace.stripeCustomerId)} />
+            <article
+              key={pack.packKey}
+              className="flex flex-col rounded-lg border border-slate-200 p-4 dark:border-white/10"
+            >
+              <p className="text-sm text-slate-500 dark:text-white/50">
+                {pack.credits.toLocaleString("en-US")} credits
+              </p>
+              <p className="mb-3 mt-1 text-2xl font-semibold text-slate-950 dark:text-white">
+                {formatUsdCents(pack.priceCents)}
+              </p>
+              <div className="mt-auto">
+                <CheckoutButton
+                  target={{ creditPack: pack.packKey }}
+                  user={{ name: userName, email: userEmail }}
+                  variant="secondary"
+                  label="Buy credits"
+                />
+              </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Credit ledger</h3>
-        <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2">When</th>
-                <th className="px-3 py-2">Reason</th>
-                <th className="px-3 py-2">Detail</th>
-                <th className="px-3 py-2 text-right">Δ</th>
-                <th className="px-3 py-2 text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ledger.length === 0 ? (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">No ledger entries yet.</td></tr>
-              ) : ledger.map((entry) => (
-                <tr key={entry.id} className="border-t border-slate-100">
-                  <td className="px-3 py-2 text-slate-600">{new Date(entry.createdAt).toLocaleString()}</td>
-                  <td className="px-3 py-2 text-slate-600">{entry.reason.replace(/_/g, " ")}</td>
-                  <td className="px-3 py-2 text-slate-500 truncate max-w-xs">{entry.detail ?? "—"}</td>
-                  <td className={`px-3 py-2 text-right font-semibold ${entry.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>{entry.delta > 0 ? "+" : ""}{entry.delta}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{entry.balance.toLocaleString("en")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <PaymentHistory payments={payments} ledger={ledger} />
+
+      {/* Only for workspaces that subscribed before Razorpay became the
+          default — their subscription still renews through Stripe, and the
+          portal is the only place they can change a card or cancel. */}
+      {workspace.stripeCustomerId ? (
+        <div className="border-t border-slate-200 pt-4 dark:border-white/[0.08]">
+          <StripePortalLink />
         </div>
-      </section>
-
-      <p className="text-xs text-slate-400">Need to cancel or update payment method? <Link href="#" className="text-ocean hover:underline">Open Stripe portal</Link> via the actions above.</p>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-slate-50 px-3 py-2">
-      <dt className="text-xs uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 text-lg font-semibold text-navy">{value}</dd>
+      ) : null}
     </div>
   );
 }

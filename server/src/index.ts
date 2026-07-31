@@ -9,6 +9,7 @@ import { Server } from "socket.io";
 import { analyticsRouter } from "./routes/analytics.js";
 import { authRouter } from "./routes/auth.js";
 import { billingRouter, billingWebhookRouter } from "./routes/billing.js";
+import { razorpayRouter, razorpayWebhookRouter } from "./routes/razorpay.js";
 import { campaignRouter } from "./routes/campaigns.js";
 import { companyRouter } from "./routes/companies.js";
 import { contactRouter } from "./routes/contacts.js";
@@ -113,9 +114,11 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Stripe signs its own payloads and sends no Origin header — it is mounted
-// before both the body parsers (it needs the raw body) and the CSRF guard.
+// Gateways sign their own payloads and send no Origin header, so both webhook
+// routers mount before the body parsers (they verify over the RAW bytes) and
+// before the CSRF guard.
 app.use("/api/billing", billingWebhookRouter);
+app.use("/api/razorpay", razorpayWebhookRouter);
 app.use(compression());
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: false, limit: bodyLimit }));
@@ -255,6 +258,7 @@ app.use("/api/inbound", inboundRouter);
 app.use("/api/unsubscribe", unsubscribeRouter);
 app.use("/api/analytics", analyticsRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/razorpay", razorpayRouter);
 app.use("/api/admin/maribiz", adminMaribizRouter);
 app.use("/api/admin/apollo", adminApolloRouter);
 app.use("/api/admin/data-sources", adminDataSourcesRouter);

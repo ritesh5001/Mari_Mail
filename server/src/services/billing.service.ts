@@ -1,74 +1,22 @@
 import { prisma, type BillingPlan, type BillingStatus, type Workspace, Prisma } from "@marimail/db";
+import {
+  CREDIT_PACKS,
+  PLANS,
+  planLimits as sharedPlanLimits,
+  type PlanDefinition as SharedPlanDefinition,
+} from "@marimail/utils/plans";
 
-export type PlanDefinition = {
-  plan: BillingPlan;
-  label: string;
-  priceUsd: number;
-  vesselLimit: number;
-  emailLimit: number;
-  inboxLimit: number;
-  teamLimit: number;
-  monthlyCredits: number;
-  features: string[];
-  stripePriceEnvVar?: string;
-};
+/**
+ * Plan data now lives in `@marimail/utils/plans` so the marketing page, the
+ * signup picker, this service and both payment gateways cannot disagree about
+ * what a plan costs. The catalog below is a re-export kept for the existing
+ * call sites; new code should import from the shared module directly.
+ */
+export type PlanDefinition = SharedPlanDefinition;
 
-export const PLAN_CATALOG: Record<BillingPlan, PlanDefinition> = {
-  STARTER: {
-    plan: "STARTER",
-    label: "Starter",
-    priceUsd: 49,
-    vesselLimit: 50,
-    emailLimit: 5_000,
-    inboxLimit: 1,
-    teamLimit: 1,
-    monthlyCredits: 500,
-    features: ["50 vessels", "5,000 emails/month", "5 ETA campaigns", "1 inbox", "1 seat", "500 DB credits"],
-    stripePriceEnvVar: "STRIPE_PRICE_STARTER",
-  },
-  PRO: {
-    plan: "PRO",
-    label: "Pro",
-    priceUsd: 99,
-    vesselLimit: 250,
-    emailLimit: 25_000,
-    inboxLimit: 5,
-    teamLimit: 5,
-    monthlyCredits: 2_500,
-    features: ["250 vessels", "25,000 emails/month", "Unlimited ETA campaigns", "5 inboxes", "5 seats", "2,500 DB credits"],
-    stripePriceEnvVar: "STRIPE_PRICE_PRO",
-  },
-  BUSINESS: {
-    plan: "BUSINESS",
-    label: "Business",
-    priceUsd: 249,
-    vesselLimit: 1_000,
-    emailLimit: 100_000,
-    inboxLimit: 20,
-    teamLimit: 20,
-    monthlyCredits: 10_000,
-    features: ["1,000 vessels", "100,000 emails/month", "Unlimited ETA campaigns", "20 inboxes", "20 seats", "10,000 DB credits"],
-    stripePriceEnvVar: "STRIPE_PRICE_BUSINESS",
-  },
-  ENTERPRISE: {
-    plan: "ENTERPRISE",
-    label: "Enterprise",
-    priceUsd: 0,
-    vesselLimit: 1_000_000_000,
-    emailLimit: 1_000_000_000,
-    inboxLimit: 1_000,
-    teamLimit: 1_000,
-    monthlyCredits: 1_000_000,
-    features: ["Unlimited vessels", "Unlimited emails", "Unlimited seats", "Custom integrations", "API access"],
-    stripePriceEnvVar: "STRIPE_PRICE_ENTERPRISE",
-  },
-};
+export const PLAN_CATALOG: Record<BillingPlan, PlanDefinition> = PLANS;
 
-export const CREDIT_PACK_CATALOG = [
-  { packKey: "1000", credits: 1_000, priceUsd: 19, stripePriceEnvVar: "STRIPE_PRICE_CREDITS_1K" },
-  { packKey: "5000", credits: 5_000, priceUsd: 79, stripePriceEnvVar: "STRIPE_PRICE_CREDITS_5K" },
-  { packKey: "20000", credits: 20_000, priceUsd: 249, stripePriceEnvVar: "STRIPE_PRICE_CREDITS_20K" },
-] as const;
+export const CREDIT_PACK_CATALOG = CREDIT_PACKS;
 
 export const CREDIT_COST = {
   VIEW_VESSEL: 1,
@@ -77,14 +25,7 @@ export const CREDIT_COST = {
 } as const;
 
 export function planLimits(plan: BillingPlan) {
-  const def = PLAN_CATALOG[plan];
-  return {
-    vesselLimit: def.vesselLimit,
-    emailLimit: def.emailLimit,
-    inboxLimit: def.inboxLimit,
-    teamLimit: def.teamLimit,
-    monthlyCredits: def.monthlyCredits,
-  };
+  return sharedPlanLimits(plan);
 }
 
 export async function applyPlanToWorkspace(workspaceId: string, plan: BillingPlan, options?: { stripeCustomerId?: string; stripeSubscriptionId?: string; stripePriceId?: string; currentPeriodEnd?: Date; billingStatus?: BillingStatus; replenishCredits?: boolean; actorId?: string | null }) {

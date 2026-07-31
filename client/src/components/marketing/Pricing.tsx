@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check, Gift, Sparkles } from "lucide-react";
+import { PLANS, planPriceLabel } from "@marimail/utils/plans";
 
 // Early-access promo: every paid plan is free for our first users.
 const EARLY_ACCESS_SEATS = 100;
@@ -9,7 +10,7 @@ type Tier = {
   price: string;
   period?: string;
   description: string;
-  features: string[];
+  features: readonly string[];
   cta: string;
   href: string;
   highlight?: boolean;
@@ -18,52 +19,50 @@ type Tier = {
 
 const tiers: Tier[] = [
   {
-    name: "Starter",
-    price: "$49",
+    name: PLANS.STARTER.label,
+    // Prices and allowances come from the shared catalog. They were hardcoded
+    // here at $49/$149/Custom while signup charged $25/$45/$85 and the billing
+    // page charged $49/$99/$249 — three different answers to "what does this
+    // cost", one of which was about to be handed to a payment gateway.
+    price: planPriceLabel("STARTER").replace("/mo", ""),
     period: "/ month",
     description: "For solo operators dipping into ETA-driven outreach.",
-    features: [
-      "1 connected inbox",
-      "5,000 contacts",
-      "Vessel DBMS read access",
-      "Manual ETA triggers",
-      "Email + reply tracking",
-    ],
+    features: PLANS.STARTER.features,
     cta: "Claim free access",
-    href: "/book-demo",
+    href: "/register?plan=STARTER",
     freeEarlyAccess: true,
   },
   {
-    name: "Pro",
-    price: "$149",
+    name: PLANS.PRO.label,
+    price: planPriceLabel("PRO").replace("/mo", ""),
     period: "/ month",
-    description: "The full ETA engine, multi-inbox rotation, port radar.",
-    features: [
-      "5 connected inboxes",
-      "50,000 contacts",
-      "Full ETA & cargo trigger engine",
-      "Port Radar + saved smart lists",
-      "Warmup, DNS health, A/B testing",
-      "Priority support",
-    ],
+    description: "Two markets, the full ETA engine and inbox rotation.",
+    features: PLANS.PRO.features,
     cta: "Claim free access",
-    href: "/book-demo",
+    href: "/register?plan=PRO",
     highlight: true,
     freeEarlyAccess: true,
   },
   {
-    name: "Fleet",
+    name: PLANS.BUSINESS.label,
+    price: planPriceLabel("BUSINESS").replace("/mo", ""),
+    period: "/ month",
+    description: "For brokerages and shipping desks running several markets.",
+    features: PLANS.BUSINESS.features,
+    cta: "Claim free access",
+    href: "/register?plan=FLEET",
+    freeEarlyAccess: true,
+  },
+  {
+    // Enterprise was previously conflated with Fleet — the card said "Custom"
+    // and "Talk to sales" while carrying the tier name of a self-serve plan.
+    // They are separate products and now have separate cards.
+    name: PLANS.ENTERPRISE.label,
     price: "Custom",
-    description: "For brokerages and shipping desks running enterprise scale.",
-    features: [
-      "Unlimited inboxes & contacts",
-      "SSO + role-based access",
-      "Dedicated tenant + SLA",
-      "Custom data feeds & integrations",
-      "Onboarding engineer",
-    ],
+    description: "Unlimited countries, SSO and a dedicated tenant.",
+    features: PLANS.ENTERPRISE.features,
     cta: "Talk to sales",
-    href: "mailto:info@maribiz.ai",
+    href: "/book-demo",
   },
 ];
 
@@ -88,7 +87,7 @@ export function Pricing() {
           </p>
         </div>
 
-        <div className="mt-16 grid grid-cols-1 items-stretch gap-5 lg:grid-cols-3">
+        <div className="mt-16 grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 lg:grid-cols-4">
           {tiers.map((t) => (
             <div
               key={t.name}
