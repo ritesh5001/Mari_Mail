@@ -14,7 +14,13 @@ import { useClientSort } from "@/hooks/useClientSort";
 import { SortableHeader } from "@/components/table/SortableHeader";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSection";
-import { RoleFilterPanel, EMPTY_ROLE_FILTER, type RoleFilter } from "@/components/lists/RoleFilterPanel";
+import {
+  RoleFilterPanel,
+  EMPTY_ROLE_FILTER,
+  EMPTY_RESULT_FILTER,
+  type RoleFilter,
+  type ResultFilter,
+} from "@/components/lists/RoleFilterPanel";
 
 function listKindOf(
   list: ContactListDetailResponse["list"],
@@ -782,6 +788,7 @@ type ApolloListResponse = {
     page: number;
     nextPage: number | null;
     warnings: string[];
+    domainsOmitted?: number;
   };
   error?: { message?: string };
 };
@@ -798,6 +805,8 @@ type ApolloRolesState =
       allRows: ApolloRow[];
       warnings: string[];
       totalDomains: number;
+      /** Companies in the list the search couldn't cover — see the server cap. */
+      domainsOmitted?: number;
       loadedPage: number;
       nextPage: number | null;
       loadingMore: boolean;
@@ -883,8 +892,8 @@ export function CampaignByRolePanel({
   // Post-search result filters — narrow the already-fetched rows so unusable
   // contacts (no email on file) and off-target countries drop out of the list,
   // making it easier to pick the right people. Purely client-side; no re-search.
-  const [emailFilter, setEmailFilter] = useState<"all" | "available" | "unavailable">("all");
-  const [countryFilter, setCountryFilter] = useState<string>("all");
+  const [resultFilter, setResultFilter] = useState<ResultFilter>(EMPTY_RESULT_FILTER);
+
   // Workspace credit balance shown in the panel header. Loaded once on
   // mount from /api/billing/me; each successful reveal returns a fresh
   // balance so we can update this in place without another round-trip.
@@ -1109,6 +1118,7 @@ export function CampaignByRolePanel({
         allRows: d.rows,
         warnings: d.warnings,
         totalDomains: d.totalDomains,
+        domainsOmitted: d.domainsOmitted,
         loadedPage: d.page,
         nextPage: d.nextPage,
         loadingMore: false,
@@ -1227,9 +1237,10 @@ export function CampaignByRolePanel({
   const rowHasEmail = (r: ApolloRow) => r.emailAvailable !== false;
   const visibleRows = loaded
     ? loaded.allRows.filter((r) => {
-        if (emailFilter === "available" && !rowHasEmail(r)) return false;
-        if (emailFilter === "unavailable" && rowHasEmail(r)) return false;
-        if (countryFilter !== "all" && (r.country ?? "").trim() !== countryFilter) return false;
+        if (resultFilter.email === "available" && !rowHasEmail(r)) return false;
+        if (resultFilter.email === "unavailable" && rowHasEmail(r)) return false;
+        if (resultFilter.country !== "all" && (r.country ?? "").trim() !== resultFilter.country)
+          return false;
         return true;
       })
     : [];
@@ -1249,7 +1260,7 @@ export function CampaignByRolePanel({
       return changed ? next : prev;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emailFilter, countryFilter]);
+  }, [resultFilter]);
   // Feed distinct titles from the latest results back into the include-title
   // autocomplete so the user can pick a title they just saw.
   const suggestionsFromResults = loaded
@@ -1411,6 +1422,10 @@ export function CampaignByRolePanel({
         value={filter}
         onChange={setFilter}
         onApply={() => void runSearch(filter)}
+        resultFilter={resultFilter}
+        onResultFilterChange={setResultFilter}
+        countryOptions={countryOptions}
+        resultCount={loaded?.allRows.length ?? 0}
         suggestionsFromResults={suggestionsFromResults}
         companySuggestionsFromResults={companySuggestionsFromResults}
         fetchTitleSuggestions={fetchTitleSuggestions}
@@ -1469,50 +1484,19 @@ export function CampaignByRolePanel({
             <p className="text-[11px] text-slate-500 dark:text-white/50">
               {visibleRows.length}
               {visibleRows.length !== loaded.allRows.length ? ` of ${loaded.allRows.length}` : ""} match
-              {loaded.allRows.length === 1 ? "" : "es"} across {loaded.totalDomains} primary company domain
+              {loaded.allRows.length === 1 ? "" : "es"} across {loaded.totalDomains} company domain
               {loaded.totalDomains === 1 ? "" : "s"} — {summarizeFilter(loaded.filter)}.
+              {/* Say when the search didn't cover every company. This read
+                  "across 50 primary company domains" whether the list had 50 or
+                  500, so a truncated search looked complete. */}
+              {loaded.domainsOmitted && loaded.domainsOmitted > 0 ? (
+                <span className="ml-1 font-medium text-amber-700 dark:text-amber-300">
+                  {loaded.domainsOmitted} more {loaded.domainsOmitted === 1 ? "company" : "companies"} in
+                  this list weren&rsquo;t searched — split the list to cover them.
+                </span>
+              ) : null}
             </p>
 
-            {/* Post-search result filters: hide unusable / off-target contacts. */}
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={emailFilter}
-                onChange={(e) => setEmailFilter(e.target.value as typeof emailFilter)}
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
-                aria-label="Filter by email availability"
-              >
-                <option value="all">Email: all</option>
-                <option value="available">Email available</option>
-                <option value="unavailable">No email</option>
-              </select>
-              {countryOptions.length > 0 && (
-                <select
-                  value={countryFilter}
-                  onChange={(e) => setCountryFilter(e.target.value)}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
-                  aria-label="Filter by country"
-                >
-                  <option value="all">Country: all</option>
-                  {countryOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {(emailFilter !== "all" || countryFilter !== "all") && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEmailFilter("all");
-                    setCountryFilter("all");
-                  }}
-                  className="text-xs font-medium text-slate-500 hover:text-accent-500 dark:text-white/50 dark:hover:text-accent-300"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
             {visibleRows.length > 0 ? (
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {(() => {

@@ -304,6 +304,17 @@ async function findVesselsAssociatedToContactByDomain(
 const APOLLO_DOMAIN_CONCURRENCY = 4;
 
 /**
+ * Most company domains one search will cover.
+ *
+ * Every domain is one Apollo request, so this bounds the work — but it used to
+ * be 50 with no way for the caller to know it had bitten. Searching is free
+ * (only reveals spend credits) and the fan-out is now concurrency-limited and
+ * time-budgeted, so a higher ceiling costs latency at worst rather than
+ * risking a rate-limit cascade.
+ */
+const MAX_SEARCH_DOMAINS = 150;
+
+/**
  * Total wall-clock budget for the whole per-domain fan-out.
  *
  * Each domain can retry a rate limit a few times, so a pathological run could
@@ -736,7 +747,15 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
         vesselsByDomain.set(d, bucket);
       }
     }
-    const domains = Array.from(domainSet).slice(0, 50);
+    // Cap the fan-out, but REPORT it. This was a bare `.slice(0, 50)` and the
+    // response only ever carried the truncated length, so the UI said
+    // "across 50 primary company domains" whether the list had 50 or 500 —
+    // a list with 62 companies searched 50 and gave no indication the other 12
+    // were never looked at. Raised alongside the bounded-concurrency fan-out,
+    // which is what made a larger number safe to attempt.
+    const allDomains = Array.from(domainSet);
+    const domains = allDomains.slice(0, MAX_SEARCH_DOMAINS);
+    const domainsOmitted = allDomains.length - domains.length;
 
     if (!domains.length) {
       return sendData(res, { rows: [], titleHistogram: [], warnings: ["no_domains"] });
@@ -965,7 +984,11 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
       rows: rowsWithVessels,
       titleHistogram,
       totalContacts: apolloRows.length,
+      // Searched vs available, so the UI can say when it didn't cover
+      // everything instead of presenting a truncated count as complete.
       totalDomains: domains.length,
+      availableDomains: allDomains.length,
+      domainsOmitted,
       page: requestedPage,
       nextPage: apolloNextPage,
       warnings,

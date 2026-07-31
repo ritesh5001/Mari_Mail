@@ -17,6 +17,14 @@ export type RoleFilter = {
   seniorities: string[];
 };
 
+/** Refinements over results already fetched. Applied client-side, instantly. */
+export type ResultFilter = {
+  email: "all" | "available" | "unavailable";
+  country: string;
+};
+
+export const EMPTY_RESULT_FILTER: ResultFilter = { email: "all", country: "all" };
+
 /** Debounced live-suggestions loader — see RoleFilterPanel.fetchTitleSuggestions. */
 type SuggestFn = (draft: string) => Promise<string[]>;
 
@@ -54,11 +62,28 @@ const DEFAULT_TITLE_SUGGESTIONS = [
   "COO",
 ];
 
-// Seniority chips were removed from the UI on request — the filter surface
-// stayed too crowded and users weren't reaching for them. The `seniorities`
-// field is still on RoleFilter and still shipped to the server (Apollo can
-// filter by seniority when we ask), but nothing in this component sets it
-// anymore. Kept the type so old saved filters keep validating.
+/**
+ * Apollo's seniority buckets, as one row of toggles.
+ *
+ * These were dropped from the UI for being too crowded, which left the field
+ * on RoleFilter and still being sent to the server while nothing could set it
+ * — a filter we pay Apollo to support and no one could reach. Back as compact
+ * toggles rather than the old chip input: it is a short fixed vocabulary, so
+ * free-text entry with autocomplete was always the wrong control for it.
+ *
+ * Values are Apollo's own enum strings; the labels are ours.
+ */
+const SENIORITY_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "owner", label: "Owner" },
+  { value: "founder", label: "Founder" },
+  { value: "c_suite", label: "C-suite" },
+  { value: "vp", label: "VP" },
+  { value: "head", label: "Head" },
+  { value: "director", label: "Director" },
+  { value: "manager", label: "Manager" },
+  { value: "senior", label: "Senior" },
+  { value: "entry", label: "Entry" },
+];
 
 export function RoleFilterPanel({
   value,
@@ -71,6 +96,10 @@ export function RoleFilterPanel({
   fetchAllTitles,
   fetchAllCompanies,
   disabled,
+  resultFilter,
+  onResultFilterChange,
+  countryOptions = [],
+  resultCount,
 }: {
   value: RoleFilter;
   onChange: (next: RoleFilter) => void;
@@ -93,6 +122,19 @@ export function RoleFilterPanel({
   fetchAllTitles?: () => Promise<string[]>;
   fetchAllCompanies?: () => Promise<string[]>;
   disabled?: boolean;
+  /**
+   * Refinements applied to results already on screen. These used to be loose
+   * `<select>`s floating in the results bar — the same job as everything else
+   * in this panel, in a different place, with different behaviour and no
+   * indication either way. They live here now, in their own group, because
+   * unlike the fields above they take effect immediately rather than on Search.
+   */
+  resultFilter?: ResultFilter;
+  onResultFilterChange?: (next: ResultFilter) => void;
+  /** Countries present in the current results; empty hides the control. */
+  countryOptions?: string[];
+  /** Rows currently loaded — the refine group is meaningless without any. */
+  resultCount?: number;
 }) {
   const totalActive =
     value.includeTitles.length +
@@ -180,6 +222,41 @@ export function RoleFilterPanel({
           />
         </div>
 
+        <div>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+            Seniority
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SENIORITY_OPTIONS.map((option) => {
+              const active = value.seniorities.includes(option.value);
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={active}
+                  onClick={() =>
+                    patch({
+                      seniorities: active
+                        ? value.seniorities.filter((v) => v !== option.value)
+                        : [...value.seniorities, option.value],
+                    })
+                  }
+                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                    active
+                      ? "border-accent-500 bg-accent-500 text-[#ffffff]"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400 dark:text-white/35">
+            Leave all off to include every seniority.
+          </p>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
@@ -207,6 +284,76 @@ export function RoleFilterPanel({
           Search
         </button>
       </div>
+
+      {/*
+        Refinements over what's already on screen. Separated by a rule and
+        labelled "applies instantly" because these behave differently from
+        everything above: no Search click, no round trip. Presenting them
+        identically would make the Search button look broken when a dropdown
+        took effect without it — and burying them in the results bar (where
+        they were) made them look like something other than filters.
+
+        Hidden until there are results, since narrowing nothing is a dead
+        control.
+      */}
+      {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
+        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.06]">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+              Narrow these results
+            </p>
+            <span className="text-[11px] text-slate-400 dark:text-white/35">
+              applies instantly
+            </span>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <select
+                value={resultFilter.email}
+                onChange={(e) =>
+                  onResultFilterChange({
+                    ...resultFilter,
+                    email: e.target.value as ResultFilter["email"],
+                  })
+                }
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                aria-label="Filter by email availability"
+              >
+                <option value="all">Email: all</option>
+                <option value="available">Has an email</option>
+                <option value="unavailable">No email</option>
+              </select>
+
+              {countryOptions.length > 0 ? (
+                <select
+                  value={resultFilter.country}
+                  onChange={(e) =>
+                    onResultFilterChange({ ...resultFilter, country: e.target.value })
+                  }
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                  aria-label="Filter by country"
+                >
+                  <option value="all">Country: all</option>
+                  {countryOptions.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+
+              {resultFilter.email !== "all" || resultFilter.country !== "all" ? (
+                <button
+                  type="button"
+                  onClick={() => onResultFilterChange(EMPTY_RESULT_FILTER)}
+                  className="text-xs font-medium text-slate-500 hover:text-accent-500 dark:text-white/50 dark:hover:text-accent-300"
+                >
+                  Reset
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
