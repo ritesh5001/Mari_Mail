@@ -100,6 +100,13 @@ export type CsvImportJobView = {
   created: number | null;
   updated: number | null;
   errorCount: number | null;
+  /**
+   * A sample of the actual row problems, not just how many there were.
+   * The UI showed "93 row issue(s)" and nothing else, which left an operator
+   * with no way to find out what was wrong with those 93 rows. Capped so a
+   * pathological file can't return a megabyte of JSON.
+   */
+  rowIssues: Array<{ row: number; message: string }>;
   failedReason: string | null;
   createdAt: number | null;
   startedAt: number | null;
@@ -107,6 +114,9 @@ export type CsvImportJobView = {
   /** True when the job holds an active slot but no worker is running it. */
   stalled: boolean;
 };
+
+/** How many row problems to return per job. Enough to see the pattern. */
+const ROW_ISSUE_SAMPLE = 50;
 
 /** An active job whose lock lapsed this long ago is not being worked on. */
 const STALLED_AFTER_MS = 5 * 60_000;
@@ -156,6 +166,7 @@ export async function listCsvImportJobs(
           created: result?.created ?? null,
           updated: result?.updated ?? null,
           errorCount: result?.errors?.length ?? null,
+          rowIssues: (result?.errors ?? []).slice(0, ROW_ISSUE_SAMPLE),
           failedReason: job.failedReason ?? null,
           createdAt: job.timestamp ?? null,
           startedAt: job.processedOn ?? null,

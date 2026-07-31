@@ -23,6 +23,7 @@ type ImportJob = {
   created: number | null;
   updated: number | null;
   errorCount: number | null;
+  rowIssues: Array<{ row: number; message: string }>;
   failedReason: string | null;
   createdAt: number | null;
   startedAt: number | null;
@@ -274,6 +275,32 @@ function JobRow({ job, onRetried }: { job: ImportJob; onRetried: () => void }) {
           {job.updated != null ? ` · ${job.updated.toLocaleString()} updated` : ""}
           {job.errorCount ? ` · ${job.errorCount.toLocaleString()} row issue(s)` : ""}
         </p>
+      ) : null}
+
+      {/* The count alone ("93 row issue(s)") gave an operator no way to find
+          out what was actually wrong with those rows — which is exactly the
+          question a failed-looking import raises. */}
+      {job.rowIssues?.length ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-medium text-slate-500 hover:text-slate-800 dark:text-white/45 dark:hover:text-white/70">
+            Show what went wrong
+          </summary>
+          <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto rounded-md bg-slate-50 p-2.5 dark:bg-white/[0.04]">
+            {job.rowIssues.map((issue, i) => (
+              <li key={`${issue.row}-${i}`} className="text-xs text-slate-600 dark:text-white/55">
+                <span className="font-medium tabular-nums text-slate-400 dark:text-white/35">
+                  Row {issue.row}
+                </span>{" "}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+          {job.errorCount && job.errorCount > job.rowIssues.length ? (
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-white/35">
+              Showing the first {job.rowIssues.length} of {job.errorCount.toLocaleString()}.
+            </p>
+          ) : null}
+        </details>
       ) : null}
 
       {job.failedReason ? (
