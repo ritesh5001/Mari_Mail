@@ -113,12 +113,20 @@ function registerPlanCountryLimit(plan: SignupPlanKey): number {
 /**
  * Hard-block sign-in until the email address is confirmed.
  *
- * Off by default: switching it on without first backfilling
- * `emailVerified` for pre-existing accounts would lock out every current
- * customer, since they registered when verification didn't exist. Set
- * REQUIRE_EMAIL_VERIFICATION=true once the backfill has run.
+ * ON by default. It used to be opt-in (`=== "true"`), because enabling it
+ * before back-filling `emailVerified` would have locked out every customer who
+ * registered when verification didn't exist. That reason has expired: every
+ * account except the two created in the last few days is already verified, so
+ * there is no legacy population left to protect — and an unset env var was
+ * silently leaving registration wide open. Anyone could sign up as any address
+ * they don't own, get a trial, and start sending.
+ *
+ * Secure-by-default matters more than the escape hatch here: forgetting to set
+ * a variable should not be what makes the product insecure. Set
+ * REQUIRE_EMAIL_VERIFICATION=false to deliberately turn it off (local dev
+ * without a mail provider is the real use case).
  */
-const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION === "true";
+const REQUIRE_EMAIL_VERIFICATION = process.env.REQUIRE_EMAIL_VERIFICATION !== "false";
 
 
 
@@ -816,8 +824,26 @@ authRouter.post("/refresh", refreshRateLimit, async (req, res, next) => {
       return sendError(res, 401, "INVALID_REFRESH_TOKEN", "Refresh token invalid");
     }
 
-    setAuthCookies(res, rotated.accessToken, rotated.refreshToken);
     const session = await loadSession(rotated.state.userId);
+
+    // Enforce verification on refresh too, not just at login. Sessions live
+    // indefinitely by rotating a refresh token every ~12 minutes, so gating
+    // only the login endpoint would let anyone already signed in stay signed in
+    // forever without ever confirming their address — including the accounts
+    // that existed when this was switched on. Reads the flag off the session
+    // that was loaded anyway, so it costs no extra query.
+    if (REQUIRE_EMAIL_VERIFICATION && session && !session.user.emailVerified) {
+      await revokeRefreshToken(rotated.refreshToken).catch(() => undefined);
+      clearAuthCookies(res);
+      return sendError(
+        res,
+        403,
+        "EMAIL_NOT_VERIFIED",
+        "Please confirm your email address. Check your inbox for the verification link.",
+      );
+    }
+
+    setAuthCookies(res, rotated.accessToken, rotated.refreshToken);
     return sendData(res, session);
   } catch (error) {
     return next(error);
@@ -893,7 +919,18 @@ authRouter.post("/reset-password", resetTokenRateLimit, async (req, res, next) =
 
     const passwordHash = await bcrypt.hash(input.data.password, 12);
     await prisma.$transaction([
-      prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          // Completing a reset proves control of the mailbox — which is
+          // precisely what email verification establishes. Without this, a user
+          // who never clicked the verification link but successfully reset their
+          // password would still be refused at login, with the reset having
+          // apparently "worked". Marking it here removes that dead end.
+          emailVerified: new Date(),
+        },
+      }),
       prisma.passwordResetToken.updateMany({
         where: { tokenHash, usedAt: null },
         data: { usedAt: new Date() },

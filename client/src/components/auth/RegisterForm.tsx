@@ -384,7 +384,11 @@ export function RegisterForm({
       </>
       ) : (
       <>
-        <FloatingField id="workspaceName" label="Workspace name" required>
+        {/* Labelled "Company name" but still posted as `workspaceName` — the
+            field IS the workspace, and renaming the wire format would mean a
+            server change plus breaking the no-JS retry URL round-trip for no
+            user-visible gain. */}
+        <FloatingField id="workspaceName" label="Company name" required>
           <input
             id="workspaceName"
             name="workspaceName"
@@ -396,6 +400,7 @@ export function RegisterForm({
             required
           />
         </FloatingField>
+        
 
       {/* Plan selection — sets the country allowance and what the workspace is
           charged once the trial's tokens or days run out. */}
