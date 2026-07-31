@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test:payments": "node scripts/razorpay-signature.test.mjs && node scripts/membership.test.mjs",
     "test:imports": "node scripts/import-phases.test.mjs",
-    "test:auth": "node scripts/auth-policy.test.mjs"
+    "test:auth": "node scripts/auth-policy.test.mjs",
+    "test:apollo": "node scripts/apollo-retry.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",

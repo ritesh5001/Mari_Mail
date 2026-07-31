@@ -78,6 +78,28 @@ async function getConfig(): Promise<ApolloConfig> {
   return { baseUrl, apiKey };
 }
 
+const MAX_RETRIES = 3;
+
+function isTransient(status: number) {
+  return status >= 500 || status === 429;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * How long to wait before retrying. Prefers Apollo's own `Retry-After` header
+ * (seconds, capped at 5s so a long value can't stall the whole fan-out),
+ * else exponential backoff with jitter — the jitter matters because several
+ * domain searches run concurrently and would otherwise all retry at the same
+ * instant and re-trip the limit together.
+ */
+function retryDelayMs(response: Response, attemptIndex: number) {
+  const header = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(header) && header > 0) return Math.min(header * 1000, 5_000);
+  const base = Math.min(500 * 2 ** attemptIndex, 4_000);
+  return base + Math.random() * 250;
+}
+
 async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const { baseUrl, apiKey } = await getConfig();
   const url = `${baseUrl}${path}`;
@@ -111,7 +133,18 @@ async function postJson<T>(path: string, body: Record<string, unknown>): Promise
     throw new ApolloError(`Apollo network error: ${(error as Error).message}`, undefined, true);
   }
 
-  if (response.status >= 500) {
+  // Retry transient failures, INCLUDING 429.
+  //
+  // 429 was previously flagged `retryable: true` and then never retried — the
+  // block below only covered 5xx. That made rate limiting fatal, which matters
+  // because the by-list contact search fans out one request per company domain:
+  // a large list would trip the limit, every domain would fail, and the UI
+  // reported "Contact search is temporarily unavailable" with no results at all.
+  //
+  // Apollo sends `Retry-After` on 429; honour it when present, otherwise back
+  // off exponentially with jitter so parallel callers don't retry in lockstep.
+  for (let retry = 0; retry < MAX_RETRIES && isTransient(response.status); retry += 1) {
+    await sleep(retryDelayMs(response, retry));
     try {
       response = await attempt();
     } catch (error) {

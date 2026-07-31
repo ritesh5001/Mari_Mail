@@ -1431,6 +1431,23 @@ export function CampaignByRolePanel({
             Search failed: {state.message}
           </p>
         )}
+        {/* Partial results: some company domains couldn't be searched (usually
+            Apollo rate limiting on a large list). Shown ABOVE the results,
+            because the empty-state message below never renders when we do have
+            rows — so without this the missing companies would be invisible. */}
+        {loaded &&
+          loaded.warnings.some((w) => w.startsWith("apollo_partial:")) &&
+          (() => {
+            const [, failed, total] =
+              loaded.warnings.find((w) => w.startsWith("apollo_partial:"))?.split(":") ?? [];
+            return (
+              <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-400/25 dark:bg-amber-500/10 dark:text-amber-200">
+                Showing partial results — {failed} of {total} companies couldn&rsquo;t be searched
+                just now. Search again in a moment to include them.
+              </p>
+            );
+          })()}
+
         {loaded && loaded.allRows.length === 0 && (
           <div className="rounded-md border border-dashed border-slate-200 bg-white p-3 text-xs text-slate-500 dark:border-white/10 dark:bg-transparent dark:text-white/60">
             {loaded.warnings.includes("no_vessels")
@@ -1440,7 +1457,7 @@ export function CampaignByRolePanel({
                 : loaded.warnings.includes("apollo_disabled")
                   ? "Contact search is disabled — an admin needs to enable it."
                   : loaded.warnings.includes("apollo_unavailable")
-                    ? "Contact search is temporarily unavailable — try again in a moment."
+                    ? "Contact search is busy right now — wait a few seconds and search again. Large lists query many companies at once and can hit the provider's rate limit."
                     : `No people match this filter (${summarizeFilter(loaded.filter)}) at these companies.`}
           </div>
         )}

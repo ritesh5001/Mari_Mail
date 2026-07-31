@@ -291,6 +291,48 @@ async function findVesselsAssociatedToContactByDomain(
   });
 }
 
+/**
+ * How many Apollo domain searches may be in flight at once.
+ *
+ * The by-list search runs one request per company domain and used to fire all
+ * of them through `Promise.all` — up to 50 simultaneous calls. Apollo
+ * rate-limits well below that, so a large list rate-limited itself: every
+ * domain came back 429, and the UI showed "Contact search is temporarily
+ * unavailable" with no results. Deliberately conservative; search costs no
+ * credits, so the only price of going slower is latency.
+ */
+const APOLLO_DOMAIN_CONCURRENCY = 4;
+
+/**
+ * Total wall-clock budget for the whole per-domain fan-out.
+ *
+ * Each domain can retry a rate limit a few times, so a pathological run could
+ * otherwise spend minutes here and the browser would abandon the request long
+ * before the server answered — leaving the user with a spinner and then a
+ * generic failure. Once the budget is gone the remaining domains are reported
+ * as failed, which surfaces as "partial results" with everything found so far
+ * still rendered.
+ */
+const APOLLO_SEARCH_BUDGET_MS = 20_000;
+
+/** `items.map(fn)` with a ceiling on how many run at once, preserving order. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 contactRouter.get("/", requireAuth, async (req, res, next) => {
   try {
     const { workspaceId } = (req as AuthedRequest).auth;
@@ -753,8 +795,15 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
           // row from a domain's page belongs to that domain's vessels, whatever
           // the org name says. Search costs no credits — only reveals do — so
           // the extra calls are just latency, and each is cached separately.
-          const perDomain = await Promise.all(
-            domains.map(async (domain) => {
+          const searchDeadline = Date.now() + APOLLO_SEARCH_BUDGET_MS;
+          const perDomain = await mapWithConcurrency(
+            domains,
+            APOLLO_DOMAIN_CONCURRENCY,
+            async (domain) => {
+              // Past the budget: stop starting new work. Counted as failed so
+              // the response says results are partial rather than implying
+              // these companies simply had nobody.
+              if (Date.now() > searchDeadline) return null;
               const cacheKey = `apollo:by-domain:${createHash("sha1")
                 .update(
                   JSON.stringify({
@@ -790,11 +839,17 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
                 );
                 return null;
               }
-            }),
+            },
           );
 
+          // All failed → genuinely unavailable. SOME failed → return what we
+          // have and say so, rather than silently dropping those companies.
           const failed = perDomain.filter((entry) => entry === null).length;
-          if (failed > 0 && failed === domains.length) warnings.push("apollo_unavailable");
+          if (failed > 0 && failed === domains.length) {
+            warnings.push("apollo_unavailable");
+          } else if (failed > 0) {
+            warnings.push(`apollo_partial:${failed}:${domains.length}`);
+          }
 
           // Dedupe across domains — a person can sit at a company that serves
           // several vessels — unioning their vessels rather than repeating them.
