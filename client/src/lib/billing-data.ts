@@ -5,7 +5,8 @@ import {
   GRACE_PERIOD_DAYS,
   PLANS,
   PLAN_ORDER,
-  type PlanKey,
+  describeMembership,
+  type MembershipView,
 } from "@marimail/utils/plans";
 import { getServerSession } from "@/lib/api";
 
@@ -32,50 +33,12 @@ export async function requireBillingWorkspace() {
   };
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-export type MembershipView = {
-  plan: PlanKey;
-  status: string;
-  active: boolean;
-  trialEndsAt: Date | null;
-  currentPeriodEnd: Date | null;
-  daysRemaining: number | null;
-  inGracePeriod: boolean;
-};
-
-/**
- * Mirrors `describeMembership` on the server.
- *
- * Duplicated rather than imported because the server copy pulls in Prisma
- * enums and service code that Next's bundler shouldn't drag into a page. The
- * shared constants it depends on (grace period, day length) do come from the
- * one catalog, so the two cannot disagree about the rule that matters.
- */
-export function describeMembership(workspace: {
-  plan: PlanKey;
-  billingStatus: string;
-  trialEndsAt: Date | null;
-  currentPeriodEnd: Date | null;
-}): MembershipView {
-  const now = Date.now();
-  const deadline = workspace.currentPeriodEnd ?? workspace.trialEndsAt;
-  const daysRemaining =
-    deadline === null ? null : Math.ceil((deadline.getTime() - now) / DAY_MS);
-  const expired = deadline !== null && deadline.getTime() <= now;
-  const graceEnds = deadline ? deadline.getTime() + GRACE_PERIOD_DAYS * DAY_MS : null;
-  const inGracePeriod = expired && graceEnds !== null && now < graceEnds;
-
-  return {
-    plan: workspace.plan,
-    status: workspace.billingStatus,
-    active: workspace.billingStatus !== "CANCELED" && (!expired || inGracePeriod),
-    trialEndsAt: workspace.trialEndsAt,
-    currentPeriodEnd: workspace.currentPeriodEnd,
-    daysRemaining,
-    inGracePeriod,
-  };
-}
+// `describeMembership` and its `MembershipView` type are re-exported from
+// `@marimail/utils/plans` — that is now the ONE definition. It used to be
+// copied here on the theory that the server copy dragged in Prisma; it never
+// did (only the *file* it lived in did), and now that the function lives in
+// the dependency-free plans module there is nothing to avoid.
+export { describeMembership, type MembershipView };
 
 export async function getBillingOverview(workspaceId: string) {
   const workspace = await prisma.workspace.findUnique({

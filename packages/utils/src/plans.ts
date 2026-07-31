@@ -222,3 +222,60 @@ export function planPriceLabel(plan: PlanKey): string {
   const def = PLANS[plan];
   return def.priceCents === null ? "Custom" : `${formatUsdCents(def.priceCents)}/mo`;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type MembershipView = {
+  plan: PlanKey;
+  status: string;
+  /** Whether the workspace can currently use paid features. */
+  active: boolean;
+  trialEndsAt: Date | null;
+  currentPeriodEnd: Date | null;
+  /** Days until access narrows. Negative once it already has. */
+  daysRemaining: number | null;
+  inGracePeriod: boolean;
+};
+
+/**
+ * Derives what the UI should say about a workspace's membership.
+ *
+ * Computed rather than trusted from `billingStatus` alone: a workspace whose
+ * period ended an hour ago is functionally past due whether or not the hourly
+ * sweep has run yet, and every surface that shows membership status — the
+ * server billing page, the dashboard shell, the Express send-gate — must agree
+ * on that without waiting for a cron job to catch up.
+ *
+ * This is the ONE definition. It used to be copied three times (the Express
+ * membership service, the Next billing page, and now the dashboard shell would
+ * have been a fourth) — each a chance for the grace-period math to drift. It
+ * lives here, in the dependency-free plans module, so both the Node server and
+ * the Next client bundle it without pulling in Prisma or server-only code.
+ */
+export function describeMembership(workspace: {
+  plan: PlanKey;
+  billingStatus: string;
+  trialEndsAt: Date | null;
+  currentPeriodEnd: Date | null;
+}): MembershipView {
+  const now = Date.now();
+  const deadline = workspace.currentPeriodEnd ?? workspace.trialEndsAt;
+  const daysRemaining =
+    deadline === null ? null : Math.ceil((deadline.getTime() - now) / DAY_MS);
+
+  const expired = deadline !== null && deadline.getTime() <= now;
+  const graceEnds = deadline ? deadline.getTime() + GRACE_PERIOD_DAYS * DAY_MS : null;
+  const inGracePeriod = expired && graceEnds !== null && now < graceEnds;
+
+  return {
+    plan: workspace.plan,
+    status: workspace.billingStatus,
+    // CANCELED is the only hard stop. An expired workspace inside its grace
+    // window keeps working, which is the whole point of having one.
+    active: workspace.billingStatus !== "CANCELED" && (!expired || inGracePeriod),
+    trialEndsAt: workspace.trialEndsAt,
+    currentPeriodEnd: workspace.currentPeriodEnd,
+    daysRemaining,
+    inGracePeriod,
+  };
+}

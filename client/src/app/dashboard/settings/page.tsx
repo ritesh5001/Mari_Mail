@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Anchor, CreditCard, Radar, Timer, Workflow } from "lucide-react";
+import { Anchor, Radar, Timer, Workflow } from "lucide-react";
 
 const settingsLinks = [
   {
@@ -19,12 +19,6 @@ const settingsLinks = [
     title: "Cargo Change Rules",
     description: "Fire a campaign when a vessel's previous cargo and next cargo combination matches.",
     icon: Workflow,
-  },
-  {
-    href: "/dashboard/settings/billing",
-    title: "Billing & Credits",
-    description: "Manage your plan, top up DB credits, open the Stripe customer portal.",
-    icon: CreditCard,
   },
 ];
 

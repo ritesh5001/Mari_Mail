@@ -4,6 +4,8 @@ import {
   GRACE_PERIOD_DAYS,
   PLANS,
   planLimits,
+  describeMembership as sharedDescribeMembership,
+  type MembershipView as SharedMembershipView,
 } from "@marimail/utils/plans";
 
 /**
@@ -180,24 +182,16 @@ export async function downgradeToFree(workspaceId: string, reason: string) {
   });
 }
 
-export type MembershipView = {
-  plan: BillingPlan;
-  status: string;
-  /** Whether the workspace can currently use paid features. */
-  active: boolean;
-  trialEndsAt: Date | null;
-  currentPeriodEnd: Date | null;
-  /** Days until access narrows. Negative once it already has. */
-  daysRemaining: number | null;
-  inGracePeriod: boolean;
-};
+export type MembershipView = SharedMembershipView;
 
 /**
  * Derives what the UI should say about a workspace's membership.
  *
- * Computed rather than stored: a workspace whose period ended an hour ago is
- * functionally past due whether or not the daily sweep has run yet, and the
- * billing page must not claim otherwise just because a cron hasn't fired.
+ * Re-exported from `@marimail/utils/plans` — that copy is now the ONE
+ * definition, so this and the Next.js billing page and the dashboard shell
+ * can't drift on the grace-period math. Kept as a named export here so
+ * existing importers (`routes/billing.ts`, `sending-readiness.ts`) don't need
+ * to change their import path.
  */
 export function describeMembership(workspace: {
   plan: BillingPlan;
@@ -205,24 +199,5 @@ export function describeMembership(workspace: {
   trialEndsAt: Date | null;
   currentPeriodEnd: Date | null;
 }): MembershipView {
-  const now = Date.now();
-  const deadline = workspace.currentPeriodEnd ?? workspace.trialEndsAt;
-  const daysRemaining =
-    deadline === null ? null : Math.ceil((deadline.getTime() - now) / DAY_MS);
-
-  const expired = deadline !== null && deadline.getTime() <= now;
-  const graceEnds = deadline ? addDays(deadline, GRACE_PERIOD_DAYS).getTime() : null;
-  const inGracePeriod = expired && graceEnds !== null && now < graceEnds;
-
-  return {
-    plan: workspace.plan,
-    status: workspace.billingStatus,
-    // CANCELED is the only hard stop. An expired workspace inside its grace
-    // window keeps working, which is the whole point of having one.
-    active: workspace.billingStatus !== "CANCELED" && (!expired || inGracePeriod),
-    trialEndsAt: workspace.trialEndsAt,
-    currentPeriodEnd: workspace.currentPeriodEnd,
-    daysRemaining,
-    inGracePeriod,
-  };
+  return sharedDescribeMembership(workspace);
 }

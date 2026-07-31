@@ -259,6 +259,10 @@ function serializeSession(user: {
       allowedCountries?: string[];
       countryLimit?: number;
       onboardedAt: Date | null;
+      plan: string;
+      billingStatus: string;
+      trialEndsAt: Date | null;
+      currentPeriodEnd: Date | null;
     };
   }>;
 }) {
@@ -272,6 +276,15 @@ function serializeSession(user: {
     allowedCountries: membership.workspace.allowedCountries ?? [],
     countryLimit: membership.workspace.countryLimit ?? 1,
     onboardedAt: membership.workspace.onboardedAt?.toISOString() ?? null,
+    // Membership fields, so the dashboard shell can show a trial countdown /
+    // renewal banner without a second round trip. These are the raw inputs to
+    // `describeMembership` (@marimail/utils/plans), which turns them into
+    // "active or not" — that function is shared by the server and the client,
+    // so both sides agree on exactly when a trial or grace period has ended.
+    plan: membership.workspace.plan,
+    billingStatus: membership.workspace.billingStatus,
+    trialEndsAt: membership.workspace.trialEndsAt?.toISOString() ?? null,
+    currentPeriodEnd: membership.workspace.currentPeriodEnd?.toISOString() ?? null,
   }));
 
   const activeWorkspace =
@@ -313,6 +326,10 @@ function userSessionSelect(includeTargetPortCountry: boolean) {
             onboardedAt: true,
             allowedCountries: true,
             countryLimit: true,
+            plan: true,
+            billingStatus: true,
+            trialEndsAt: true,
+            currentPeriodEnd: true,
             ...(includeTargetPortCountry ? { targetPortCountry: true as const } : {}),
           },
         },

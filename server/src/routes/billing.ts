@@ -137,8 +137,8 @@ billingRouter.post("/checkout", requireAuth, async (req, res, next) => {
       return sendData(res, { devMode: true, creditBalance: balance });
     }
 
-    const successUrl = input.data.successUrl ?? `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/settings/billing?success=1`;
-    const cancelUrl = input.data.cancelUrl ?? `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/settings/billing?canceled=1`;
+    const successUrl = input.data.successUrl ?? `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/billing?success=1`;
+    const cancelUrl = input.data.cancelUrl ?? `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/billing?canceled=1`;
 
     let priceId: string | undefined;
     let mode: "subscription" | "payment" = "subscription";
@@ -180,7 +180,7 @@ billingRouter.post("/portal", requireAuth, async (req, res, next) => {
     if (!workspace?.stripeCustomerId) return sendError(res, 400, "NO_CUSTOMER", "Workspace has no Stripe customer yet");
     const portal = await stripe.billingPortal.sessions.create({
       customer: workspace.stripeCustomerId,
-      return_url: `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/settings/billing`,
+      return_url: `${process.env.APP_URL ?? "http://localhost:3000"}/dashboard/billing`,
     });
     return sendData(res, { url: portal.url });
   } catch (error) {

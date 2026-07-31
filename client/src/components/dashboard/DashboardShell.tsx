@@ -7,6 +7,7 @@ import {
   Bookmark,
   Calendar,
   ChevronDown,
+  CreditCard,
   Database,
   Inbox,
   LayoutDashboard,
@@ -33,12 +34,15 @@ import { CommandPalette } from "./CommandPalette";
 import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar";
 import { SidebarCustomizePanel } from "./SidebarCustomizePanel";
 import { ThemeToggle } from "./ThemeToggle";
+import { TrialBanner } from "./TrialBanner";
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof LayoutDashboard;
   superAdminOnly?: boolean;
+  /** Visible to a super-admin OR the active workspace's own OWNER/ADMIN — see `canViewNavItem`. */
+  billingManagerOnly?: boolean;
   alwaysVisible?: boolean;
 };
 
@@ -52,6 +56,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/campaigns/cold", label: "Cold campaigns", icon: Mail },
   { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/dashboard/billing", label: "Plan & billing", icon: CreditCard, billingManagerOnly: true },
   { href: "/dashboard/marine-db", label: "Marine DB", icon: Anchor, superAdminOnly: true },
   { href: "/dashboard/admin/demos", label: "Demo Bookings", icon: Calendar, superAdminOnly: true },
   { href: "/dashboard/admin/data-sources", label: "Data Sources", icon: Settings, superAdminOnly: true },
@@ -59,6 +64,23 @@ const navItems: NavItem[] = [
   { href: "/dashboard/admin/apollo", label: "Apollo Data Source", icon: Zap, superAdminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
+
+/**
+ * A nav item is visible if it has no restriction, or the session clears
+ * whichever restriction it does have. `billingManagerOnly` matches the exact
+ * rule enforced server-side in app/dashboard/billing/layout.tsx — super-admin,
+ * or OWNER/ADMIN of the active workspace — so the sidebar never advertises a
+ * link a MEMBER would immediately be redirected away from.
+ */
+function canViewNavItem(item: NavItem, session: AuthSession): boolean {
+  if (item.superAdminOnly && !session.user.isSuperAdmin) return false;
+  if (item.billingManagerOnly) {
+    const role = session.activeWorkspace?.role;
+    const canManageBilling = session.user.isSuperAdmin || role === "OWNER" || role === "ADMIN";
+    if (!canManageBilling) return false;
+  }
+  return true;
+}
 
 /** A single nav row that reveals its label as the sidebar expands (brand-blue active state). */
 function NavRow({ item, active }: { item: NavItem; active: boolean }) {
@@ -136,7 +158,7 @@ function SidebarContent({
 
       <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {navItems.map((item) => {
-          if (item.superAdminOnly && !session.user.isSuperAdmin) return null;
+          if (!canViewNavItem(item, session)) return null;
           if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
           const active =
             pathname === item.href ||
@@ -148,7 +170,7 @@ function SidebarContent({
       <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
         <SidebarCustomizePanel
           items={navItems
-            .filter((item) => !item.alwaysVisible && (!item.superAdminOnly || session.user.isSuperAdmin))
+            .filter((item) => !item.alwaysVisible && canViewNavItem(item, session))
             .map((item) => ({ href: item.href, label: item.label, icon: item.icon }))}
           hidden={hiddenNavItems}
           onChange={setHiddenNavItems}
@@ -339,7 +361,10 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
           </div>
         </header>
 
-        <main className="min-h-[calc(100vh-4rem)] bg-transparent px-5 py-6 dark:bg-[#050507]">{children}</main>
+        <main className="min-h-[calc(100vh-4rem)] bg-transparent px-5 py-6 dark:bg-[#050507]">
+          <TrialBanner workspace={activeWorkspace} />
+          {children}
+        </main>
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
@@ -411,7 +436,7 @@ function MobileNav({
 
               <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto">
                 {navItems.map((item) => {
-                  if (item.superAdminOnly && !session.user.isSuperAdmin) return null;
+                  if (!canViewNavItem(item, session)) return null;
                   if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
                   const Icon = item.icon;
                   const active =
@@ -438,7 +463,7 @@ function MobileNav({
               <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
                 <SidebarCustomizePanel
                   items={navItems
-                    .filter((item) => !item.alwaysVisible && (!item.superAdminOnly || session.user.isSuperAdmin))
+                    .filter((item) => !item.alwaysVisible && canViewNavItem(item, session))
                     .map((item) => ({ href: item.href, label: item.label, icon: item.icon }))}
                   hidden={hiddenNavItems}
                   onChange={setHiddenNavItems}

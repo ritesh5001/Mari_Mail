@@ -21,9 +21,33 @@ const compile = async (relPath, stub = {}) => {
   return import("data:text/javascript," + encodeURIComponent(header + "\n" + js));
 };
 
+// describeMembership now lives in @marimail/utils/plans and is re-exported
+// here as `sharedDescribeMembership` — see membership.service.ts. Stubbed with
+// the real implementation (not `{}`) so describeMembership's own assertions
+// below still exercise real logic, not a no-op.
+const SHARED_DESCRIBE_MEMBERSHIP = `(workspace) => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const deadline = workspace.currentPeriodEnd ?? workspace.trialEndsAt;
+  const daysRemaining = deadline === null ? null : Math.ceil((deadline.getTime() - now) / DAY_MS);
+  const expired = deadline !== null && deadline.getTime() <= now;
+  const graceEnds = deadline ? deadline.getTime() + 5 * DAY_MS : null;
+  const inGracePeriod = expired && graceEnds !== null && now < graceEnds;
+  return {
+    plan: workspace.plan,
+    status: workspace.billingStatus,
+    active: workspace.billingStatus !== "CANCELED" && (!expired || inGracePeriod),
+    trialEndsAt: workspace.trialEndsAt,
+    currentPeriodEnd: workspace.currentPeriodEnd,
+    daysRemaining,
+    inGracePeriod,
+  };
+}`;
+
 const m = await compile("../src/services/membership.service.ts", {
   prisma: "{}", Prisma: "{}",
   BILLING_PERIOD_DAYS: "30", GRACE_PERIOD_DAYS: "5", PLANS: "{}", planLimits: "(() => ({}))",
+  sharedDescribeMembership: SHARED_DESCRIBE_MEMBERSHIP,
 });
 const { addDays, nextPeriodEnd, trimCountries, describeMembership } = m;
 
@@ -140,6 +164,30 @@ t("limits are int-safe (no Infinity into a Postgres Int column)", () => {
       assert.ok(p[key] <= 2_147_483_647, `${p.key}.${key} must fit in int4`);
     }
   }
+});
+
+console.log("plans.describeMembership — the ONE definition (server + client both import this)");
+const planView = (over) =>
+  plans.describeMembership({
+    plan: "PRO", billingStatus: "ACTIVE", trialEndsAt: null, currentPeriodEnd: null, ...over,
+  });
+t("active with time left", () => {
+  const v = planView({ currentPeriodEnd: new Date(Date.now() + 10 * DAY) });
+  assert.equal(v.active, true);
+  assert.equal(v.daysRemaining, 10);
+});
+t("just expired -> still active, inside grace", () => {
+  const v = planView({ billingStatus: "PAST_DUE", currentPeriodEnd: new Date(Date.now() - 1 * DAY) });
+  assert.equal(v.active, true);
+  assert.equal(v.inGracePeriod, true);
+});
+t("CANCELED is a hard stop even with time left", () => {
+  const v = planView({ billingStatus: "CANCELED", currentPeriodEnd: new Date(Date.now() + 10 * DAY) });
+  assert.equal(v.active, false);
+});
+t("membership.service.ts's re-export produces an IDENTICAL result to the shared definition", () => {
+  const workspace = { plan: "STARTER", billingStatus: "PAST_DUE", trialEndsAt: null, currentPeriodEnd: new Date(Date.now() - 2 * DAY) };
+  assert.deepEqual(describeMembership(workspace), plans.describeMembership(workspace));
 });
 
 console.log(`\n${n}/${n} passed`);

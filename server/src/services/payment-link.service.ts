@@ -95,7 +95,7 @@ export async function createPaymentLink(input: CreatePaymentLinkInput): Promise<
       metadata: { paymentLinkId: created.id, workspaceId },
       after_completion: {
         type: "redirect",
-        redirect: { url: input.successUrl ?? `${APP_URL()}/dashboard/settings/billing?paid=1` },
+        redirect: { url: input.successUrl ?? `${APP_URL()}/dashboard/billing?paid=1` },
       },
     });
 

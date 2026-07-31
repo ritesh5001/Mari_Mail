@@ -20,6 +20,12 @@ export type WorkspaceSummary = {
   /** How many countries the plan permits selecting. */
   countryLimit: number;
   onboardedAt: string | null;
+  /** `"STARTER" | "PRO" | "BUSINESS" | "ENTERPRISE"` — kept as `string` here so this package doesn't depend on the Prisma-generated enum. */
+  plan: string;
+  /** `"TRIALING" | "ACTIVE" | "PAST_DUE" | "CANCELED" | "PAUSED"` */
+  billingStatus: string;
+  trialEndsAt: string | null;
+  currentPeriodEnd: string | null;
 };
 
 export type AuthSession = {

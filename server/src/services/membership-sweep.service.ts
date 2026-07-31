@@ -33,7 +33,7 @@ export type SweepResult = {
 };
 
 function billingUrl() {
-  return `${APP_URL()}/dashboard/settings/billing`;
+  return `${APP_URL()}/dashboard/billing`;
 }
 
 async function notifyOwner(
