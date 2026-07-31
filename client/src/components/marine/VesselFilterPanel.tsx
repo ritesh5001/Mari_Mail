@@ -7,6 +7,7 @@ import { ChevronDown, ChevronUp, Filter, Search, Upload, X } from "lucide-react"
 import { GooeyFilter } from "@/components/ui/gooey-filter";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
+import { cn } from "@/lib/cn";
 import {
   ETA_CONFIDENCES,
   VESSEL_TYPE_CATEGORIES,
@@ -354,18 +355,10 @@ export function VesselFilterPanel({
   searchParams,
   basePath = "/dashboard/vessels",
   orientation = "vertical",
-  isSuperAdmin = false,
 }: {
   searchParams: SearchParams;
   basePath?: string;
   orientation?: "vertical" | "horizontal" | "modal";
-  /**
-   * Regular users are already server-scoped to their workspace's target
-   * country, so the "Destination country" picker is redundant for them and
-   * only clutters the panel. Super-admins (who see All countries) still get
-   * it. Default false to keep vessel-page callers narrow.
-   */
-  isSuperAdmin?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<FilterState>(() => searchParamsToState(searchParams));
@@ -648,31 +641,47 @@ export function VesselFilterPanel({
         </div>
       </FilterCard>
 
-      {isSuperAdmin ? (
+      {/*
+        Shown whenever there is more than one country to choose between.
+        `/workspaces/port-countries` returns the caller's PLAN GRANT, so this
+        list is already exactly what they may filter by — 2 entries on Pro, 4 on
+        Fleet, every country for a super-admin.
+
+        It used to be gated on `isSuperAdmin`, with the reasoning that regular
+        users were server-scoped to a single target country and the picker was
+        redundant. That stopped being true when plans started granting 2-4
+        countries: the users who most needed to filter by country were the only
+        ones who couldn't. One country still hides it — filtering a list to the
+        one value it already has is just a dead control.
+      */}
+      {countries.length > 1 ? (
         <div className="grid gap-4 lg:grid-cols-2">
           <FilterCard title="Destination country" count={state.destCountry.length}>
-            <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
-              {countries.length === 0 ? (
-                <p className="px-1 py-1 text-xs text-slate-400">Loading…</p>
-              ) : (
-                countries.map((option) => (
-                  <label
-                    key={option.country}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={state.destCountry.includes(option.country)}
-                      onChange={() => toggleListField("destCountry", option.country)}
-                      className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
-                    />
-                    <span className="min-w-0 truncate">
-                      {option.countryName}
-                      <span className="ml-1 text-xs text-slate-400">({option.country})</span>
-                    </span>
-                  </label>
-                ))
+            {/* Only scrolls once the list is long enough to need it. A
+                two-country plan shouldn't get a scroll region around two rows. */}
+            <div
+              className={cn(
+                "space-y-1 pr-1",
+                countries.length > 8 && "max-h-56 overflow-y-auto",
               )}
+            >
+              {countries.map((option) => (
+                <label
+                  key={option.country}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={state.destCountry.includes(option.country)}
+                    onChange={() => toggleListField("destCountry", option.country)}
+                    className="h-4 w-4 rounded border-slate-300 text-ocean focus:ring-ocean"
+                  />
+                  <span className="min-w-0 truncate">
+                    {option.countryName}
+                    <span className="ml-1 text-xs text-slate-400">({option.country})</span>
+                  </span>
+                </label>
+              ))}
             </div>
           </FilterCard>
 

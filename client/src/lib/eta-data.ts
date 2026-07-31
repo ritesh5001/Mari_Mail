@@ -575,64 +575,6 @@ export async function getPortRadarTabCounts(
   }
 }
 
-/**
- * Upcoming-arrival totals per granted country, for the country switcher.
- *
- * Deliberately ignores the caller's own `?destCountry` selection so the chips
- * stay a stable switcher — a chip reading "India 123" must still say 123 while
- * Brazil is the active selection, otherwise every chip but the active one
- * collapses to zero and the control becomes unusable. Every OTHER filter is
- * honoured, via the same `upcomingFeedClauses` the feed uses.
- *
- * Returns `[]` when the switcher wouldn't help: a single-country grant (nothing
- * to switch between), an unscoped workspace, or a super-admin. Enterprise
- * grants above `MAX_COUNTRY_CHIPS` also opt out — 40 chips is not a switcher,
- * and those users have the filter panel.
- */
-const MAX_COUNTRY_CHIPS = 12;
-
-export async function getPortRadarCountryBreakdown(
-  searchParams: Record<string, string | string[] | undefined> = {},
-  options: { includeAllCountries?: boolean } = {},
-): Promise<Array<{ country: string; countryName: string; count: number }>> {
-  const { workspaceId, countryScope } = await requireEtaWorkspaceId();
-  if (options.includeAllCountries) return [];
-
-  const granted = scopeToList(countryScope);
-  if (!granted || granted.length < 2 || granted.length > MAX_COUNTRY_CHIPS) return [];
-
-  try {
-    const shared = upcomingFeedClauses(searchParams, workspaceId);
-    const [names, counts] = await Promise.all([
-      prisma.port.findMany({
-        where: { country: { in: granted } },
-        distinct: ["country"],
-        select: { country: true, countryName: true },
-      }),
-      Promise.all(
-        granted.map((country) =>
-          prisma.vesselETA.count({
-            where: { AND: [countryClause([country]), ...shared] },
-          }),
-        ),
-      ),
-    ]);
-    const nameOf = new Map(names.map((row) => [row.country, row.countryName]));
-
-    return granted
-      .map((country, i) => ({
-        country,
-        countryName: nameOf.get(country) ?? country,
-        count: counts[i],
-      }))
-      .sort((a, b) => b.count - a.count);
-  } catch (err) {
-    // The switcher is an enhancement; the radar must still render without it.
-    console.error("[eta] getPortRadarCountryBreakdown failed:", err);
-    return [];
-  }
-}
-
 export async function getPortRadarSummary(workspaceId: string, targetPortCountry: CountryScope) {
   const now = new Date();
   const startOfToday = new Date(now);

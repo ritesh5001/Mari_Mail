@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CountrySwitcher } from "@/components/marine/CountrySwitcher";
 import { Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
 import type { SortState } from "@/hooks/useClientSort";
@@ -66,7 +65,7 @@ type TabState = {
  */
 export function PortRadarTabs({
   countryLabel,
-  countryBreakdown,
+  showCountryColumn,
   isSuperAdmin,
   portsWithCoordinates,
   counts,
@@ -77,8 +76,8 @@ export function PortRadarTabs({
 }: {
   /** Set only when the workspace's grant is exactly one country. */
   countryLabel: string | null;
-  /** Per-country arrival totals; empty unless the grant spans 2–12 countries. */
-  countryBreakdown: Array<{ country: string; countryName: string; count: number }>;
+  /** Show each row's country — true for a super-admin or a multi-country grant. */
+  showCountryColumn: boolean;
   isSuperAdmin: boolean;
   portsWithCoordinates: string[];
   counts: { newly: number; upcoming: number };
@@ -442,16 +441,14 @@ export function PortRadarTabs({
       <div className="p-5">
         {tab === "newly" ? (
           <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
-            {badgeCount("newly")} vessel{badgeCount("newly") === 1 ? "" : "s"} from the most recent
-            upload — visible until the next batch arrives.
+            {/* "Upload" and "batch" are import-side words. An admin uploads and
+                recognises them; a customer never does and reads them as jargon
+                about something they can't see. */}
+            {isSuperAdmin
+              ? `${badgeCount("newly")} vessel${badgeCount("newly") === 1 ? "" : "s"} from the most recent upload — visible until the next batch arrives.`
+              : `${badgeCount("newly")} vessel${badgeCount("newly") === 1 ? "" : "s"} added in the latest data update. Your full list is under Upcoming arrivals.`}
           </p>
         ) : null}
-        {/* Country switcher sits above BOTH feeds — the filter applies to each,
-            so hiding it on one tab would look like it had been reset. */}
-        {countryBreakdown.length > 0 ? (
-          <CountrySwitcher countries={countryBreakdown} />
-        ) : null}
-
         {tab === "upcoming" ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-slate-600 dark:text-white/55">
@@ -481,7 +478,8 @@ export function PortRadarTabs({
           </div>
         ) : (
           <PortRadarArrivals
-            showCountry={countryBreakdown.length > 0}
+            feedKind={tab}
+            showCountry={showCountryColumn}
             etas={state.rows}
             count={state.count}
             page={state.page}

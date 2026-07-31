@@ -1,6 +1,5 @@
 import { prisma } from "@marimail/db";
 import {
-  getPortRadarCountryBreakdown,
   getPortRadarTabCounts,
   listLatestBatchEtas,
   listPortRadarFeed,
@@ -30,11 +29,8 @@ export default async function PortRadarPage({
   const countryScope = isSuperAdmin ? null : workspaceCountryScope;
 
   // Cheap tab-badge totals + the port list for the map — no full feed rows yet.
-  const [counts, countryBreakdown, ports] = await Promise.all([
+  const [counts, ports] = await Promise.all([
     getPortRadarTabCounts(searchParams, {
-      includeAllCountries: isSuperAdmin,
-    }),
-    getPortRadarCountryBreakdown(searchParams, {
       includeAllCountries: isSuperAdmin,
     }),
     // Ports for the map. Only ports WITH coordinates are usable — the sole
@@ -55,43 +51,46 @@ export default async function PortRadarPage({
     }),
   ]);
 
-  // Default to the most urgent tab that has content: newly → upcoming.
-  // (The old "missed opportunities" tab was folded into the filter panel as a
-  // chip — see VesselFilterPanel's ETA & voyage section — so it no longer
-  // competes for the default here.)
-  const initialTab: PortRadarTabKey = counts.newly > 0 ? "newly" : "upcoming";
+  // Always open on Upcoming arrivals.
+  //
+  // This used to default to "newly" whenever that tab had ANY rows, which made
+  // the page actively misleading: "newly added" is the most recent upload
+  // BATCH, so a workspace with 317 upcoming arrivals would land on a tab
+  // showing 2 and look like the product had almost no data in it. The batch
+  // view is a "what just landed" check, not the headline — it keeps its tab and
+  // its count badge, one click away.
+  const initialTab: PortRadarTabKey = "upcoming";
 
-  // Load ONLY the initial tab's first page server-side for a fast first paint.
+  // Load ONLY the opening tab's first page server-side for a fast first paint;
+  // the other tab fetches lazily when it's first opened.
   const pageSize = PORT_RADAR_DEFAULT_PAGE_SIZE;
-  let initial: PagedFeed;
-  if (initialTab === "newly") {
-    initial = await listLatestBatchEtas(searchParams, {
-      includeAllCountries: isSuperAdmin,
-      page: 1,
-      pageSize,
-    });
-  } else {
-    const feed = await listPortRadarFeed(searchParams, {
-      includeAllCountries: isSuperAdmin,
-      page: 1,
-      pageSize,
-    });
-    initial = { etas: feed.etas, count: feed.count, page: feed.page, pageSize: feed.pageSize };
-  }
+  const feed = await listPortRadarFeed(searchParams, {
+    includeAllCountries: isSuperAdmin,
+    page: 1,
+    pageSize,
+  });
+  const initial: PagedFeed = {
+    etas: feed.etas,
+    count: feed.count,
+    page: feed.page,
+    pageSize: feed.pageSize,
+  };
 
-  // The tab used to be labelled `ports[0].countryName` — the country owning the
-  // alphabetically-first port name in a truncated list, which for a multi-
-  // country workspace named ONE of them and hid the rest ("Upcoming Brazil
-  // arrivals" over a table half full of Indian arrivals). Naming a single
-  // country is only honest when the grant is a single country.
   // Name a country in the tab ONLY when the grant is exactly one country —
-  // that's the single case where one name describes the whole table. Multi-
-  // country grants get the neutral label plus the switcher chips below it.
+  // the single case where one name honestly describes the whole table. It used
+  // to be `ports[0].countryName`, i.e. whichever country owned the
+  // alphabetically-first port in a truncated list, which for a multi-country
+  // workspace named ONE of them and silently hid the rest.
   const grantedCountries = scopeToList(countryScope);
   const countryLabel =
     !isSuperAdmin && grantedCountries?.length === 1
       ? (ports.find((port) => port.countryName)?.countryName ?? null)
       : null;
+
+  // Whether a row's country is worth showing in the table. True for a
+  // super-admin (who sees every country) and for any grant covering more than
+  // one — otherwise every row would repeat the same word.
+  const showCountryColumn = isSuperAdmin || (grantedCountries?.length ?? 0) > 1;
   const portsWithCoordinates = ports.map((port) => port.portCode);
 
   // Contact counts load lazily client-side after rows render, so seed with 0.
@@ -103,12 +102,11 @@ export default async function PortRadarPage({
         searchParams={searchParams}
         basePath="/dashboard/port-radar"
         orientation="modal"
-        isSuperAdmin={isSuperAdmin}
       />
 
       <PortRadarTabs
         countryLabel={countryLabel}
-        countryBreakdown={countryBreakdown}
+        showCountryColumn={showCountryColumn}
         isSuperAdmin={isSuperAdmin}
         portsWithCoordinates={portsWithCoordinates}
         counts={counts}

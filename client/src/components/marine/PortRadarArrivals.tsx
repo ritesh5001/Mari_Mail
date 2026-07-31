@@ -152,6 +152,7 @@ export function PortRadarArrivals({
   onSort,
   portsWithCoordinates,
   showCountry = false,
+  feedKind = "upcoming",
   isSuperAdmin = false,
 }: {
   etas: IndiaRadarEta[];
@@ -169,6 +170,13 @@ export function PortRadarArrivals({
   portsWithCoordinates: string[];
   /** Show each row's country — only useful when the workspace spans several. */
   showCountry?: boolean;
+  /**
+   * Which feed is on screen. The subtitle below hardcoded "upcoming
+   * arrivals", so the "Newly added ETAs" tab described its own rows as
+   * upcoming arrivals — two different things, and the count beside it made the
+   * mismatch look like a bug in the data.
+   */
+  feedKind?: "upcoming" | "newly";
   isSuperAdmin?: boolean;
 }) {
   const [selectedVessels, setSelectedVessels] = useState<Set<string>>(new Set());
@@ -449,7 +457,9 @@ export function PortRadarArrivals({
                   `${selectedVesselIds.length} vessel${selectedVesselIds.length === 1 ? "" : "s"} selected${
                     count > etas.length ? ` on this page · ${count.toLocaleString("en")} total` : ""
                   }`
-                : `${count.toLocaleString("en")} upcoming arrival${count === 1 ? "" : "s"} · sorted by ETA`}
+                : feedKind === "newly"
+                  ? `${count.toLocaleString("en")} vessel${count === 1 ? "" : "s"} in the latest upload · sorted by ETA`
+                  : `${count.toLocaleString("en")} upcoming arrival${count === 1 ? "" : "s"} · sorted by ETA`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-white/70">
@@ -752,7 +762,8 @@ export function PortRadarArrivals({
       <div className="sticky bottom-0 z-20 mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-1 py-2 backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]/95">
         <p className="text-xs text-slate-500">
           Showing {pageEtas.length === 0 ? 0 : pageStart + 1}–{pageStart + pageEtas.length} of{" "}
-          {count.toLocaleString("en")} matching arrival{count === 1 ? "" : "s"}
+          {count.toLocaleString("en")}{" "}
+          {feedKind === "newly" ? "newly added" : "matching"} arrival{count === 1 ? "" : "s"}
         </p>
         {totalPages > 1 ? (
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
