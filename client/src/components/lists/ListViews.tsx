@@ -1443,22 +1443,31 @@ export function CampaignByRolePanel({
         </div>
       ) : null}
 
-      <RoleFilterPanel
-        value={filter}
-        onChange={setFilter}
-        onApply={() => void runSearch(filter)}
-        resultFilter={resultFilter}
-        onResultFilterChange={setResultFilter}
-        countryOptions={countryOptions}
-        resultCount={loaded?.allRows.length ?? 0}
-        suggestionsFromResults={suggestionsFromResults}
-        companySuggestionsFromResults={companySuggestionsFromResults}
-        fetchTitleSuggestions={fetchTitleSuggestions}
-        fetchAllTitles={fetchAllTitles}
-        fetchAllCompanies={fetchAllCompanies}
-        disabled={state.status === "loading"}
-      />
+      {/* Filters left, results right — the Apollo People-search shape. The
+          panel used to span the full width above the table, which pushed the
+          results themselves below the fold and gave the eye no grouping to
+          land on. The rail sticks so filters stay reachable while scrolling a
+          long result set. */}
+      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
+        <div className="lg:sticky lg:top-4">
+          <RoleFilterPanel
+            value={filter}
+            onChange={setFilter}
+            onApply={() => void runSearch(filter)}
+            resultFilter={resultFilter}
+            onResultFilterChange={setResultFilter}
+            countryOptions={countryOptions}
+            resultCount={loaded?.allRows.length ?? 0}
+            suggestionsFromResults={suggestionsFromResults}
+            companySuggestionsFromResults={companySuggestionsFromResults}
+            fetchTitleSuggestions={fetchTitleSuggestions}
+            fetchAllTitles={fetchAllTitles}
+            fetchAllCompanies={fetchAllCompanies}
+            disabled={state.status === "loading"}
+          />
+        </div>
 
+        <div className="min-w-0 space-y-4">
       <div>
         {state.status === "loading" && (
           <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/[0.02]">
@@ -1703,6 +1712,8 @@ export function CampaignByRolePanel({
           ) : null}
         </section>
       ) : null}
+        </div>
+      </div>
 
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">

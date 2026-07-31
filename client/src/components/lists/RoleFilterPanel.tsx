@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, BookmarkPlus, Filter, Loader2, Search, Trash2, X } from "lucide-react";
+import { Bookmark, BookmarkPlus, ChevronRight, Filter, Loader2, Search, Trash2, X } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 
 /**
@@ -85,6 +85,60 @@ const SENIORITY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "entry", label: "Entry" },
 ];
 
+/**
+ * One collapsible filter group, modelled on Apollo's People search sidebar:
+ * a dense row you can scan, an active-count badge, and contents that only take
+ * vertical space when you open them.
+ *
+ * The previous panel laid every control out at once across the full page
+ * width. That is fine with four fields and unreadable past that — the eye has
+ * no grouping to land on, and the results table gets pushed below the fold.
+ */
+function FilterSection({
+  title,
+  count,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  /** Shown next to the title when collapsed — a summary of the current value. */
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-slate-100 last:border-b-0 dark:border-white/[0.06]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+      >
+        <ChevronRight
+          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/35 ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+        <span className="text-[13px] font-medium text-slate-800 dark:text-white/85">{title}</span>
+        {count ? (
+          <span className="rounded-full bg-accent-500/12 px-1.5 py-0.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
+            {count}
+          </span>
+        ) : null}
+        {!open && hint ? (
+          <span className="ml-auto truncate text-[11px] text-slate-400 dark:text-white/35">
+            {hint}
+          </span>
+        ) : null}
+      </button>
+      {open ? <div className="px-3 pb-3.5 pt-0.5">{children}</div> : null}
+    </div>
+  );
+}
+
 export function RoleFilterPanel({
   value,
   onChange,
@@ -151,81 +205,146 @@ export function RoleFilterPanel({
     onChange(EMPTY_ROLE_FILTER);
   }
 
+  const activeChips: Array<{ key: string; label: string; onRemove: () => void }> = [
+    ...value.includeTitles.map((t) => ({
+      key: `it:${t}`,
+      label: `Title: ${t}`,
+      onRemove: () => patch({ includeTitles: value.includeTitles.filter((v) => v !== t) }),
+    })),
+    ...value.excludeTitles.map((t) => ({
+      key: `xt:${t}`,
+      label: `Not title: ${t}`,
+      onRemove: () => patch({ excludeTitles: value.excludeTitles.filter((v) => v !== t) }),
+    })),
+    ...value.includeCompanies.map((c) => ({
+      key: `ic:${c}`,
+      label: `Company: ${c}`,
+      onRemove: () => patch({ includeCompanies: value.includeCompanies.filter((v) => v !== c) }),
+    })),
+    ...value.excludeCompanies.map((c) => ({
+      key: `xc:${c}`,
+      label: `Not company: ${c}`,
+      onRemove: () => patch({ excludeCompanies: value.excludeCompanies.filter((v) => v !== c) }),
+    })),
+    ...value.seniorities.map((sv) => ({
+      key: `s:${sv}`,
+      label: SENIORITY_OPTIONS.find((o) => o.value === sv)?.label ?? sv,
+      onRemove: () => patch({ seniorities: value.seniorities.filter((v) => v !== sv) }),
+    })),
+  ];
+
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/[0.06] dark:bg-white/[0.02]">
-      <div className="flex flex-wrap items-center gap-2">
-        <Filter className="h-4 w-4 text-ocean" />
-        <p className="text-sm font-semibold text-slate-950 dark:text-white">Campaign by Role</p>
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-white/[0.02]">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-white/[0.06]">
+        <Filter className="h-3.5 w-3.5 text-accent-500" />
+        <p className="text-[13px] font-semibold text-slate-900 dark:text-white">Filters</p>
         {totalActive > 0 ? (
-          <span className="rounded-full bg-ocean/10 px-2 py-0.5 text-[11px] font-semibold text-ocean">
+          <span className="rounded-full bg-accent-500/12 px-1.5 py-0.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
             {totalActive}
           </span>
         ) : null}
-        <p className="w-full text-xs text-slate-500 dark:text-white/60">
-          Filter people at your vessels&rsquo; owner / manager companies. Search is free — only revealing an email or phone spends a credit.
-        </p>
-
-        {/* Saved filter sets — save the current include/exclude titles + companies
-            as a named preset and reload it with one click next time. */}
-        <div className="w-full">
-          <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
-        </div>
+        {totalActive > 0 ? (
+          <button
+            type="button"
+            onClick={clearAll}
+            disabled={disabled}
+            className="ml-auto text-[11px] font-medium text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-white/50"
+          >
+            Clear all
+          </button>
+        ) : null}
       </div>
 
-      <div className="mt-4 space-y-4">
-        <ChipInput
-          label="Include job titles"
-          placeholder="e.g. Fleet Manager, Chartering Manager"
-          values={value.includeTitles}
-          onChange={(next) => patch({ includeTitles: next })}
-          suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-          onFetchSuggestions={fetchTitleSuggestions}
-          onFetchAllForSelectAll={fetchAllTitles}
-          tone="include"
-          disabled={disabled}
-        />
-
-        <ChipInput
-          label="Exclude job titles"
-          placeholder="e.g. Intern, Trainee"
-          values={value.excludeTitles}
-          onChange={(next) => patch({ excludeTitles: next })}
-          suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-          onFetchSuggestions={fetchTitleSuggestions}
-          tone="exclude"
-          disabled={disabled}
-        />
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ChipInput
-            label="Include companies"
-            placeholder="e.g. V.Group, Anglo-Eastern"
-            values={value.includeCompanies}
-            onChange={(next) => patch({ includeCompanies: next })}
-            suggestions={companySuggestionsFromResults ?? []}
-            onFetchSuggestions={fetchCompanySuggestions}
-            onFetchAllForSelectAll={fetchAllCompanies}
-            tone="include"
-            disabled={disabled}
-            emptyHint="Type a company name to filter results."
-          />
-          <ChipInput
-            label="Exclude companies"
-            placeholder="e.g. Third-party surveyors"
-            values={value.excludeCompanies}
-            onChange={(next) => patch({ excludeCompanies: next })}
-            suggestions={companySuggestionsFromResults ?? []}
-            onFetchSuggestions={fetchCompanySuggestions}
-            tone="exclude"
-            disabled={disabled}
-            emptyHint="Type a company name to hide its rows."
-          />
+      {/* Applied filters as removable chips, the way Apollo surfaces them —
+          so what's active is readable without opening every section. */}
+      {activeChips.length > 0 ? (
+        <div className="flex flex-wrap gap-1 border-b border-slate-100 px-3 py-2 dark:border-white/[0.06]">
+          {activeChips.map((chip) => (
+            <button
+              key={chip.key}
+              type="button"
+              onClick={chip.onRemove}
+              disabled={disabled}
+              className="group inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-white/[0.08] dark:text-white/70 dark:hover:bg-white/[0.12]"
+            >
+              <span className="truncate">{chip.label}</span>
+              <X className="h-2.5 w-2.5 shrink-0 opacity-50 group-hover:opacity-100" />
+            </button>
+          ))}
         </div>
+      ) : null}
 
-        <div>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
-            Seniority
-          </p>
+      <div className="px-3 py-2">
+        <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
+      </div>
+
+      <div className="border-t border-slate-100 dark:border-white/[0.06]">
+        <FilterSection
+          title="Job titles"
+          count={value.includeTitles.length + value.excludeTitles.length}
+          defaultOpen
+        >
+          <div className="space-y-3">
+            <ChipInput
+              label="Is any of"
+              placeholder="e.g. Fleet Manager"
+              values={value.includeTitles}
+              onChange={(next) => patch({ includeTitles: next })}
+              suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
+              onFetchSuggestions={fetchTitleSuggestions}
+              onFetchAllForSelectAll={fetchAllTitles}
+              tone="include"
+              disabled={disabled}
+            />
+            <ChipInput
+              label="Is not"
+              placeholder="e.g. Intern"
+              values={value.excludeTitles}
+              onChange={(next) => patch({ excludeTitles: next })}
+              suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
+              onFetchSuggestions={fetchTitleSuggestions}
+              tone="exclude"
+              disabled={disabled}
+            />
+          </div>
+        </FilterSection>
+
+        <FilterSection
+          title="Companies"
+          count={value.includeCompanies.length + value.excludeCompanies.length}
+        >
+          <div className="space-y-3">
+            <ChipInput
+              label="Is any of"
+              placeholder="e.g. V.Group"
+              values={value.includeCompanies}
+              onChange={(next) => patch({ includeCompanies: next })}
+              suggestions={companySuggestionsFromResults ?? []}
+              onFetchSuggestions={fetchCompanySuggestions}
+              onFetchAllForSelectAll={fetchAllCompanies}
+              tone="include"
+              disabled={disabled}
+              emptyHint="Type a company name to filter results."
+            />
+            <ChipInput
+              label="Is not"
+              placeholder="e.g. Third-party surveyors"
+              values={value.excludeCompanies}
+              onChange={(next) => patch({ excludeCompanies: next })}
+              suggestions={companySuggestionsFromResults ?? []}
+              onFetchSuggestions={fetchCompanySuggestions}
+              tone="exclude"
+              disabled={disabled}
+              emptyHint="Type a company name to hide its rows."
+            />
+          </div>
+        </FilterSection>
+
+        <FilterSection
+          title="Management level"
+          count={value.seniorities.length}
+          hint={value.seniorities.length === 0 ? "Any" : undefined}
+        >
           <div className="flex flex-wrap gap-1.5">
             {SENIORITY_OPTIONS.map((option) => {
               const active = value.seniorities.includes(option.value);
@@ -242,7 +361,7 @@ export function RoleFilterPanel({
                         : [...value.seniorities, option.value],
                     })
                   }
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
                     active
                       ? "border-accent-500 bg-accent-500 text-[#ffffff]"
                       : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
@@ -253,107 +372,105 @@ export function RoleFilterPanel({
               );
             })}
           </div>
-          <p className="mt-1 text-[11px] text-slate-400 dark:text-white/35">
-            Leave all off to include every seniority.
-          </p>
-        </div>
-      </div>
+        </FilterSection>
 
-      <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-        {totalActive > 0 ? (
-          <button
-            type="button"
-            onClick={clearAll}
-            disabled={disabled}
-            className="text-xs font-semibold text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-white/60"
-          >
-            Clear all
-          </button>
-        ) : null}
-        {/* Search is always enabled — an empty include-title list is the
-            "all titles at these companies" Apollo default, which is a real,
-            useful search on its own. Only the in-flight `disabled` prop
-            (parent-owned) can dim it. */}
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={disabled}
-          className="inline-flex items-center gap-1.5 rounded-md bg-ocean px-4 py-2 text-xs font-semibold text-white hover:bg-ocean/90 disabled:opacity-60"
-        >
-          <Search className="h-3.5 w-3.5" />
-          Search
-        </button>
-      </div>
+        {/* Result refinements. Kept in the same rail so there is one place to
+            look, but below the Search button and labelled, because they take
+            effect immediately — presenting them identically to the sections
+            above would make Search look broken the first time one applied
+            without it. */}
+        {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
+          <>
+            <FilterSection
+              title="Email status"
+              count={resultFilter.email === "all" ? 0 : 1}
+              hint={
+                resultFilter.email === "all"
+                  ? "Any"
+                  : resultFilter.email === "available"
+                    ? "Has an email"
+                    : "No email"
+              }
+            >
+              <div className="space-y-1">
+                {(
+                  [
+                    ["all", "Any"],
+                    ["available", "Has an email"],
+                    ["unavailable", "No email"],
+                  ] as const
+                ).map(([v, label]) => (
+                  <label
+                    key={v}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-[12px] text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
+                  >
+                    <input
+                      type="radio"
+                      name="email-status"
+                      checked={resultFilter.email === v}
+                      onChange={() => onResultFilterChange({ ...resultFilter, email: v })}
+                      className="h-3.5 w-3.5 border-slate-300 text-accent-500 focus:ring-accent-400"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
+                Applies instantly to the results below.
+              </p>
+            </FilterSection>
 
-      {/*
-        Refinements over what's already on screen. Separated by a rule and
-        labelled "applies instantly" because these behave differently from
-        everything above: no Search click, no round trip. Presenting them
-        identically would make the Search button look broken when a dropdown
-        took effect without it — and burying them in the results bar (where
-        they were) made them look like something other than filters.
-
-        Hidden until there are results, since narrowing nothing is a dead
-        control.
-      */}
-      {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
-        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-white/[0.06]">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
-              Narrow these results
-            </p>
-            <span className="text-[11px] text-slate-400 dark:text-white/35">
-              applies instantly
-            </span>
-
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <select
-                value={resultFilter.email}
-                onChange={(e) =>
-                  onResultFilterChange({
-                    ...resultFilter,
-                    email: e.target.value as ResultFilter["email"],
-                  })
-                }
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
-                aria-label="Filter by email availability"
+            {countryOptions.length > 0 ? (
+              <FilterSection
+                title="Country"
+                count={resultFilter.country === "all" ? 0 : 1}
+                hint={resultFilter.country === "all" ? "Any" : resultFilter.country}
               >
-                <option value="all">Email: all</option>
-                <option value="available">Has an email</option>
-                <option value="unavailable">No email</option>
-              </select>
-
-              {countryOptions.length > 0 ? (
                 <select
                   value={resultFilter.country}
                   onChange={(e) =>
                     onResultFilterChange({ ...resultFilter, country: e.target.value })
                   }
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
                   aria-label="Filter by country"
                 >
-                  <option value="all">Country: all</option>
+                  <option value="all">Any country</option>
                   {countryOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
                 </select>
-              ) : null}
+                <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
+                  Applies instantly to the results below.
+                </p>
+              </FilterSection>
+            ) : null}
+          </>
+        ) : null}
+      </div>
 
-              {resultFilter.email !== "all" || resultFilter.country !== "all" ? (
-                <button
-                  type="button"
-                  onClick={() => onResultFilterChange(EMPTY_RESULT_FILTER)}
-                  className="text-xs font-medium text-slate-500 hover:text-accent-500 dark:text-white/50 dark:hover:text-accent-300"
-                >
-                  Reset
-                </button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {/* Search is always enabled — an empty include-title list is the "all
+          titles at these companies" Apollo default, a real search on its own.
+          Only the in-flight `disabled` prop can dim it. */}
+      <div className="border-t border-slate-100 p-3 dark:border-white/[0.06]">
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={disabled}
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-accent-500 px-4 py-2 text-xs font-semibold text-[#ffffff] transition-colors hover:bg-accent-600 disabled:opacity-60"
+        >
+          {disabled ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Search className="h-3.5 w-3.5" />
+          )}
+          {disabled ? "Searching…" : "Search"}
+        </button>
+        <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/30">
+          Searching is free — only revealing an email or phone spends a credit.
+        </p>
+      </div>
     </section>
   );
 }
