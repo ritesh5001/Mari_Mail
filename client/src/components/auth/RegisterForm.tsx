@@ -7,6 +7,8 @@ import {
   PLANS as SHARED_PLANS,
   SIGNUP_PLANS,
   SIGNUP_PLAN_TO_BILLING,
+  TRIAL_CREDITS,
+  TRIAL_DAYS,
   planPriceLabel,
   type SignupPlanKey,
 } from "@marimail/utils/plans";
@@ -26,7 +28,8 @@ export type RegisterDefaults = {
 };
 
 /**
- * Plans offered at signup — each grants a 14-day free trial + N countries.
+ * Plans offered at signup. Every plan starts with the same trial (500 tokens
+ * over 14 days); the plan sets the country allowance and the price after it.
  *
  * Prices, country allowances and the FLEET→BUSINESS mapping all come from the
  * shared catalog. They used to be a hand-kept copy that agreed with nothing
@@ -394,11 +397,14 @@ export function RegisterForm({
           />
         </FloatingField>
 
-      {/* Plan selection — grants a 14-day free trial + N countries. */}
+      {/* Plan selection — sets the country allowance and what the workspace is
+          charged once the trial's tokens or days run out. */}
       <div>
         <p className="mb-2 text-[13px] font-semibold text-slate-700 dark:text-white/80">
           Choose your plan
-          <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">· 14-day free trial</span>
+          <span className="ml-1.5 font-normal text-slate-400 dark:text-white/40">
+            · {TRIAL_CREDITS.toLocaleString("en-US")} trial tokens for {TRIAL_DAYS} days
+          </span>
         </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {PLANS.map((p) => {

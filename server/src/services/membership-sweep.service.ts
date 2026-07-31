@@ -67,6 +67,32 @@ async function notifyOwner(
  * window rather than simply "did we send today". A sweep that runs twice in a
  * day — a restart, a manual trigger — would otherwise email the customer twice.
  */
+/**
+ * Matches workspaces whose access deadline falls in `[from, to)`.
+ *
+ * The deadline is `currentPeriodEnd` when a plan has been paid for, and
+ * `trialEndsAt` before that — registration sets ONLY `trialEndsAt` and leaves
+ * `currentPeriodEnd` null. All three sweep queries used to filter on
+ * `currentPeriodEnd` alone, which meant every trialing workspace was invisible
+ * to the entire lifecycle: no reminders, never marked past due, never
+ * downgraded. Trials simply ran forever.
+ *
+ * Mirrors the `currentPeriodEnd ?? trialEndsAt` precedence in
+ * `describeMembership`, so the sweep and the UI agree on when a trial ended.
+ */
+function deadlineWithin(from: Date | null, to: Date | null) {
+  const range = {
+    ...(from ? { gte: from } : {}),
+    ...(to ? { lt: to } : {}),
+  };
+  return {
+    OR: [
+      { currentPeriodEnd: range },
+      { currentPeriodEnd: null, trialEndsAt: range },
+    ],
+  };
+}
+
 async function sendRenewalReminders(): Promise<{ sent: number; errors: number }> {
   const now = new Date();
   let sent = 0;
@@ -79,31 +105,52 @@ async function sendRenewalReminders(): Promise<{ sent: number; errors: number }>
     const due = await prisma.workspace.findMany({
       where: {
         billingStatus: { in: ["ACTIVE", "TRIALING"] },
-        currentPeriodEnd: { gte: windowStart, lt: windowEnd },
-        // Not already reminded within this window.
-        OR: [{ lastRenewalReminderAt: null }, { lastRenewalReminderAt: { lt: windowStart } }],
+        AND: [
+          deadlineWithin(windowStart, windowEnd),
+          // Not already reminded within this window.
+          { OR: [{ lastRenewalReminderAt: null }, { lastRenewalReminderAt: { lt: windowStart } }] },
+        ],
       },
-      select: { id: true, name: true, ownerId: true, plan: true, currentPeriodEnd: true },
+      select: {
+        id: true, name: true, ownerId: true, plan: true,
+        currentPeriodEnd: true, trialEndsAt: true, billingStatus: true,
+      },
       take: 500,
     });
 
     for (const workspace of due) {
       const def = PLANS[workspace.plan];
       const price = def.priceCents === null ? "your plan" : formatUsdCents(def.priceCents);
+      // A trial ENDS; a paid plan RENEWS. Telling a trial user their plan
+      // "renews tomorrow" implies a charge they never agreed to.
+      const isTrial = workspace.billingStatus === "TRIALING";
+      const endsOn =
+        (workspace.currentPeriodEnd ?? workspace.trialEndsAt)?.toDateString() ?? "soon";
       try {
         await notifyOwner(workspace, {
-          subject:
-            daysOut === 1
+          subject: isTrial
+            ? daysOut === 1
+              ? `Your MariMail trial ends tomorrow`
+              : `Your MariMail trial ends in ${daysOut} days`
+            : daysOut === 1
               ? `Your MariMail ${def.label} plan renews tomorrow`
               : `Your MariMail ${def.label} plan renews in ${daysOut} days`,
-          heading: `${def.label} plan — renewal due`,
-          preheader: `Renew to keep ${workspace.name} running without interruption.`,
-          body: [
-            `Your <strong>${def.label}</strong> plan for <strong>${workspace.name}</strong> ends on ${workspace.currentPeriodEnd?.toDateString() ?? "soon"}.`,
-            `Renew for ${price} to keep your campaigns, vessel tracking and contact credits running without interruption.`,
-            `If you don't renew, your workspace keeps working for a further ${GRACE_PERIOD_DAYS} days before it drops to the free limits. Nothing is deleted.`,
-          ],
-          ctaLabel: "Renew now",
+          heading: isTrial ? "Your trial is ending" : `${def.label} plan — renewal due`,
+          preheader: isTrial
+            ? `Pick a plan to keep ${workspace.name} running.`
+            : `Renew to keep ${workspace.name} running without interruption.`,
+          body: isTrial
+            ? [
+                `Your trial of <strong>${workspace.name}</strong> ends on ${endsOn}.`,
+                `Continue on <strong>${def.label}</strong> for ${price} to keep your campaigns, vessel tracking and contact credits running without interruption.`,
+                `If you don't pick a plan, your workspace keeps working for a further ${GRACE_PERIOD_DAYS} days before it drops to the minimum limits. Nothing is deleted.`,
+              ]
+            : [
+                `Your <strong>${def.label}</strong> plan for <strong>${workspace.name}</strong> ends on ${endsOn}.`,
+                `Renew for ${price} to keep your campaigns, vessel tracking and contact credits running without interruption.`,
+                `If you don't renew, your workspace keeps working for a further ${GRACE_PERIOD_DAYS} days before it drops to the minimum limits. Nothing is deleted.`,
+              ],
+          ctaLabel: isTrial ? "Choose a plan" : "Renew now",
         });
         await prisma.workspace.update({
           where: { id: workspace.id },
@@ -137,29 +184,36 @@ async function markPastDue(): Promise<{ count: number; errors: number }> {
   const lapsed = await prisma.workspace.findMany({
     where: {
       billingStatus: { in: ["ACTIVE", "TRIALING"] },
-      currentPeriodEnd: { lt: now },
+      ...deadlineWithin(null, now),
     },
-    select: { id: true, name: true, ownerId: true, plan: true },
+    select: { id: true, name: true, ownerId: true, plan: true, billingStatus: true },
     take: 500,
   });
 
   for (const workspace of lapsed) {
     const def = PLANS[workspace.plan];
+    const wasTrial = workspace.billingStatus === "TRIALING";
     try {
       await prisma.workspace.update({
         where: { id: workspace.id },
         data: { billingStatus: "PAST_DUE" },
       });
       await notifyOwner(workspace, {
-        subject: `Action needed: your MariMail ${def.label} plan has expired`,
-        heading: "Your plan has expired",
+        subject: wasTrial
+          ? "Your MariMail trial has ended"
+          : `Action needed: your MariMail ${def.label} plan has expired`,
+        heading: wasTrial ? "Your trial has ended" : "Your plan has expired",
         preheader: `${workspace.name} keeps working for ${GRACE_PERIOD_DAYS} more days.`,
         body: [
-          `The ${def.label} plan for <strong>${workspace.name}</strong> has expired.`,
-          `Your workspace is still fully working for the next <strong>${GRACE_PERIOD_DAYS} days</strong>. After that it drops to the free limits — campaigns pause and vessel tracking narrows to one country.`,
-          "Nothing is deleted, and renewing restores everything immediately.",
+          wasTrial
+            ? `The trial for <strong>${workspace.name}</strong> has ended.`
+            : `The ${def.label} plan for <strong>${workspace.name}</strong> has expired.`,
+          `Your workspace is still fully working for the next <strong>${GRACE_PERIOD_DAYS} days</strong>. After that it drops to the minimum limits — campaigns pause and vessel tracking narrows to one country.`,
+          wasTrial
+            ? "Nothing is deleted, and picking a plan restores everything immediately."
+            : "Nothing is deleted, and renewing restores everything immediately.",
         ],
-        ctaLabel: "Renew your plan",
+        ctaLabel: wasTrial ? "Choose a plan" : "Renew your plan",
       });
     } catch (error) {
       errors += 1;
@@ -181,7 +235,7 @@ async function downgradeExpired(): Promise<{ count: number; errors: number }> {
   const expired = await prisma.workspace.findMany({
     where: {
       billingStatus: "PAST_DUE",
-      currentPeriodEnd: { lt: cutoff },
+      ...deadlineWithin(null, cutoff),
       // `downgradedAt` makes this idempotent — without it every subsequent
       // sweep would re-downgrade and re-email the same workspace daily.
       downgradedAt: null,
@@ -194,11 +248,11 @@ async function downgradeExpired(): Promise<{ count: number; errors: number }> {
     try {
       await downgradeToFree(workspace.id, `grace period of ${GRACE_PERIOD_DAYS} days elapsed`);
       await notifyOwner(workspace, {
-        subject: "Your MariMail workspace has moved to the free limits",
-        heading: "Moved to free limits",
+        subject: "Your MariMail workspace has moved to the minimum limits",
+        heading: "Moved to minimum limits",
         preheader: "Your data is safe — renew any time to restore full access.",
         body: [
-          `<strong>${workspace.name}</strong> has moved to the free limits because the plan wasn't renewed.`,
+          `<strong>${workspace.name}</strong> has moved to the minimum limits because no plan was taken up.`,
           "Your vessels, lists, contacts and campaign history are all still here — nothing has been deleted. Sending is paused and country tracking is limited to one country.",
           "Renewing restores everything exactly as it was.",
         ],

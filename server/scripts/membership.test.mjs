@@ -157,6 +157,13 @@ t("upgrade ordering", () => {
 });
 t("signup FLEET maps to the stored BUSINESS plan", () =>
   assert.equal(plans.SIGNUP_PLAN_TO_BILLING.FLEET, "BUSINESS"));
+// The marketing page, signup heading and trial emails all render these two
+// numbers. They are the product promise — 500 tokens over 14 days — so a change
+// here should be a deliberate decision, not a silent edit.
+t("trial terms are 500 tokens over 14 days", () => {
+  assert.equal(plans.TRIAL_CREDITS, 500);
+  assert.equal(plans.TRIAL_DAYS, 14);
+});
 t("limits are int-safe (no Infinity into a Postgres Int column)", () => {
   for (const p of Object.values(plans.PLANS)) {
     for (const key of ["vesselLimit", "emailLimit", "inboxLimit", "teamLimit", "countryLimit"]) {
@@ -188,6 +195,35 @@ t("CANCELED is a hard stop even with time left", () => {
 t("membership.service.ts's re-export produces an IDENTICAL result to the shared definition", () => {
   const workspace = { plan: "STARTER", billingStatus: "PAST_DUE", trialEndsAt: null, currentPeriodEnd: new Date(Date.now() - 2 * DAY) };
   assert.deepEqual(describeMembership(workspace), plans.describeMembership(workspace));
+});
+
+console.log("trial deadline — currentPeriodEnd is null during a trial");
+// Registration sets ONLY trialEndsAt; currentPeriodEnd stays null until a
+// payment lands. describeMembership must fall back to trialEndsAt, or every
+// trialing workspace looks like it has no deadline at all.
+t("a trial with days left is active and counts down from trialEndsAt", () => {
+  const v = plans.describeMembership({
+    plan: "STARTER", billingStatus: "TRIALING",
+    trialEndsAt: new Date(Date.now() + 14 * DAY), currentPeriodEnd: null,
+  });
+  assert.equal(v.active, true);
+  assert.equal(v.daysRemaining, 14);
+});
+t("an expired trial past grace is NOT active", () => {
+  const v = plans.describeMembership({
+    plan: "STARTER", billingStatus: "PAST_DUE",
+    trialEndsAt: new Date(Date.now() - 6 * DAY), currentPeriodEnd: null,
+  });
+  assert.equal(v.active, false, "a trial that ended 6 days ago must not still grant access");
+});
+t("a paid period overrides trialEndsAt once set", () => {
+  const v = plans.describeMembership({
+    plan: "PRO", billingStatus: "ACTIVE",
+    trialEndsAt: new Date(Date.now() - 30 * DAY),  // long past
+    currentPeriodEnd: new Date(Date.now() + 20 * DAY),
+  });
+  assert.equal(v.active, true);
+  assert.equal(v.daysRemaining, 20, "must count from the paid period, not the stale trial");
 });
 
 console.log(`\n${n}/${n} passed`);

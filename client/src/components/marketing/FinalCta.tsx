@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TRIAL_CREDITS, TRIAL_DAYS } from "@marimail/utils/plans";
 import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 
@@ -37,11 +38,13 @@ export function FinalCta() {
         </h2>
 
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {/* Points at /register, not /book-demo — the primary CTA should start
+              the thing it names. Booking a demo is the secondary path beside it. */}
           <Link
-            href="/book-demo"
+            href="/register"
             className="group inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#F8FAFC] px-6 text-[15px] font-semibold text-black shadow-[0_14px_44px_rgba(255,255,255,0.12)] transition-all hover:-translate-y-0.5 hover:bg-[#EDEDF0]"
           >
-            Start for Free
+            Start 14-day trial
             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
           </Link>
           <Link
@@ -53,7 +56,7 @@ export function FinalCta() {
         </div>
 
         <p className="mt-5 text-xs text-white/40">
-          14-day trial · No credit card · Cancel anytime
+          {TRIAL_CREDITS.toLocaleString("en-US")} trial tokens · {TRIAL_DAYS} days · No credit card
         </p>
       </div>
     </section>

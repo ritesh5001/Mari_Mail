@@ -81,7 +81,7 @@ function toneFor(membership: MembershipView) {
 function headline(membership: MembershipView, planLabel: string) {
   if (!membership.active) return `${planLabel} plan — expired`;
   if (membership.inGracePeriod) return `${planLabel} plan — payment overdue`;
-  if (membership.status === "TRIALING") return `${planLabel} plan — free trial`;
+  if (membership.status === "TRIALING") return `${planLabel} plan — trial`;
   return `${planLabel} plan — active`;
 }
 
@@ -89,21 +89,24 @@ function detail(membership: MembershipView, gracePeriodDays: number) {
   const days = membership.daysRemaining;
 
   if (!membership.active) {
-    return "Your workspace is on the free limits. Nothing has been deleted — renewing restores everything exactly as it was.";
+    return "Your workspace is on the minimum limits. Nothing has been deleted — renewing restores everything exactly as it was.";
   }
 
   if (membership.inGracePeriod) {
     // `daysRemaining` is negative here (the deadline has passed), so the grace
     // days left is the period minus how far past the deadline we are.
     const graceLeft = days === null ? gracePeriodDays : Math.max(0, gracePeriodDays + days);
-    return `Everything still works for ${graceLeft} more day${graceLeft === 1 ? "" : "s"}. After that your workspace drops to the free limits — campaigns pause and tracking narrows to one country.`;
+    return `Everything still works for ${graceLeft} more day${graceLeft === 1 ? "" : "s"}. After that your workspace drops to the minimum limits — campaigns pause and tracking narrows to one country.`;
   }
 
   if (membership.status === "TRIALING") {
+    // A trial ends on whichever runs out first — the days or the tokens — so
+    // the days-remaining figure alone would be a half-truth to someone who is
+    // about to hit the token wall on day three.
     const ends = membership.trialEndsAt ?? membership.currentPeriodEnd;
     return days === null
-      ? "Full access to every feature on your plan."
-      : `Full access for ${days} more day${days === 1 ? "" : "s"}${ends ? `, until ${fmt(ends)}` : ""}. Pick a plan before then to keep going without a break.`;
+      ? "Full access while your trial tokens last."
+      : `${days} day${days === 1 ? "" : "s"} left${ends ? `, until ${fmt(ends)}` : ""} — or until your trial tokens run out, whichever comes first. Pick a plan to keep going without a break.`;
   }
 
   const renews = membership.currentPeriodEnd;

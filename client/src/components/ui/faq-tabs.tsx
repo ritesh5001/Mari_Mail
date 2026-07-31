@@ -311,9 +311,9 @@ const faqData: FaqData = {
   ],
   company: [
     {
-      question: "Is there a free trial or free access?",
+      question: "How does the trial work?",
       answer:
-        "We're onboarding early — every plan is 100% free for our first users, no credit card required. You can test vessel search, Port Radar, connected inboxes, and full campaign flows before committing.",
+        "Every new workspace starts with 500 trial tokens to spend over 14 days, with no credit card up front. Tokens are what you spend to reveal contact details — so you can search vessels, use Port Radar, connect an inbox and run a real campaign end to end before deciding. When the 14 days are up, or the tokens run out, you pick a plan to carry on.",
     },
     {
       question: "What plans are available?",

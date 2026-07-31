@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { Check, Gift, Sparkles, X } from "lucide-react";
+import { PLANS, TRIAL_CREDITS, TRIAL_DAYS, UNLIMITED, type PlanKey } from "@marimail/utils/plans";
 import { cn } from "@/lib/cn";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -40,8 +41,8 @@ interface PriceTier {
   isPopular: boolean;
   buttonLabel: string;
   href: string;
-  /** During early access every paid plan is free — show the promo treatment. */
-  freeEarlyAccess?: boolean;
+  /** Self-serve plans start with a trial — show the trial note under the price. */
+  hasTrial?: boolean;
   /** Numeric limits the subscriber gets on this plan (inboxes, credits, …). */
   metrics: Metric[];
   /** Plan-specific extras beyond the shared, all-plan feature set. */
@@ -58,7 +59,6 @@ interface PricingProps extends React.HTMLAttributes<HTMLDivElement> {
 
 // --- Real MariMail plans (from the pricing sheet) --------------------------
 
-const EARLY_ACCESS_SEATS = 100;
 const ANNUAL_DISCOUNT_PERCENT = 20;
 
 // Features every subscriber gets on every plan (the blank-value rows in the
@@ -96,76 +96,81 @@ const SHARED_FEATURES: string[] = [
 const annual = (monthly: number) =>
   Math.round((monthly * 12 * (100 - ANNUAL_DISCOUNT_PERCENT)) / 100);
 
+/**
+ * Numeric limits come from `@marimail/utils/plans` — the same catalog that
+ * registration provisions from and that checkout prices against.
+ *
+ * They were hardcoded here and had drifted badly: this page advertised 5,000
+ * enrichment credits on Starter where the system grants 500, and 2/4 inboxes
+ * on Pro/Fleet where the system grants 5/20. A marketing page overstating what
+ * a plan includes is a refund request; understating it is a lost sale. Neither
+ * is survivable now that the buttons below lead to a live gateway.
+ *
+ * `description`, `features` and `isPopular` stay hand-written — they are
+ * positioning, not product limits, and have no counterpart in the catalog.
+ */
+const metricsFor = (key: PlanKey): Metric[] => {
+  const def = PLANS[key];
+  const cap = (n: number) => (n >= UNLIMITED ? "Unlimited" : n.toLocaleString("en-US"));
+  return [
+    { label: "Target countries", value: cap(def.countryLimit) },
+    { label: "Connected inboxes", value: cap(def.inboxLimit) },
+    { label: "Enrichment credits", value: cap(def.monthlyCredits) },
+    { label: "Team seats", value: cap(def.teamLimit) },
+  ];
+};
+
 export const mariMailPlans: PlanTuple = [
   {
     id: "starter",
-    name: "Starter",
+    name: PLANS.STARTER.label,
     description: "For solo operators dipping into ETA-driven outreach.",
-    priceMonthly: 25,
-    priceAnnually: annual(25),
+    priceMonthly: PLANS.STARTER.priceCents! / 100,
+    priceAnnually: annual(PLANS.STARTER.priceCents! / 100),
     isPopular: false,
-    buttonLabel: "Claim free access",
-    href: "/book-demo",
-    freeEarlyAccess: true,
-    metrics: [
-      { label: "Target countries", value: "1" },
-      { label: "Connected inboxes", value: "1" },
-      { label: "Enrichment credits", value: "5,000" },
-      { label: "Active sequences", value: "5" },
-    ],
+    buttonLabel: "Start 14-day trial",
+    href: "/register?plan=STARTER",
+    hasTrial: true,
+    metrics: metricsFor("STARTER"),
     features: [],
   },
   {
     id: "pro",
-    name: "Pro",
+    name: PLANS.PRO.label,
     description: "For growing desks running multi-market outreach.",
-    priceMonthly: 45,
-    priceAnnually: annual(45),
+    priceMonthly: PLANS.PRO.priceCents! / 100,
+    priceAnnually: annual(PLANS.PRO.priceCents! / 100),
     isPopular: true,
-    buttonLabel: "Claim free access",
-    href: "/book-demo",
-    freeEarlyAccess: true,
-    metrics: [
-      { label: "Target countries", value: "2" },
-      { label: "Connected inboxes", value: "2" },
-      { label: "Enrichment credits", value: "10,000" },
-      { label: "Active sequences", value: "10" },
-    ],
+    buttonLabel: "Start 14-day trial",
+    href: "/register?plan=PRO",
+    hasTrial: true,
+    metrics: metricsFor("PRO"),
     features: [{ name: "SSO + role-based access", isIncluded: false }],
   },
   {
     id: "fleet",
-    name: "Fleet",
+    // Stored as BUSINESS in the database; "Fleet" is the customer-facing name.
+    name: PLANS.BUSINESS.label,
     description: "For brokerages scaling across regions.",
-    priceMonthly: 85,
-    priceAnnually: annual(85),
+    priceMonthly: PLANS.BUSINESS.priceCents! / 100,
+    priceAnnually: annual(PLANS.BUSINESS.priceCents! / 100),
     isPopular: false,
-    buttonLabel: "Claim free access",
-    href: "/book-demo",
-    freeEarlyAccess: true,
-    metrics: [
-      { label: "Target countries", value: "4" },
-      { label: "Connected inboxes", value: "4" },
-      { label: "Enrichment credits", value: "20,000" },
-      { label: "Active sequences", value: "15" },
-    ],
+    buttonLabel: "Start 14-day trial",
+    href: "/register?plan=FLEET",
+    hasTrial: true,
+    metrics: metricsFor("BUSINESS"),
     features: [{ name: "SSO + role-based access", isIncluded: true }],
   },
   {
     id: "enterprise",
-    name: "Enterprise",
+    name: PLANS.ENTERPRISE.label,
     description: "For shipping groups that need everything, unmetered.",
     priceMonthly: null,
     priceAnnually: null,
     isPopular: false,
     buttonLabel: "Talk to sales",
-    href: "mailto:info@maribiz.ai",
-    metrics: [
-      { label: "Target countries", value: "Unlimited" },
-      { label: "Connected inboxes", value: "Unlimited" },
-      { label: "Enrichment credits", value: "Unlimited" },
-      { label: "Active sequences", value: "Unlimited" },
-    ],
+    href: "/book-demo",
+    metrics: metricsFor("ENTERPRISE"),
     features: [
       { name: "SSO + role-based access", isIncluded: true },
       { name: "Dedicated tenant + SLA", isIncluded: true },
@@ -285,31 +290,25 @@ const PricingComponent: React.FC<PricingProps> = ({
               <div className="mt-4">
                 {isCustom ? (
                   <p className="text-4xl font-extrabold text-slate-900 dark:text-white">Custom</p>
-                ) : plan.freeEarlyAccess ? (
+                ) : (
                   <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-extrabold text-slate-900 dark:text-white">
-                        Free
-                      </span>
-                      <span className="text-xl font-semibold text-slate-400 line-through dark:text-white/35">
-                        {formatPrice(currentPrice as number)}
-                      </span>
-                      <span className="text-sm text-slate-400 line-through dark:text-white/35">
+                    <p className="text-4xl font-extrabold text-slate-900 dark:text-white">
+                      {formatPrice(currentPrice as number)}
+                      <span className="ml-1 text-base font-normal text-slate-500 dark:text-white/50">
                         {priceSuffix}
                       </span>
-                    </div>
-                    <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-accent-600 dark:text-accent-300">
-                      <Gift className="h-3.5 w-3.5" />
-                      Free for the first {EARLY_ACCESS_SEATS} users
                     </p>
+                    {/* The price is the price. The trial is stated as what it
+                        is — a metered evaluation — rather than crossing the
+                        price out and calling the plan "Free", which set the
+                        expectation that signing up cost nothing ongoing. */}
+                    {plan.hasTrial && (
+                      <p className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-accent-600 dark:text-accent-300">
+                        <Gift className="h-3.5 w-3.5" />
+                        {TRIAL_CREDITS.toLocaleString("en-US")} trial tokens for {TRIAL_DAYS} days
+                      </p>
+                    )}
                   </>
-                ) : (
-                  <p className="text-4xl font-extrabold text-slate-900 dark:text-white">
-                    {formatPrice(currentPrice as number)}
-                    <span className="ml-1 text-base font-normal text-slate-500 dark:text-white/50">
-                      {priceSuffix}
-                    </span>
-                  </p>
                 )}
                 {!isCustom && billingCycle === "annually" && (
                   <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
@@ -478,14 +477,15 @@ const PricingComponent: React.FC<PricingProps> = ({
       <header className="mb-10 text-center">
         <span className="inline-flex items-center gap-2 rounded-full border border-accent-500/30 bg-accent-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-accent-600 dark:text-accent-300">
           <Gift className="h-3.5 w-3.5" />
-          Free for our first {EARLY_ACCESS_SEATS} users
+          {TRIAL_CREDITS.toLocaleString("en-US")} trial tokens · {TRIAL_DAYS} days
         </span>
         <h2 className="mt-5 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
           Choose the right plan for your marine desk.
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-lg text-slate-600 dark:text-white/60">
-          Scale from solo operator to enterprise brokerage — every paid plan is 100% free for the first{" "}
-          {EARLY_ACCESS_SEATS} sign-ups, no credit card required.
+          Every plan starts with {TRIAL_CREDITS.toLocaleString("en-US")} tokens to spend over{" "}
+          {TRIAL_DAYS} days — enough to reveal contacts, run a sequence and see the system work
+          before you pay. No credit card to start.
         </p>
       </header>
 

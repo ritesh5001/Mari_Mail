@@ -123,7 +123,7 @@ function headline(membership: ReturnType<typeof describeMembership>) {
 function detail(membership: ReturnType<typeof describeMembership>) {
   const days = membership.daysRemaining;
   if (!membership.active) {
-    return "You're on the free limits now — nothing was deleted. Renew to restore full access.";
+    return "You're on the minimum limits now — nothing was deleted. Renew to restore full access.";
   }
   if (membership.inGracePeriod) {
     return "Update your payment to avoid losing access.";

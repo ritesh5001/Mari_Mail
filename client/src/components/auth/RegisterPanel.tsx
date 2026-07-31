@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { TRIAL_CREDITS, TRIAL_DAYS } from "@marimail/utils/plans";
 import Link from "next/link";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { RegisterForm, type RegisterDefaults } from "@/components/auth/RegisterForm";
@@ -11,7 +12,7 @@ import { RegistrationSuccess } from "@/components/auth/RegistrationSuccess";
  * the body.
  *
  * The success screen can't live inside RegisterForm alone: the shell's title
- * ("Start for free" / "Set up your workspace in under 2 minutes") is a sibling
+ * ("Start your 14-day trial" / the token subtitle) is a sibling
  * of the form, so it would have sat directly above "Workspace created — now
  * confirm your email". AuthShell is plain markup with no server-only
  * dependencies, so a client component can render it and swap all four slots at
@@ -59,8 +60,8 @@ export function RegisterPanel({
 
   return (
     <AuthShell
-      title="Start for free"
-      subtitle="Set up your workspace in under 2 minutes. No credit card required."
+      title="Start your 14-day trial"
+      subtitle={`${TRIAL_CREDITS.toLocaleString("en-US")} tokens to spend over ${TRIAL_DAYS} days. No credit card required.`}
       footer={
         <>
           Already have an account?{" "}

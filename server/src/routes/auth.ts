@@ -85,7 +85,8 @@ const registerSchema = z.object({
     .length(2)
     .transform((value) => value.toUpperCase())
     .optional(),
-  // Plan chosen at signup — grants a 14-day free trial of that plan.
+  // Plan chosen at signup — sets the country allowance and the price charged
+  // once the trial's tokens or days run out.
   plan: z.enum(["STARTER", "PRO", "FLEET"]).optional(),
   // Countries the user wants to track, capped by the plan's allowance. Sent as
   // a comma-separated string (HTML form) or an array (JSON client).
@@ -449,7 +450,8 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
     const slug = await uniqueWorkspaceSlug(workspaceName);
 
     // Resolve the chosen plan → billing plan, country allowance, and the
-    // 14-day free trial (plan features + 500 credits, then we start charging).
+    // Trial: full plan features plus TRIAL_CREDITS tokens, for TRIAL_DAYS days.
+    // Whichever runs out first ends the trial; then we start charging.
     const chosenPlan = input.data.plan ?? "STARTER";
     const billingPlan = REGISTER_PLAN_TO_BILLING[chosenPlan];
     const countryLimit = registerPlanCountryLimit(chosenPlan);
@@ -483,7 +485,7 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
           ...(input.data.targetPortCountry
             ? { targetPortCountry: input.data.targetPortCountry }
             : {}),
-          // 14-day free trial of the chosen plan.
+          // Trial of the chosen plan — see TRIAL_DAYS / TRIAL_CREDITS.
           plan: billingPlan,
           billingStatus: "TRIALING",
           trialEndsAt,
@@ -491,8 +493,8 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
           emailLimit: limits.emailLimit,
           inboxLimit: limits.inboxLimit,
           teamLimit: limits.teamLimit,
-          // Free 500 credits for the trial (not the plan's monthly allotment —
-          // that kicks in once billing starts after the trial).
+          // Trial tokens — NOT the plan's monthly allotment, which only starts
+          // once the workspace is actually paying.
           creditBalance: TRIAL_CREDITS,
           // Country access chosen at signup, capped by the plan.
           countryLimit,

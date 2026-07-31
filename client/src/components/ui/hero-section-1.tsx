@@ -136,7 +136,7 @@ export function HeroSection() {
                   }}
                   className="mt-12 flex flex-col items-center justify-center gap-3 md:flex-row"
                 >
-                  <MotionButton key={1} href="/book-demo" size="md" label="Start for Free" />
+                  <MotionButton key={1} href="/register" size="md" label="Start 14-day trial" />
                   <Link
                     key={2}
                     href="/book-demo"
@@ -516,14 +516,13 @@ function HeroHeader() {
                   <span>Book a Demo</span>
                 </Link>
                 <Link
-                  href="/book-demo"
+                  href="/register"
                   className={cn(
                     "hidden h-10 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#F8FAFC] px-4 text-[13px] font-semibold text-black shadow-[0_8px_26px_rgba(255,255,255,0.12)] transition-all hover:-translate-y-0.5 hover:bg-[#EDEDF0]",
                     isScrolled && "lg:inline-flex",
                   )}
                 >
-                  <Calendar className="h-3.5 w-3.5" />
-                  <span>Start for Free</span>
+                  <span>Start 14-day trial</span>
                 </Link>
               </div>
             </div>
