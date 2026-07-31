@@ -793,6 +793,31 @@ type ApolloListResponse = {
   error?: { message?: string };
 };
 
+/**
+ * Turn the server's failure reason into advice worth following.
+ *
+ * Every failure used to render the same "temporarily unavailable" line, so a
+ * rejected API key and an exhausted plan both told the user to wait and retry —
+ * advice that can never work for either, and which hides a problem only an
+ * admin can fix.
+ */
+function apolloUnavailableMessage(warnings: string[]): string {
+  const warning = warnings.find((w) => w.startsWith("apollo_unavailable")) ?? "";
+  const reason = warning.split(":")[1] ?? "unknown";
+  switch (reason) {
+    case "rate_limited":
+      return "Contact search hit the provider's rate limit. Wait a few seconds and search again — large lists query many companies at once.";
+    case "unauthorized":
+      return "Contact search was rejected by the provider — the API key is invalid or expired. An admin needs to update it under Data Sources; retrying won't help.";
+    case "out_of_credits":
+      return "The contact data provider reports no credits left on the account. An admin needs to top it up; retrying won't help.";
+    case "timeout":
+      return "Contact search timed out. Try a smaller list, or search again in a moment.";
+    default:
+      return "Contact search is unavailable right now. Try again shortly — if it keeps failing, an admin should check the Apollo data source.";
+  }
+}
+
 type ApolloRolesState =
   | { status: "idle" }
   | { status: "loading" }
@@ -1471,8 +1496,8 @@ export function CampaignByRolePanel({
                 ? "These vessels don't expose a company domain, so there's nothing to search against."
                 : loaded.warnings.includes("apollo_disabled")
                   ? "Contact search is disabled — an admin needs to enable it."
-                  : loaded.warnings.includes("apollo_unavailable")
-                    ? "Contact search is busy right now — wait a few seconds and search again. Large lists query many companies at once and can hit the provider's rate limit."
+                  : loaded.warnings.some((w) => w.startsWith("apollo_unavailable"))
+                    ? apolloUnavailableMessage(loaded.warnings)
                     : `No people match this filter (${summarizeFilter(loaded.filter)}) at these companies.`}
           </div>
         )}

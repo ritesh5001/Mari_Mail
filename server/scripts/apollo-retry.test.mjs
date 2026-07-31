@@ -104,4 +104,38 @@ t("SOME failed -> partial, results still shown", () =>
   assert.equal(classify(3, 10), "apollo_partial:3:10"));
 t("none failed -> no warning", () => assert.equal(classify(0, 10), "ok"));
 
+console.log("failure classification — what the user is told to do");
+// Mirrors classifyApolloFailure / dominantReason in routes/contacts.ts.
+const classifyReason = (status, message = "") => {
+  if (status === 429) return "rate_limited";
+  if (status === 401 || status === 403) return "unauthorized";
+  if (status === 402) return "out_of_credits";
+  if (/timed out|timeout|abort/i.test(message)) return "timeout";
+  return "unknown";
+};
+const dominant = (reasons) => {
+  if (reasons.length === 0) return "unknown";
+  const counts = new Map();
+  for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+};
+
+t("429 -> rate_limited (waiting actually helps)", () =>
+  assert.equal(classifyReason(429), "rate_limited"));
+t("401/403 -> unauthorized (waiting never helps)", () => {
+  assert.equal(classifyReason(401), "unauthorized");
+  assert.equal(classifyReason(403), "unauthorized");
+});
+t("402 -> out_of_credits", () => assert.equal(classifyReason(402), "out_of_credits"));
+t("a timeout is recognised from the message", () =>
+  assert.equal(classifyReason(undefined, "Apollo request timed out"), "timeout"));
+t("anything else is unknown rather than mislabelled", () =>
+  assert.equal(classifyReason(500), "unknown"));
+t("dominant reason wins over stragglers", () =>
+  assert.equal(dominant(["rate_limited","rate_limited","unknown"]), "rate_limited"));
+t("an expired key is reported as such even beside noise", () =>
+  assert.equal(dominant(["unauthorized","unauthorized","unauthorized","timeout"]), "unauthorized"));
+t("no reasons -> unknown, never a confident wrong answer", () =>
+  assert.equal(dominant([]), "unknown"));
+
 console.log(`\n${n}/${n} passed`);

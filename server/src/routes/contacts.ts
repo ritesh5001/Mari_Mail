@@ -301,6 +301,39 @@ async function findVesselsAssociatedToContactByDomain(
  * unavailable" with no results. Deliberately conservative; search costs no
  * credits, so the only price of going slower is latency.
  */
+/**
+ * Why an Apollo call failed, in terms the UI can act on.
+ *
+ * `rate_limited` is worth waiting out; `unauthorized` and `out_of_credits` are
+ * not — they need an admin. Collapsing all of them into one "temporarily
+ * unavailable" message meant an expired API key looked like transient
+ * congestion and could go unnoticed indefinitely.
+ */
+type ApolloFailureReason =
+  | "rate_limited"
+  | "unauthorized"
+  | "out_of_credits"
+  | "timeout"
+  | "unknown";
+
+function classifyApolloFailure(error: unknown): ApolloFailureReason {
+  if (error instanceof ApolloError) {
+    if (error.status === 429) return "rate_limited";
+    if (error.status === 401 || error.status === 403) return "unauthorized";
+    if (error.status === 402) return "out_of_credits";
+    if (/timed out|timeout|abort/i.test(error.message)) return "timeout";
+  }
+  return "unknown";
+}
+
+/** The most common reason in a batch — what to tell the user about. */
+function dominantReason(reasons: ApolloFailureReason[]): ApolloFailureReason {
+  if (reasons.length === 0) return "unknown";
+  const counts = new Map<ApolloFailureReason, number>();
+  for (const r of reasons) counts.set(r, (counts.get(r) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
 const APOLLO_DOMAIN_CONCURRENCY = 4;
 
 /**
@@ -624,7 +657,7 @@ contactRouter.get("/external-by-vessel/:vesselId", requireAuth, async (req, res,
         return { rows: result.rows.map(apolloPersonToContactRow) };
       } catch (error) {
         console.warn("[apollo] external-by-vessel failed:", error instanceof ApolloError ? error.message : error);
-        warnings.push("apollo_unavailable");
+        warnings.push(`apollo_unavailable:${classifyApolloFailure(error)}`);
         return { rows: [] };
       }
     })();
@@ -815,6 +848,7 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
           // the org name says. Search costs no credits — only reveals do — so
           // the extra calls are just latency, and each is cached separately.
           const searchDeadline = Date.now() + APOLLO_SEARCH_BUDGET_MS;
+          const failureReasons: ApolloFailureReason[] = [];
           const perDomain = await mapWithConcurrency(
             domains,
             APOLLO_DOMAIN_CONCURRENCY,
@@ -856,6 +890,12 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
                   `[apollo] external-by-list domain=${domain} failed:`,
                   error instanceof ApolloError ? error.message : error,
                 );
+                // Record the CAUSE, not just the fact. Every failure used to
+                // collapse to null, so a rejected API key and a rate limit were
+                // indistinguishable — and the UI told the user to "wait a few
+                // seconds and try again" for a problem no amount of waiting
+                // fixes.
+                failureReasons.push(classifyApolloFailure(error));
                 return null;
               }
             },
@@ -865,7 +905,8 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
           // have and say so, rather than silently dropping those companies.
           const failed = perDomain.filter((entry) => entry === null).length;
           if (failed > 0 && failed === domains.length) {
-            warnings.push("apollo_unavailable");
+            // Name the dominant cause so the UI can say something actionable.
+            warnings.push(`apollo_unavailable:${dominantReason(failureReasons)}`);
           } else if (failed > 0) {
             warnings.push(`apollo_partial:${failed}:${domains.length}`);
           }
@@ -899,7 +940,7 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
           );
         } catch (error) {
           console.warn("[apollo] external-by-list failed:", error instanceof ApolloError ? error.message : error);
-          warnings.push("apollo_unavailable");
+          warnings.push(`apollo_unavailable:${classifyApolloFailure(error)}`);
         }
       }
     }
