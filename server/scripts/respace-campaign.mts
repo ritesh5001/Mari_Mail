@@ -90,6 +90,29 @@ if (!apply) {
   process.exit(0);
 }
 
+// Prove the queue is reachable BEFORE clearing anything. Both the cancel and
+// the relaunch degrade to a no-op when Redis is down, which would leave the
+// campaign with its times wiped and no jobs to fire — strictly worse than the
+// hourly spacing we came to fix.
+{
+  const url = process.env.REDIS_URL;
+  if (!url) {
+    console.error("REDIS_URL is not set — refusing to clear send times with no queue to rebuild them.");
+    process.exit(1);
+  }
+  const { Redis } = await import("ioredis");
+  const probe = new Redis(url, { maxRetriesPerRequest: 1, lazyConnect: true, connectTimeout: 5000 });
+  try {
+    await probe.connect();
+    await probe.ping();
+  } catch (err) {
+    console.error(`Redis unreachable (${(err as Error).message}) — aborting before any write.`);
+    process.exit(1);
+  } finally {
+    probe.disconnect();
+  }
+}
+
 const removed = await cancelManualJobsForCampaign(campaignId);
 console.log(`removed ${removed} queued job(s)`);
 
