@@ -351,38 +351,39 @@ export function ContactListDetail({
           )}
         </section>
 
-        {!isEta && isSuperAdmin ? <ImportContactsCsvSection listId={list.id} /> : null}
+        {/* Same reasoning as the Apollo panel below: importing contacts is
+            about contacts, not about whether the list also tracks vessels. */}
+        {isSuperAdmin ? <ImportContactsCsvSection listId={list.id} /> : null}
 
         {/*
-          Apollo people search for CONTACT lists.
-          
-          An ETA list already has this, scoped to its vessels' company domains.
-          A contact list has no vessels, so that endpoint would always return
-          nothing — and CSV was the only way to populate one. That's why cold
-          campaigns sat at zero contacts: the list feeding them could only be
-          filled by hand.
+          Apollo people search — available on EVERY list, whatever it holds.
+
+          It was gated to contact-only lists, which tied "can I find people
+          this way" to "does this list happen to have vessels in it". Those are
+          unrelated: a list with vessels can still be the audience for cold
+          outreach, and a list without them can still want people from a
+          shipowner. An ETA list keeps its vessel-scoped picker as well — the
+          two answer different questions, so having both is the point.
         */}
-        {!isEta ? (
-          <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
-            <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
-              <Search className="h-4 w-4 shrink-0 text-accent-500" />
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
-                  Find people with Apollo
-                </h3>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
-                  Search by title, seniority, location, company size and keywords, then add
-                  them straight to this list. Searching is free — only revealing an email
-                  spends a credit.
-                </p>
-              </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
-            </summary>
-            <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
-              <CampaignByRolePanel listId={list.id} listName={list.name} scope="apollo" />
+        <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
+          <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+            <Search className="h-4 w-4 shrink-0 text-accent-500" />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+                Find people with Apollo
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
+                Search anyone by title, seniority, location, company size and keywords —
+                no vessel needed — then add them straight to this list. Searching is free;
+                only revealing an email spends a credit.
+              </p>
             </div>
-          </details>
-        ) : null}
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
+          </summary>
+          <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
+            <CampaignByRolePanel listId={list.id} listName={list.name} scope="apollo" />
+          </div>
+        </details>
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div className="flex border-b border-slate-100 dark:border-white/[0.06]">
@@ -1560,7 +1561,11 @@ export function CampaignByRolePanel({
         {state.status === "loading" && (
           <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-500 dark:border-white/10 dark:bg-white/[0.02]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Searching at these vessels&rsquo; domains…
+            {/* Scope-dependent: a contact list has no vessels, so the old
+                fixed "at these vessels' domains" was simply untrue there. */}
+            {scope === "apollo"
+              ? "Searching Apollo…"
+              : "Searching at these vessels\u2019 domains…"}
           </div>
         )}
         {state.status === "error" && (
