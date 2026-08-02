@@ -1009,6 +1009,27 @@ inboxRouter.patch("/:id", requireAuth, async (req, res, next) => {
         input.data.smtpPassword,
       ) as unknown as Prisma.InputJsonValue;
     }
+
+    // Replacing credentials clears a previous ERROR.
+    //
+    // `sequence-sender` flips a mailbox to ERROR when a send fails
+    // authentication. That verdict was reached against the OLD credentials, so
+    // once they're replaced it is stale — and leaving it set meant fixing a
+    // mistyped password still left the mailbox refusing to send, with nothing
+    // on screen explaining why. If the new credentials are also wrong the next
+    // send marks it ERROR again immediately.
+    //
+    // Only ERROR is cleared. A PAUSED mailbox was paused deliberately and must
+    // stay that way; an explicit `status` in the same request still wins.
+    const credentialsChanged =
+      input.data.smtpPassword !== undefined ||
+      input.data.smtpHost !== undefined ||
+      input.data.smtpUser !== undefined ||
+      input.data.smtpPort !== undefined ||
+      input.data.smtpSecure !== undefined;
+    if (credentialsChanged && existing.status === "ERROR" && input.data.status === undefined) {
+      data.status = "ACTIVE";
+    }
     if (input.data.smtpSecure !== undefined)
       data.smtpSecure = input.data.smtpSecure;
     if (input.data.dailyLimit !== undefined)

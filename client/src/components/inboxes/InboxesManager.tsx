@@ -8,6 +8,7 @@ import {
   Loader2,
   Mail,
   Pause,
+  Pencil,
   Play,
   Plus,
   Send,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
+import { EditInboxModal } from "@/components/inboxes/EditInboxModal";
 
 type Provider = "SMTP" | "GMAIL" | "OUTLOOK";
 type Status = "ACTIVE" | "PAUSED" | "WARMING" | "ERROR";
@@ -77,6 +79,7 @@ export function InboxesManager({
 }) {
   const [inboxes, setInboxes] = useState(initialInboxes);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [editing, setEditing] = useState<Inbox | null>(null);
   const [banner, setBanner] = useState<{ kind: "ok" | "error"; text: string } | null>(
     oauthBannerFrom(oauthStatus),
   );
@@ -313,6 +316,15 @@ export function InboxesManager({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
+                    onClick={() => setEditing(inbox)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/80"
+                    title="Edit this mailbox's settings and credentials"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => sendTest(inbox)}
                     className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/80"
                     title="Send a test email from this inbox"
@@ -360,6 +372,17 @@ export function InboxesManager({
           onConnected={async () => {
             setWizardOpen(false);
             setBanner({ kind: "ok", text: "Inbox connected." });
+            await refresh();
+          }}
+        />
+      ) : null}
+
+      {editing ? (
+        <EditInboxModal
+          inbox={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setBanner({ kind: "ok", text: "Mailbox updated." });
             await refresh();
           }}
         />
