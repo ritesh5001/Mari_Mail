@@ -227,4 +227,38 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("throughput — a drip is only useful if the campaign can send what it adds");
+/**
+ * Sustainable rate, given how the caps actually compose.
+ *
+ * campaign.dailyLimit is enforced campaign-WIDE (`campaignSent >=
+ * campaign.dailyLimit` in sequence-sender), across every inbox and every step.
+ * So an N-step sequence spends N sends per contact in steady state, and inbox
+ * capacity caps it independently.
+ */
+const sustainableDrip = ({ campaignDailyLimit, inboxCapacity, steps }) =>
+  Math.floor(Math.min(campaignDailyLimit, inboxCapacity) / Math.max(1, steps));
+
+t("a 2-step campaign consumes two sends per contact in steady state", () =>
+  assert.equal(sustainableDrip({ campaignDailyLimit: 50, inboxCapacity: 50, steps: 2 }), 25));
+t("THE LIVE SETUP: 50/day drip is double what the campaign can send", () => {
+  const safe = sustainableDrip({ campaignDailyLimit: 50, inboxCapacity: 50, steps: 2 });
+  assert.ok(safe < 50, `drip of 50/day against a sustainable ${safe}/day builds a backlog forever`);
+});
+t("fixing the ERRORed inbox doubles capacity but the campaign cap still binds", () =>
+  // Two usable inboxes = 100/day of inbox capacity, but campaign cap is 50.
+  assert.equal(sustainableDrip({ campaignDailyLimit: 50, inboxCapacity: 100, steps: 2 }), 25));
+t("raising BOTH is what actually supports 50 new contacts a day", () =>
+  assert.equal(sustainableDrip({ campaignDailyLimit: 100, inboxCapacity: 100, steps: 2 }), 50));
+t("a single-step campaign sustains twice the drip rate", () =>
+  assert.equal(sustainableDrip({ campaignDailyLimit: 50, inboxCapacity: 50, steps: 1 }), 50));
+
+console.log("credit runway");
+const runwayDays = (balance, perDay, creditsPerReveal = 1) =>
+  Math.floor(balance / (perDay * creditsPerReveal));
+t("377 credits at 50 reveals/day is one week", () =>
+  assert.equal(runwayDays(377, 50), 7));
+t("halving the drip rate doubles the runway", () =>
+  assert.equal(runwayDays(377, 25), 15));
+
 console.log(`\n${n}/${n} passed`);

@@ -2002,8 +2002,13 @@ function OptionsTab({
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white">
           <Settings className="h-4 w-4" /> Sending
         </h3>
+        {/* This is enforced campaign-wide, not per inbox — the sender checks
+            `campaignSent >= campaign.dailyLimit` across every inbox and every
+            step. The old "per inbox" label made a two-step campaign look like
+            it had twice the headroom it actually has. Each inbox has its own
+            separate cap in Mailboxes. */}
         <label className="mt-4 block text-xs font-medium text-slate-600 dark:text-white/60">
-          Daily send limit per inbox
+          Daily send limit for this campaign
           <input
             type="number"
             min={1}
@@ -2011,6 +2016,10 @@ function OptionsTab({
             onChange={(event) => onDailyLimit(Number(event.target.value) || 1)}
             className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
           />
+          <span className="mt-1 block font-normal text-[11px] text-slate-500 dark:text-white/50">
+            Counts every send, follow-ups included — a 2-step sequence uses two
+            of these per contact. Each mailbox also has its own daily cap.
+          </span>
         </label>
         <div className="mt-3">
           <p className="text-xs font-medium text-slate-600 dark:text-white/60">
