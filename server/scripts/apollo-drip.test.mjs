@@ -24,15 +24,18 @@ const PER_PAGE = 25;
  * @param reveal (id) => "ok" | "fail" | "no-credits"
  * @param onList Set of ids already on the list
  */
-async function runDrip(job, pages, reveal, onList = new Set()) {
+async function runDrip(job, pages, reveal, onList = new Set(), maxPagesPerRun = 40) {
   let page = job.page;
   let offset = job.offsetInPage;
-  let added = 0, revealed = 0, skipped = 0;
+  let added = 0, revealed = 0, skipped = 0, alreadyOnList = 0;
   let status = "ACTIVE";
   let stoppedBecause;
+  let pagesScanned = 0;
   const chargedFor = [];
 
   while (added < job.dailyLimit) {
+    if (pagesScanned >= maxPagesPerRun) { stoppedBecause = "page_budget_reached"; break; }
+    pagesScanned += 1;
     const rows = pages[page - 1] ?? [];
     const hasNextPage = page < pages.length;
     if (rows.length === 0) { status = "COMPLETED"; stoppedBecause = "no_more_results"; break; }
@@ -42,6 +45,10 @@ async function runDrip(job, pages, reveal, onList = new Set()) {
       if (added >= job.dailyLimit) break;
       const id = rows[i];
       offset = i + 1;
+
+      // Membership is settled from our own data BEFORE any reveal. This is the
+      // whole point: seeing someone the list already has must cost nothing.
+      if (onList.has(id)) { alreadyOnList += 1; continue; }
 
       const outcome = reveal(id);
       if (outcome !== "ok") {
@@ -55,9 +62,8 @@ async function runDrip(job, pages, reveal, onList = new Set()) {
       }
       chargedFor.push(id);
       revealed += 1;
-
-      if (!onList.has(id)) { onList.add(id); added += 1; }
-      else skipped += 1;
+      onList.add(id);
+      added += 1;
     }
 
     if (outOfCredits) { stoppedBecause = "insufficient_credits"; break; }
@@ -68,7 +74,7 @@ async function runDrip(job, pages, reveal, onList = new Set()) {
       offset = 0;
     }
   }
-  return { page, offset, added, revealed, skipped, status, stoppedBecause, chargedFor, onList };
+  return { page, offset, added, revealed, skipped, alreadyOnList, status, stoppedBecause, chargedFor, onList };
 }
 
 const mkPages = (total, per = PER_PAGE) => {
@@ -147,14 +153,60 @@ await ta("a failed reveal is skipped and NOT retried forever", async () => {
   assert.ok(out.offset > 0);
 });
 
-console.log("duplicates and exhaustion");
-await ta("someone already on the list counts as skipped, not added", async () => {
+console.log("excluding people the list already has — the expensive mistake");
+await ta("someone already on the list is skipped WITHOUT being charged for", async () => {
   const pages = mkPages(300);
   const onList = new Set(["p0", "p1", "p2"]);
   const out = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 5 }, pages, alwaysOk, onList);
-  assert.equal(out.skipped, 3);
+  assert.equal(out.alreadyOnList, 3);
   assert.equal(out.added, 5, "must still deliver a full day despite the duplicates");
+  for (const id of ["p0", "p1", "p2"]) {
+    assert.ok(!out.chargedFor.includes(id), `paid again for ${id}, which was already on the list`);
+  }
 });
+await ta("THE SCENARIO: 500 already on the list costs 50 credits, not 550", async () => {
+  const pages = mkPages(3000);
+  // The list already holds the first 500 people this filter returns.
+  const onList = new Set(pages.flat().slice(0, 500));
+  const out = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 50 }, pages, alwaysOk, onList);
+  assert.equal(out.added, 50);
+  assert.equal(
+    out.chargedFor.length,
+    50,
+    `charged for ${out.chargedFor.length} people to add 50 — the pre-reveal membership check is not working`,
+  );
+  assert.equal(out.alreadyOnList, 500, "all 500 should have been recognised for free");
+});
+await ta("the 50 added are all NEW — none of them was already on the list", async () => {
+  const pages = mkPages(3000);
+  const existing = pages.flat().slice(0, 500);
+  const out = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 50 }, pages, alwaysOk, new Set(existing));
+  const overlap = out.chargedFor.filter((id) => existing.includes(id));
+  assert.deepEqual(overlap, [], `re-added people already on the list: ${overlap.join(", ")}`);
+  assert.deepEqual(out.chargedFor, pages.flat().slice(500, 550), "should continue past the known 500");
+});
+await ta("a cursor reset re-scans from page 1 for free instead of re-billing", async () => {
+  // Apollo re-ranks, or an admin resets the cursor: the run starts over at
+  // page 1. Membership is checked against our own data, so the re-scan is free.
+  const pages = mkPages(3000);
+  const onList = new Set(pages.flat().slice(0, 200));
+  const out = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 50 }, pages, alwaysOk, onList);
+  assert.equal(out.chargedFor.length, 50);
+  assert.equal(out.alreadyOnList, 200);
+});
+await ta("a run whose pages are ALL duplicates stops on the page budget, still ACTIVE", async () => {
+  const pages = mkPages(3000);
+  const out = await runDrip(
+    { page: 1, offsetInPage: 0, dailyLimit: 50 }, pages, alwaysOk, new Set(pages.flat()), 5,
+  );
+  assert.equal(out.chargedFor.length, 0, "must not spend anything when everyone is known");
+  assert.equal(out.stoppedBecause, "page_budget_reached");
+  assert.equal(out.status, "ACTIVE", "not an error — tomorrow resumes from the saved cursor");
+  // Five pages scanned (1-5), so the cursor points at 6 — where tomorrow starts.
+  assert.equal(out.page, 6, "the cursor must have advanced past the scanned pages");
+});
+
+console.log("exhaustion");
 await ta("a filter smaller than one day's quota completes instead of looping", async () => {
   const out = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 50 }, mkPages(12), alwaysOk);
   assert.equal(out.added, 12);

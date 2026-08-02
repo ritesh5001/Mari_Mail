@@ -67,7 +67,7 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
               });
       const payload = (await res.json()) as {
         error?: { message?: string };
-        data?: { added?: number; skipped?: number; stoppedBecause?: string };
+        data?: { added?: number; skipped?: number; alreadyOnList?: number; stoppedBecause?: string };
       };
       if (!res.ok) {
         setError(payload.error?.message ?? "Action failed");
@@ -76,7 +76,9 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
       if (action === "run") {
         const d = payload.data ?? {};
         setNote(
-          `Run finished — ${d.added ?? 0} added, ${d.skipped ?? 0} skipped${
+          `Run finished — ${d.added ?? 0} added, ${d.alreadyOnList ?? 0} already on the list (no credits spent), ${
+            d.skipped ?? 0
+          } skipped${
             d.stoppedBecause ? ` (${d.stoppedBecause.replace(/_/g, " ")})` : ""
           }. It uses the same daily allowance, so today's quota is now spent.`,
         );
@@ -157,7 +159,8 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
                     {d.totalMatches ? ` of ${d.totalMatches.toLocaleString()}` : ""}
                     {pct !== null ? ` · ${pct}%` : ""}
                     <div className="text-[11px] text-slate-400 dark:text-white/40">
-                      {d.revealed} revealed · {d.skipped} skipped · cursor p{d.page}+{d.offsetInPage}
+                      {d.revealed} revealed (charged) · {d.skipped} already known or skipped (free) ·
+                      cursor p{d.page}+{d.offsetInPage}
                     </div>
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-700 dark:text-white/70">
