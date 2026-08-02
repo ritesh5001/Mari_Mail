@@ -167,7 +167,9 @@ const createCampaignSchema = z.object({
   // chosen per send. Both omitted on create → workspace defaults apply.
   sendGapSeconds: z.number().int().min(0).max(86_400).optional(),
   sendGapMaxSeconds: z.number().int().min(0).max(86_400).optional(),
-  timezone: z.string().default("UTC"),
+  // Omitted on create → the workspace's timezone applies (same pattern as the
+  // send gap above). Defaulting to UTC here would override it silently.
+  timezone: z.string().optional(),
   scheduleDays: z
     .array(z.number().int().min(0).max(6))
     .default([1, 2, 3, 4, 5]),
@@ -472,15 +474,23 @@ campaignRouter.post("/", requireAuth, async (req, res, next) => {
     }
 
     // New campaigns inherit the workspace's default random send-gap range so
-    // outgoing mail is human-paced out of the box (5–20 min by default).
+    // outgoing mail is human-paced out of the box (5–20 min by default), and
+    // its timezone — a workspace on Asia/Kolkata was still getting campaigns
+    // scheduled in UTC, so the sending window meant something different from
+    // what the person setting it up expected.
     const workspaceDefaults = await prisma.workspace.findUnique({
       where: { id: workspaceId },
-      select: { defaultSendGapMinSeconds: true, defaultSendGapMaxSeconds: true },
+      select: {
+        defaultSendGapMinSeconds: true,
+        defaultSendGapMaxSeconds: true,
+        timezone: true,
+      },
     });
     const sendGapSeconds =
       parsed.data.sendGapSeconds ?? workspaceDefaults?.defaultSendGapMinSeconds ?? 0;
     const sendGapMaxSeconds =
       parsed.data.sendGapMaxSeconds ?? workspaceDefaults?.defaultSendGapMaxSeconds ?? 0;
+    const timezone = parsed.data.timezone ?? workspaceDefaults?.timezone ?? "UTC";
 
     const sequences: SequenceInput[] = parsed.data.sequences.length
       ? parsed.data.sequences
@@ -514,7 +524,7 @@ campaignRouter.post("/", requireAuth, async (req, res, next) => {
         dailyLimit: parsed.data.dailyLimit,
         sendGapSeconds,
         sendGapMaxSeconds,
-        timezone: parsed.data.timezone,
+        timezone,
         scheduleDays: parsed.data.scheduleDays,
         scheduleHourStart: parsed.data.scheduleHourStart,
         scheduleHourEnd: parsed.data.scheduleHourEnd,

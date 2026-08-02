@@ -149,6 +149,32 @@ t("editing only a subject line does NOT respace live send times", () =>
 t("an omitted field is 'unchanged', not 'cleared'", () =>
   assert.equal(scheduleFieldsChanged(CURRENT, { sendGapSeconds: undefined }), false));
 
+console.log("new campaigns inherit workspace settings rather than hardcoded ones");
+/** Mirrors the seeding block in POST /api/campaigns. */
+const seed = (
+  sent: { sendGapSeconds?: number; sendGapMaxSeconds?: number; timezone?: string },
+  ws: { defaultSendGapMinSeconds?: number; defaultSendGapMaxSeconds?: number; timezone?: string },
+) => ({
+  sendGapSeconds: sent.sendGapSeconds ?? ws.defaultSendGapMinSeconds ?? 0,
+  sendGapMaxSeconds: sent.sendGapMaxSeconds ?? ws.defaultSendGapMaxSeconds ?? 0,
+  timezone: sent.timezone ?? ws.timezone ?? "UTC",
+});
+const WS = { defaultSendGapMinSeconds: 300, defaultSendGapMaxSeconds: 1200, timezone: "Asia/Kolkata" };
+
+t("an omitted timezone takes the workspace's, not UTC", () =>
+  assert.equal(seed({}, WS).timezone, "Asia/Kolkata"));
+t("an omitted gap takes the workspace's 5-20 min range", () => {
+  const s = seed({}, WS);
+  assert.equal(s.sendGapSeconds, 300);
+  assert.equal(s.sendGapMaxSeconds, 1200);
+});
+t("an explicit choice still wins over the workspace default", () =>
+  assert.equal(seed({ timezone: "UTC" }, WS).timezone, "UTC"));
+t("an explicit zero gap is honoured, not treated as 'unset'", () =>
+  assert.equal(seed({ sendGapSeconds: 0, sendGapMaxSeconds: 0 }, WS).sendGapMaxSeconds, 0));
+t("a workspace with nothing configured still falls back to UTC", () =>
+  assert.equal(seed({}, {}).timezone, "UTC"));
+
 console.log(`\n  first five: ${sends.slice(0, 5).map(hhmm).join("  ")}`);
 console.log(`  gaps (min): ${gapsMin.slice(0, 8).join(", ")}`);
 console.log(`\n${n}/${n} passed`);

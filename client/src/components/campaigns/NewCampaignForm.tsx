@@ -44,9 +44,11 @@ export function NewCampaignForm({
             // Conservative default — new inboxes need to ramp up before
             // safely sending hundreds/day. Users bump this in Options.
             dailyLimit: 50,
-            // Omit sendGapSeconds/sendGapMaxSeconds so the server seeds the
-            // workspace's default random send-gap range (5–20 min by default).
-            timezone: "UTC",
+            // Omit sendGapSeconds/sendGapMaxSeconds and timezone so the server
+            // seeds them from the workspace — the default random send-gap range
+            // (5–20 min) and the workspace's own timezone. Hardcoding "UTC"
+            // here overrode a workspace that had set its timezone, which made
+            // the sending window mean something other than what was configured.
             scheduleDays: [1, 2, 3, 4, 5],
             scheduleHourStart: 9,
             scheduleHourEnd: 17,
