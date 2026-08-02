@@ -902,6 +902,31 @@ type ApolloRolesState =
  * server answered 414 (URI Too Long), so the search just failed. A body has no
  * such limit.
  */
+/**
+ * The Apollo people-search filter, in the shape /api/contacts/apollo/search
+ * and the scheduled drip both expect.
+ *
+ * This exists as one function because the drip REPLAYS this filter on a
+ * schedule, so the two must not drift. They did: the drip was handed
+ * buildRoleBody() below, which speaks the older vessel-scoped dialect
+ * (`seniority`, `includeTitle`) and omits locations, company size and
+ * keywords entirely. The server validates against these names, so every field
+ * was stripped and a screen full of filters arrived as an empty object and was
+ * rejected as unfiltered.
+ */
+export function apolloFilterBody(filter: RoleFilter): Record<string, unknown> {
+  return {
+    includeTitles: filter.includeTitles,
+    excludeTitles: filter.excludeTitles,
+    seniorities: filter.seniorities,
+    personLocations: filter.personLocations,
+    companyLocations: filter.companyLocations,
+    employeeRanges: filter.employeeRanges,
+    keywords: filter.keywords.trim() || undefined,
+  };
+}
+
+/** Vessel-scoped search dialect. Not interchangeable with apolloFilterBody. */
 function buildRoleBody(filter: RoleFilter, vesselIds?: string[]): Record<string, unknown> {
   return {
     includeTitle: filter.includeTitles,
@@ -938,16 +963,7 @@ function roleSearchRequest(
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          includeTitles: filter.includeTitles,
-          excludeTitles: filter.excludeTitles,
-          seniorities: filter.seniorities,
-          personLocations: filter.personLocations,
-          companyLocations: filter.companyLocations,
-          employeeRanges: filter.employeeRanges,
-          keywords: filter.keywords.trim() || undefined,
-          page,
-        }),
+        body: JSON.stringify({ ...apolloFilterBody(filter), page }),
       } as RequestInit,
     };
   }
@@ -1731,7 +1747,7 @@ export function CampaignByRolePanel({
                   <ScheduleDripButton
                     listId={listId}
                     listName={listName}
-                    filter={buildRoleBody(loaded.filter)}
+                    filter={apolloFilterBody(loaded.filter)}
                     totalMatches={loaded.apolloTotal}
                   />
                 ) : null}

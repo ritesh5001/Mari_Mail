@@ -227,6 +227,60 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("filter shape — the drip must replay the search the admin previewed");
+/**
+ * A screen full of filters arrived at the server as an empty object and was
+ * rejected as unfiltered, because the schedule dialog was handed the
+ * vessel-scoped filter dialect (`seniority`, `includeTitle`, no locations)
+ * while the server validates the Apollo-search dialect. Zod strips unknown
+ * keys, so nothing survived and nothing complained until the final check.
+ */
+const APOLLO_FILTER_KEYS = [
+  "includeTitles", "excludeTitles", "seniorities",
+  "personLocations", "companyLocations", "employeeRanges", "keywords",
+];
+const LEGACY_VESSEL_KEYS = [
+  "includeTitle", "excludeTitle", "includeCompany", "excludeCompany", "seniority", "vesselId",
+];
+
+/** Mirrors filterSchema + hasAnyFilter in routes/admin/apollo-drips.ts. */
+const acceptDripFilter = (body) => {
+  const allowed = new Set([...APOLLO_FILTER_KEYS, "emailStatus", "includeSimilarTitles"]);
+  const parsed = Object.fromEntries(Object.entries(body).filter(([k]) => allowed.has(k)));
+  const len = (k) => (Array.isArray(parsed[k]) ? parsed[k].length : 0);
+  const ok =
+    len("includeTitles") > 0 || len("seniorities") > 0 || len("personLocations") > 0 ||
+    len("companyLocations") > 0 || len("employeeRanges") > 0 || Boolean(parsed.keywords);
+  return { parsed, ok };
+};
+
+// The filter from the report: seniorities set, one excluded title.
+const REPORTED = { includeTitles: [], excludeTitles: ["intern"], seniorities: ["owner", "founder", "head", "director"], personLocations: [], companyLocations: [], employeeRanges: [] };
+
+t("THE BUG: the legacy vessel dialect is stripped to nothing", () => {
+  const legacy = { seniority: ["owner", "founder"], excludeTitle: ["intern"], vesselId: [] };
+  const { parsed, ok } = acceptDripFilter(legacy);
+  assert.deepEqual(parsed, {}, "none of the legacy keys are recognised");
+  assert.equal(ok, false, "which is why a screen of filters read as unfiltered");
+});
+t("the Apollo dialect carries the seniorities through", () => {
+  const { parsed, ok } = acceptDripFilter(REPORTED);
+  assert.deepEqual(parsed.seniorities, ["owner", "founder", "head", "director"]);
+  assert.equal(ok, true);
+});
+t("the two dialects share no key names at all — silent drift was inevitable", () => {
+  const overlap = APOLLO_FILTER_KEYS.filter((k) => LEGACY_VESSEL_KEYS.includes(k));
+  assert.deepEqual(overlap, []);
+});
+t("an exclude-only filter is still rejected — it constrains almost nothing", () =>
+  assert.equal(acceptDripFilter({ excludeTitles: ["intern"] }).ok, false));
+t("keywords alone are enough", () =>
+  assert.equal(acceptDripFilter({ keywords: "shipping" }).ok, true));
+t("company size alone is enough", () =>
+  assert.equal(acceptDripFilter({ employeeRanges: ["1,20"] }).ok, true));
+t("a genuinely empty filter is still refused", () =>
+  assert.equal(acceptDripFilter({}).ok, false));
+
 console.log("throughput — a drip is only useful if the campaign can send what it adds");
 /**
  * Sustainable rate, given how the caps actually compose.
