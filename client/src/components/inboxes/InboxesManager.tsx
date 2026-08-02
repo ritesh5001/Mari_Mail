@@ -383,22 +383,77 @@ function DnsChip({ label, ok }: { label: string; ok: boolean }) {
   );
 }
 
+/**
+ * Explains an OAuth outcome in terms the reader can act on.
+ *
+ * Every failure used to be "Gmail connection failed. Please try again." — for
+ * causes where retrying can never work. A redirect-URI mismatch or a bad
+ * client secret is a setup problem an admin must fix, and telling someone to
+ * retry it just wastes their afternoon.
+ */
 function oauthBannerFrom(status: string | null): { kind: "ok" | "error"; text: string } | null {
   if (!status) return null;
-  switch (status) {
-    case "google-connected":
-      return { kind: "ok", text: "Gmail inbox connected." };
-    case "outlook-connected":
-      return { kind: "ok", text: "Outlook inbox connected." };
-    case "google-failed":
-      return { kind: "error", text: "Gmail connection failed. Please try again." };
-    case "outlook-failed":
-      return { kind: "error", text: "Outlook connection failed. Please try again." };
-    case "missing":
-    case "invalid":
-      return { kind: "error", text: "OAuth callback was invalid — please retry." };
+
+  if (status === "google-connected") return { kind: "ok", text: "Gmail inbox connected." };
+  if (status === "outlook-connected") return { kind: "ok", text: "Outlook inbox connected." };
+
+  if (status === "session-expired") {
+    return {
+      kind: "error",
+      text: "Your session expired before the connection started. Refresh the page and try again.",
+    };
+  }
+  if (status === "google-not-configured" || status === "outlook-not-configured") {
+    const name = status.startsWith("google") ? "Google" : "Microsoft";
+    return {
+      kind: "error",
+      text: `${name} sign-in isn't configured on the server. An admin needs to add the OAuth client ID and secret — retrying won't help.`,
+    };
+  }
+  if (status === "missing" || status === "invalid") {
+    return {
+      kind: "error",
+      text: "That sign-in link had expired. Start the connection again — links are valid for 10 minutes.",
+    };
+  }
+
+  // provider-prefixed failures, e.g. "google-redirect-mismatch"
+  const provider = status.startsWith("google-")
+    ? "Gmail"
+    : status.startsWith("outlook-")
+      ? "Outlook"
+      : null;
+  if (!provider) return null;
+  const reason = status.slice(status.indexOf("-") + 1);
+
+  switch (reason) {
+    case "denied":
+      return {
+        kind: "error",
+        text: `You cancelled at the ${provider === "Gmail" ? "Google" : "Microsoft"} consent screen, so nothing was connected.`,
+      };
+    case "redirect-mismatch":
+      return {
+        kind: "error",
+        text: `${provider} rejected the redirect URL. The callback address registered with the provider doesn't match this server — an admin needs to fix it; retrying won't help.`,
+      };
+    case "bad-client":
+      return {
+        kind: "error",
+        text: `${provider} rejected our app credentials. The client ID or secret is wrong or has been revoked — an admin needs to update it.`,
+      };
+    case "expired-code":
+      return {
+        kind: "error",
+        text: `The ${provider} sign-in took too long and expired. Try again — it should work straight away.`,
+      };
+    case "scope":
+      return {
+        kind: "error",
+        text: `${provider} didn't grant permission to send mail. Make sure you accept the send-email permission when asked.`,
+      };
     default:
-      return null;
+      return { kind: "error", text: `${provider} connection failed. Please try again.` };
   }
 }
 

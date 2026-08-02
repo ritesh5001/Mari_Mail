@@ -88,6 +88,31 @@ export async function revokeAllUserRefreshTokens(userId: string) {
   });
 }
 
+/**
+ * Identifies the owner of a refresh token WITHOUT rotating it.
+ *
+ * The access cookie lives 15 minutes; the refresh cookie lives 7 days. A
+ * top-level navigation that needs to know who the user is — starting an OAuth
+ * flow, say — would otherwise 401 the moment the access cookie aged out, even
+ * though a perfectly valid session is sitting right there.
+ *
+ * Deliberately read-only: rotating here would invalidate the token the app's
+ * own 12-minute refresh loop is about to use, and the two would race. Use this
+ * only to identify; use `rotateRefreshToken` when actually issuing a session.
+ */
+export async function readRefreshState(
+  refreshToken: string,
+): Promise<{ userId: string; workspaceId: string } | null> {
+  const raw = await getToken(`refresh:${sha256(refreshToken)}`);
+  if (!raw) return null;
+  try {
+    const state = JSON.parse(raw) as RefreshState;
+    return { userId: state.userId, workspaceId: state.workspaceId };
+  } catch {
+    return null;
+  }
+}
+
 export async function rotateRefreshToken(refreshToken: string) {
   const oldHash = sha256(refreshToken);
   const raw = await getToken(`refresh:${oldHash}`);

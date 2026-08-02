@@ -1,9 +1,12 @@
 import { Prisma } from "@marimail/db";
 import { prisma } from "@marimail/db";
 import { encryptSecret, randomToken } from "@marimail/utils";
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { requireAuth, type AuthedRequest } from "../auth/middleware.js";
+import { readRefreshState } from "../auth/jwt.js";
+import { accessCookieName, refreshCookieName } from "../lib/cookies.js";
+import { verifyAccessToken } from "../auth/jwt.js";
 import { sendData, sendError } from "../lib/http.js";
 import { checkDnsHealth } from "../services/dns-health.service.js";
 import {
@@ -506,16 +509,57 @@ inboxRouter.post("/test-credentials", requireAuth, async (req, res, next) => {
   }
 });
 
-inboxRouter.get("/oauth/google/start", requireAuth, async (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-    return sendError(
-      res,
-      500,
-      "GOOGLE_OAUTH_NOT_CONFIGURED",
-      "Google OAuth credentials are not configured",
-    );
+/**
+ * Auth for the OAuth start endpoints, which are TOP-LEVEL BROWSER NAVIGATIONS
+ * rather than XHR.
+ *
+ * `requireAuth` was wrong here in two ways:
+ *
+ *   1. It answers 401 with a JSON body. In an XHR that's fine; in a navigation
+ *      the user is staring at `{"error":{"code":"UNAUTHENTICATED"}}` rendered
+ *      as a bare page, with no way back and nothing explaining it.
+ *
+ *   2. It only reads the ACCESS cookie, which lives 15 minutes. Opening
+ *      Inboxes, reading the provider options and clicking "Sign in with
+ *      Google" a quarter of an hour later was enough to hit that — while a
+ *      7-day refresh cookie sat unused in the same request.
+ *
+ * So: try the access token, fall back to the refresh token WITHOUT rotating
+ * it, and on failure send the user back to the app with a reason instead of
+ * raw JSON.
+ */
+async function resolveOAuthActor(
+  req: express.Request,
+): Promise<{ userId: string; workspaceId: string } | null> {
+  const bearer = req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const accessToken = bearer ?? req.cookies?.[accessCookieName];
+  if (accessToken) {
+    try {
+      const payload = verifyAccessToken(accessToken);
+      return { userId: payload.sub, workspaceId: payload.workspaceId };
+    } catch {
+      // Expired or malformed — fall through to the refresh cookie.
+    }
   }
-  const { userId, workspaceId } = (req as AuthedRequest).auth;
+  const refreshToken = req.cookies?.[refreshCookieName];
+  if (!refreshToken) return null;
+  return readRefreshState(refreshToken);
+}
+
+/** Sends the browser back to the inboxes page with a reason it can explain. */
+function oauthBounce(res: express.Response, reason: string) {
+  return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=${reason}`);
+}
+
+inboxRouter.get("/oauth/google/start", async (req, res) => {
+  // Config is checked BEFORE auth so a misconfigured server says so plainly,
+  // rather than reporting whatever the session happened to be doing.
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    return oauthBounce(res, "google-not-configured");
+  }
+  const actor = await resolveOAuthActor(req);
+  if (!actor) return oauthBounce(res, "session-expired");
+  const { userId, workspaceId } = actor;
   const state = randomToken(24);
   await setToken(
     `inbox-oauth:${state}`,
@@ -541,11 +585,35 @@ inboxRouter.get("/oauth/google/start", requireAuth, async (req, res) => {
   );
 });
 
+/**
+ * Compresses a provider's token-exchange error into a short slug the UI can
+ * explain.
+ *
+ * Both callbacks used to swallow everything into "google-failed" /
+ * "outlook-failed" — "Please try again", for causes retrying can never fix.
+ * `redirect_uri_mismatch` in particular is THE setup mistake, and it was
+ * visible only in server logs the operator had no reason to be reading.
+ */
+function oauthFailureSlug(detail: string): string {
+  const text = detail.toLowerCase();
+  if (text.includes("redirect_uri_mismatch")) return "redirect-mismatch";
+  if (text.includes("invalid_client") || text.includes("unauthorized_client")) return "bad-client";
+  if (text.includes("invalid_grant")) return "expired-code";
+  if (text.includes("access_denied") || text.includes("consent_required")) return "denied";
+  if (text.includes("insufficient") || text.includes("scope")) return "scope";
+  return "failed";
+}
+
 inboxRouter.get("/oauth/google/callback", async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : null;
   const state = typeof req.query.state === "string" ? req.query.state : null;
-  if (!code || !state)
-    return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=missing`);
+  // Google sends ?error=access_denied when the user clicks Cancel on the
+  // consent screen. That arrives with no code, so it used to land in the
+  // generic "callback was invalid" branch and read like a bug rather than
+  // like the deliberate choice it was.
+  const denied = typeof req.query.error === "string" ? req.query.error : null;
+  if (denied) return oauthBounce(res, `google-${oauthFailureSlug(denied)}`);
+  if (!code || !state) return oauthBounce(res, "missing");
   const stateValue = await getToken(`inbox-oauth:${state}`);
   await deleteToken(`inbox-oauth:${state}`);
   if (
@@ -632,21 +700,19 @@ inboxRouter.get("/oauth/google/callback", async (req, res) => {
     });
     return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=google-connected`);
   } catch (error) {
-    console.error("[inboxes] google oauth callback failed:", error);
-    return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=google-failed`);
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[inboxes] google oauth callback failed:", detail);
+    return oauthBounce(res, `google-${oauthFailureSlug(detail)}`);
   }
 });
 
-inboxRouter.get("/oauth/outlook/start", requireAuth, async (req, res) => {
+inboxRouter.get("/oauth/outlook/start", async (req, res) => {
   if (!process.env.OUTLOOK_CLIENT_ID || !process.env.OUTLOOK_CLIENT_SECRET) {
-    return sendError(
-      res,
-      500,
-      "OUTLOOK_OAUTH_NOT_CONFIGURED",
-      "Outlook OAuth credentials are not configured",
-    );
+    return oauthBounce(res, "outlook-not-configured");
   }
-  const { userId, workspaceId } = (req as AuthedRequest).auth;
+  const actor = await resolveOAuthActor(req);
+  if (!actor) return oauthBounce(res, "session-expired");
+  const { userId, workspaceId } = actor;
   const state = randomToken(24);
   await setToken(
     `inbox-oauth:${state}`,
@@ -670,8 +736,10 @@ inboxRouter.get("/oauth/outlook/start", requireAuth, async (req, res) => {
 inboxRouter.get("/oauth/outlook/callback", async (req, res) => {
   const code = typeof req.query.code === "string" ? req.query.code : null;
   const state = typeof req.query.state === "string" ? req.query.state : null;
-  if (!code || !state)
-    return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=missing`);
+  // Microsoft sends ?error=access_denied on Cancel — same reasoning as Google.
+  const denied = typeof req.query.error === "string" ? req.query.error : null;
+  if (denied) return oauthBounce(res, `outlook-${oauthFailureSlug(denied)}`);
+  if (!code || !state) return oauthBounce(res, "missing");
   const stateValue = await getToken(`inbox-oauth:${state}`);
   await deleteToken(`inbox-oauth:${state}`);
   if (
@@ -766,8 +834,9 @@ inboxRouter.get("/oauth/outlook/callback", async (req, res) => {
       `${appUrl()}/dashboard/inboxes?oauth=outlook-connected`,
     );
   } catch (error) {
-    console.error("[inboxes] outlook oauth callback failed:", error);
-    return res.redirect(`${appUrl()}/dashboard/inboxes?oauth=outlook-failed`);
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error("[inboxes] outlook oauth callback failed:", detail);
+    return oauthBounce(res, `outlook-${oauthFailureSlug(detail)}`);
   }
 });
 

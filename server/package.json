@@ -14,7 +14,8 @@
     "test:imports": "node scripts/import-phases.test.mjs",
     "test:auth": "node scripts/auth-policy.test.mjs",
     "test:apollo": "node scripts/apollo-retry.test.mjs",
-    "test:apollo-people": "node scripts/apollo-people-search.test.mjs"
+    "test:apollo-people": "node scripts/apollo-people-search.test.mjs",
+    "test:oauth": "node scripts/oauth-inbox.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",
