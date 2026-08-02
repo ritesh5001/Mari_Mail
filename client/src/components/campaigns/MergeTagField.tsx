@@ -8,12 +8,31 @@ import { useEffect, useRef, useState } from "react";
  * here and both the popover and the docs pill pick it up automatically.
  */
 export const MERGE_TAGS = [
-  { tag: "first_name", label: "First name", description: "Contact's first name" },
-  { tag: "company", label: "Company", description: "Contact's company name" },
-  { tag: "vessel_name", label: "Vessel name", description: "Matched vessel name (ETA campaigns)" },
-  { tag: "eta_port", label: "ETA port", description: "Destination port for the ETA" },
-  { tag: "eta_date", label: "ETA date", description: "Vessel's arrival date" },
+  // Resolve for every contact, vessel or not.
+  { tag: "first_name", label: "First name", description: "Contact's first name", etaOnly: false },
+  { tag: "last_name", label: "Last name", description: "Contact's last name", etaOnly: false },
+  { tag: "full_name", label: "Full name", description: "First and last name", etaOnly: false },
+  { tag: "company", label: "Company", description: "Contact's company name", etaOnly: false },
+  { tag: "title", label: "Job title", description: "Contact's job title", etaOnly: false },
+  { tag: "country", label: "Country", description: "Contact's country", etaOnly: false },
+  // Need a matched vessel/ETA. On a cold campaign these render EMPTY, which is
+  // why they're flagged: offering them there produced copy like "I noticed
+  // might benefit" with a hole where the vessel should be.
+  { tag: "vessel_name", label: "Vessel name", description: "Matched vessel name (ETA campaigns)", etaOnly: true },
+  { tag: "eta_port", label: "ETA port", description: "Destination port for the ETA", etaOnly: true },
+  { tag: "eta_date", label: "ETA date", description: "Vessel's arrival date", etaOnly: true },
 ] as const;
+
+/**
+ * The tags that actually resolve for a campaign type.
+ *
+ * A cold (MANUAL) campaign has no vessel or ETA context, so `buildPersonalization`
+ * returns empty strings for every vessel_* / eta_* tag. Listing them anyway
+ * invited people to write subject lines that silently lost half their words.
+ */
+export function mergeTagsFor(kind: "cold" | "eta") {
+  return kind === "eta" ? MERGE_TAGS : MERGE_TAGS.filter((t) => !t.etaOnly);
+}
 
 type MergeTagFieldProps = {
   as: "input" | "textarea";

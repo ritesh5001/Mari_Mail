@@ -127,9 +127,28 @@ function displayEnum(value: string | null | undefined) {
 }
 
 export function buildPersonalization(
-  contact: { firstName: string; companyName: string; title: string | null },
+  contact: {
+    firstName: string;
+    lastName?: string | null;
+    companyName: string;
+    title: string | null;
+    country?: string | null;
+    website?: string | null;
+  },
   eta: EtaSendContext | null | undefined,
 ) {
+  // Available on every contact, vessel or not. Cold outreach had only
+  // first_name / company / title to work with, which makes it very hard to
+  // write a line that doesn't read like a mail merge.
+  const universal = {
+    first_name: contact.firstName,
+    last_name: contact.lastName ?? "",
+    full_name: [contact.firstName, contact.lastName].filter(Boolean).join(" "),
+    company: contact.companyName,
+    title: contact.title,
+    country: contact.country ?? "",
+    website: contact.website ?? "",
+  };
   // ETA path: preserve the exact original values (including nulls) so rendered
   // output is byte-identical to the pre-refactor worker.
   if (eta) {
@@ -149,10 +168,8 @@ export function buildPersonalization(
       previous_cargo: eta.previousCargo,
       next_cargo: eta.nextCargo,
       ship_owner: eta.vessel.shipOwnerCompany?.companyName,
-      first_name: contact.firstName,
-      company: contact.companyName,
-      title: contact.title,
       port_region: displayEnum(eta.port?.region),
+      ...universal,
     };
   }
 
@@ -169,10 +186,8 @@ export function buildPersonalization(
     previous_cargo: "",
     next_cargo: "",
     ship_owner: "",
-    first_name: contact.firstName,
-    company: contact.companyName,
-    title: contact.title,
     port_region: "",
+    ...universal,
   };
 }
 

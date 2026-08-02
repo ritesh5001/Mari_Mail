@@ -30,7 +30,7 @@ import type { ContactListModel } from "@/lib/contact-data";
 import { apiFetch } from "@/lib/browser-fetch";
 import { CampaignSentTab } from "@/components/campaigns/CampaignSentTab";
 import { InboxPicker } from "@/components/campaigns/InboxPicker";
-import { MergeTagField } from "@/components/campaigns/MergeTagField";
+import { MergeTagField, mergeTagsFor } from "@/components/campaigns/MergeTagField";
 import { StagedReviewPanel } from "@/components/campaigns/StagedReviewPanel";
 import { ApolloVesselSearchModal } from "@/components/campaigns/ApolloVesselSearchModal";
 
@@ -1573,6 +1573,7 @@ function SequencesTab({
             key={active.id}
             seq={active}
             onChange={(patch) => update(safeIdx, patch)}
+            kind={triggerType === "ETA_BASED" ? "eta" : "cold"}
           />
         ) : null}
       </div>
@@ -1711,9 +1712,12 @@ function StepCard({
 function StepEditor({
   seq,
   onChange,
+  kind,
 }: {
   seq: SequenceForm;
   onChange: (patch: Partial<SequenceForm>) => void;
+  /** Decides which merge tags are offered — see `mergeTagsFor`. */
+  kind: "cold" | "eta";
 }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
@@ -1742,8 +1746,14 @@ function StepEditor({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-white/10 dark:text-white/60">
+        {/* Only the tags that actually resolve for this campaign type. A cold
+            campaign has no vessel or ETA, so listing those invited copy that
+            silently rendered with holes in it. */}
         <span>
-          Merge tags: {"{{first_name}}"}, {"{{company}}"}, {"{{vessel_name}}"}, {"{{eta_port}}"}, {"{{eta_date}}"}
+          Merge tags:{" "}
+          {mergeTagsFor(kind)
+            .map((t) => `{{${t.tag}}}`)
+            .join(", ")}
           <span className="ml-2 text-slate-400 dark:text-white/40">— type <code className="rounded bg-slate-100 px-1 dark:bg-white/[0.06]">{`{`}</code> in the subject or body to pick from a menu.</span>
         </span>
       </div>
