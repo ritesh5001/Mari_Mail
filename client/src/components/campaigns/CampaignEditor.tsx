@@ -274,14 +274,27 @@ export function CampaignEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const payload = (await res.json()) as { error?: { message?: string } };
+      const payload = (await res.json()) as {
+        error?: { message?: string };
+        data?: { respaced?: { respaced: number; skipped?: string } | null };
+      };
       if (!res.ok) {
         setError(payload.error?.message ?? "Failed to save campaign");
         return false;
       }
       startTransition(() => router.refresh());
-      setToast("Saved");
-      setTimeout(() => setToast(null), 2000);
+      // Changing the gap or the sending window re-lays the sends already on the
+      // board. Say so — silently rewriting live send times is worse than not
+      // rewriting them, and "Saved" alone left people unsure it had applied.
+      const respaced = payload.data?.respaced;
+      setToast(
+        respaced?.skipped
+          ? "Saved — but the send queue is unreachable, so scheduled sends still use the old timing"
+          : respaced && respaced.respaced > 0
+            ? `Saved — ${respaced.respaced} scheduled send${respaced.respaced === 1 ? "" : "s"} rescheduled`
+            : "Saved",
+      );
+      setTimeout(() => setToast(null), respaced?.respaced ? 4000 : 2000);
       return true;
     } finally {
       setSaving(false);
@@ -289,7 +302,12 @@ export function CampaignEditor({
   }
 
   async function launch() {
-    const ok = await save({ status: "DRAFT" });
+    // Re-launching an already-running campaign is how a user applies what they
+    // just edited. Forcing DRAFT would drop it out of ACTIVE and make the
+    // server read it as a first launch, which also sweeps in contacts that are
+    // still staged for review. Keep the status as-is when relaunching.
+    const relaunching = campaign.status === "ACTIVE";
+    const ok = await save(relaunching ? undefined : { status: "DRAFT" });
     if (!ok) return;
     setSaving(true);
     try {
@@ -297,16 +315,25 @@ export function CampaignEditor({
       const res = await apiFetch(`/api/campaigns/${campaign.id}/${path}`, { method: "POST" });
       const payload = (await res.json()) as {
         error?: { message?: string };
-        data?: { scheduled?: number; contacts?: number };
+        data?: {
+          scheduled?: number;
+          contacts?: number;
+          respaced?: { respaced: number; skipped?: string } | null;
+        };
       };
       if (!res.ok) {
         setError(payload.error?.message ?? "Failed to launch campaign");
         return;
       }
+      const respaced = payload.data?.respaced?.respaced ?? 0;
       setToast(
-        `Launched · ${payload.data?.contacts ?? 0} recipients enrolled${
-          payload.data?.scheduled ? ` · ${payload.data.scheduled} sends scheduled` : ""
-        }`,
+        relaunching
+          ? `Relaunched with your changes${respaced ? ` · ${respaced} scheduled send${respaced === 1 ? "" : "s"} rescheduled` : ""}${
+              payload.data?.contacts ? ` · ${payload.data.contacts} recipient(s) enrolled` : ""
+            }`
+          : `Launched · ${payload.data?.contacts ?? 0} recipients enrolled${
+              payload.data?.scheduled ? ` · ${payload.data.scheduled} sends scheduled` : ""
+            }`,
       );
       setTimeout(() => setToast(null), 4000);
       startTransition(() => router.refresh());
@@ -448,9 +475,19 @@ export function CampaignEditor({
             if (ok) setTab(nextStep);
           }}
           onLaunch={launch}
-          canLaunch={campaign.status === "DRAFT" || (triggerType === "MANUAL" && campaign.contacts.length === 0)}
+          // A running manual campaign stays relaunchable: that is the only way
+          // to push edited settings onto sends that are already scheduled.
+          // Gating it on `contacts.length === 0` meant the moment a campaign
+          // had recipients, changing its schedule became unappliable.
+          canLaunch={campaign.status === "DRAFT" || triggerType === "MANUAL"}
           launching={saving || pending}
-          launchLabel={campaign.status === "DRAFT" ? "Launch" : "Enroll list"}
+          launchLabel={
+            campaign.status === "DRAFT"
+              ? "Launch"
+              : campaign.contacts.length === 0
+                ? "Enroll list"
+                : "Apply changes & relaunch"
+          }
         />
       ) : null}
 

@@ -12,7 +12,7 @@
  * (No REDIS_URL here, so the module's queue stays null and nothing connects.)
  */
 import assert from "node:assert/strict";
-import { nextSendSlot } from "../src/services/campaign-manual-scheduler.js";
+import { nextSendSlot, scheduleFieldsChanged } from "../src/services/campaign-manual-scheduler.js";
 
 let n = 0;
 const t = (label: string, fn: () => void) => { fn(); n++; console.log("  ok  " + label); };
@@ -121,6 +121,33 @@ t("sends stay strictly ordered and inside the window", () => {
 });
 t("20 mails at a ~12 min average fit in one 8-hour window", () =>
   assert.equal(sends[0].toISOString().slice(0, 10), sends[19].toISOString().slice(0, 10)));
+
+console.log("applying an edit — which changes re-lay the pending sends");
+const CURRENT = {
+  sendGapSeconds: 300,
+  sendGapMaxSeconds: 1200,
+  scheduleDays: [1, 2, 3, 4, 5],
+  scheduleHourStart: 9,
+  scheduleHourEnd: 17,
+  timezone: "UTC",
+};
+t("widening the send gap counts as a change", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT, sendGapMaxSeconds: 2400 }), true));
+t("moving the window counts as a change", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT, scheduleHourEnd: 20 }), true));
+t("switching timezone counts as a change", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT, timezone: "Asia/Kolkata" }), true));
+t("adding a sending day counts as a change — arrays compare by value", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT, scheduleDays: [1, 2, 3, 4, 5, 6] }), true));
+t("re-sending identical days does NOT count — same value, new array", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT, scheduleDays: [1, 2, 3, 4, 5] }), false));
+t("saving with nothing schedule-related touched does NOT respace", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { ...CURRENT }), false),
+);
+t("editing only a subject line does NOT respace live send times", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, {}), false));
+t("an omitted field is 'unchanged', not 'cleared'", () =>
+  assert.equal(scheduleFieldsChanged(CURRENT, { sendGapSeconds: undefined }), false));
 
 console.log(`\n  first five: ${sends.slice(0, 5).map(hhmm).join("  ")}`);
 console.log(`  gaps (min): ${gapsMin.slice(0, 8).join(", ")}`);

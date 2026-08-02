@@ -14,11 +14,7 @@
  * sent (or replied, or been staged) are never touched.
  */
 import { prisma } from "@marimail/db";
-import {
-  cancelManualJobsForCampaign,
-  launchManualCampaign,
-  nextSendSlot,
-} from "../src/services/campaign-manual-scheduler.js";
+import { nextSendSlot, respaceManualCampaign } from "../src/services/campaign-manual-scheduler.js";
 
 const campaignId = process.argv[2];
 const apply = process.argv.includes("--apply");
@@ -113,17 +109,14 @@ if (!apply) {
   }
 }
 
-const removed = await cancelManualJobsForCampaign(campaignId);
-console.log(`removed ${removed} queued job(s)`);
-
-const cleared = await prisma.campaignContact.updateMany({
-  where: { id: { in: pending.map((r) => r.id) } },
-  data: { nextSendAt: null },
-});
-console.log(`cleared ${cleared.count} stale nextSendAt`);
-
-const result = await launchManualCampaign(campaignId, { skipStaged: true });
-console.log(`re-enrolled ${result.contacts} contact(s), ${result.scheduled} step(s) scheduled`);
+// Same code path the API uses when you edit options or hit relaunch, so this
+// script can't drift from what the app does.
+const result = await respaceManualCampaign(campaignId);
+if (result.skipped) {
+  console.error(`scheduler unavailable (${result.skipped}) — nothing was changed.`);
+  process.exit(1);
+}
+console.log(`dropped ${result.cancelled} queued job(s), respaced ${result.respaced} send(s)`);
 
 const after = await prisma.campaignContact.findMany({
   where: { campaignId, status: "SCHEDULED", nextSendAt: { not: null } },

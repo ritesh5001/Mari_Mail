@@ -15,6 +15,8 @@ import {
   launchManualCampaign,
   ManualSchedulerUnavailableError,
   rescheduleManualStep,
+  respaceManualCampaign,
+  scheduleFieldsChanged,
 } from "../services/campaign-manual-scheduler.js";
 import { sendCampaignNow } from "../services/campaign-send-now.js";
 import {
@@ -766,7 +768,25 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
       return updated;
     });
 
-    return sendData(res, campaign);
+    // Apply the edit to sends that were already laid out. Updating the row
+    // alone only changes what FUTURE enrolments get, so a user who widened
+    // their send gap watched the existing queue keep the old spacing and
+    // reasonably concluded the setting did nothing.
+    let respaced: Awaited<ReturnType<typeof respaceManualCampaign>> | null = null;
+    const scheduleChanged = scheduleFieldsChanged(existing, parsed.data);
+    if (scheduleChanged && campaign.triggerType === "MANUAL" && campaign.status === "ACTIVE") {
+      try {
+        respaced = await respaceManualCampaign(campaign.id);
+      } catch (err) {
+        // The settings are saved either way — a queue hiccup must not fail the
+        // edit. The user can apply it to pending sends by hitting Launch.
+        console.warn(
+          `[campaigns] respace after edit failed for ${campaign.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return sendData(res, { ...campaign, respaced });
   } catch (error) {
     return next(error);
   }
@@ -1006,6 +1026,13 @@ campaignRouter.post("/:id/launch", requireAuth, async (req, res, next) => {
           data: { status: "ACTIVE" },
         });
     try {
+      // Relaunching an ACTIVE campaign is how a user says "apply what I just
+      // edited". Enrol alone can't do that: it re-adds each job under the same
+      // deterministic jobId and BullMQ ignores `add` on an existing id, so the
+      // pending sends would keep the delays they were created with. Re-lay them
+      // onto the current settings first, then enrol whoever is new — they queue
+      // up behind the existing run rather than in front of it.
+      const respaced = isRelaunch ? await respaceManualCampaign(campaign.id) : null;
       const result = await launchManualCampaign(campaign.id, { skipStaged: isRelaunch });
       // Redis reachable but not usable — surface it explicitly so the client
       // shows a helpful message instead of a silent no-op.
@@ -1017,7 +1044,7 @@ campaignRouter.post("/:id/launch", requireAuth, async (req, res, next) => {
           "Send queue (Redis) is unreachable — no sends were scheduled. Check REDIS_URL / Upstash status and retry.",
         );
       }
-      return sendData(res, { campaign: updated, ...result });
+      return sendData(res, { campaign: updated, ...result, respaced });
     } catch (schedulerErr) {
       if (schedulerErr instanceof ManualSchedulerUnavailableError) {
         const code =

@@ -219,15 +219,37 @@ export async function enrolAndScheduleManualContact(
 export async function cancelManualJobsForCampaign(campaignId: string): Promise<number> {
   if (!manualStepQueue || !(await ensureConnection())) return 0;
   const prefix = `manual-${campaignId}-`;
-  let removed = 0;
-  // BullMQ's getJobs accepts a state list + pagination. We drain both delayed
-  // and waiting/active buckets since a campaign can have jobs in any of them.
-  const jobs = await manualStepQueue.getJobs(["delayed", "waiting", "active", "paused", "prioritized"], 0, 500);
-  for (const job of jobs) {
-    if (typeof job.id === "string" && job.id.startsWith(prefix)) {
-      await job.remove().catch(() => undefined);
-      removed += 1;
+  const states = ["delayed", "waiting", "active", "paused", "prioritized"] as const;
+
+  // Page through every job instead of reading only the first 500. A campaign
+  // with 1,000 contacts and two steps has 2,000 jobs, so the single-page read
+  // left most of them queued — and because `add` dedupes on jobId, those
+  // survivors silently pinned the campaign to its old schedule after an edit.
+  //
+  // Collect first, delete after: removing mid-scan shifts the indices out from
+  // under the next page and skips jobs.
+  const PAGE = 500;
+  const targets = [];
+  for (let start = 0; ; start += PAGE) {
+    const jobs = await manualStepQueue.getJobs([...states], start, start + PAGE - 1);
+    if (jobs.length === 0) break;
+    for (const job of jobs) {
+      if (typeof job.id === "string" && job.id.startsWith(prefix)) targets.push(job);
     }
+    if (jobs.length < PAGE) break;
+  }
+
+  // Remove in bounded batches rather than one await per job. This runs inside
+  // an edit/relaunch request now, and 138 serial round-trips to Upstash took
+  // over two minutes — long enough for the HTTP request to give up while the
+  // campaign sat half-rescheduled. Bounded rather than unbounded because
+  // Upstash bills per command and throttles bursts.
+  const REMOVE_CONCURRENCY = 12;
+  let removed = 0;
+  for (let i = 0; i < targets.length; i += REMOVE_CONCURRENCY) {
+    const batch = targets.slice(i, i + REMOVE_CONCURRENCY);
+    const outcomes = await Promise.allSettled(batch.map((job) => job.remove()));
+    removed += outcomes.filter((o) => o.status === "fulfilled").length;
   }
   return removed;
 }
@@ -336,6 +358,174 @@ function classifyRedisError(err: unknown): ManualSchedulerUnavailableError {
  * for review but not yet confirmed. On a first launch (DRAFT/PAUSED → ACTIVE)
  * there are no staged rows by construction, so it's a no-op.
  */
+/**
+ * Fields whose change invalidates an already-laid-out schedule. Editing any of
+ * these means the pending sends were computed against settings the campaign no
+ * longer has.
+ */
+export const SCHEDULE_FIELDS = [
+  "sendGapSeconds",
+  "sendGapMaxSeconds",
+  "scheduleDays",
+  "scheduleHourStart",
+  "scheduleHourEnd",
+  "timezone",
+] as const;
+
+/**
+ * True when an update actually changes something the current schedule was
+ * computed from.
+ *
+ * Worth comparing rather than respacing on every save: a respace rewrites live
+ * send times, so it must not fire because someone edited a subject line. A
+ * field the caller omitted is "unchanged", not "cleared".
+ */
+export function scheduleFieldsChanged(
+  before: Partial<Record<(typeof SCHEDULE_FIELDS)[number], unknown>>,
+  next: Partial<Record<(typeof SCHEDULE_FIELDS)[number], unknown>>,
+): boolean {
+  return SCHEDULE_FIELDS.some((field) => {
+    const after = next[field];
+    if (after === undefined) return false;
+    const prev = before[field];
+    return Array.isArray(after) || Array.isArray(prev)
+      ? JSON.stringify(after) !== JSON.stringify(prev)
+      : after !== prev;
+  });
+}
+
+/**
+ * Re-lay a live campaign's pending sends using its CURRENT options.
+ *
+ * Editing the send gap or the sending window only rewrites the Campaign row.
+ * Contacts already holding a nextSendAt keep it, and relaunching cannot fix
+ * them either: enrol re-adds each job under the same deterministic jobId, and
+ * BullMQ treats `add` on an existing id as a no-op. So the queued job keeps the
+ * delay it was created with and the edit appears to do nothing.
+ *
+ * Dropping the jobs and clearing the times first is what makes the new settings
+ * actually apply. Contacts that have already sent, replied, bounced, or are
+ * staged for review are never touched — only SCHEDULED rows are re-laid, in
+ * their existing order so nobody jumps the queue because of an edit.
+ */
+export async function respaceManualCampaign(campaignId: string): Promise<{
+  respaced: number;
+  cancelled: number;
+  skipped?: "redis-unavailable";
+}> {
+  if (!manualStepQueue || !(await ensureConnection())) {
+    return { respaced: 0, cancelled: 0, skipped: "redis-unavailable" };
+  }
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    include: { sequences: { orderBy: { stepOrder: "asc" } } },
+  });
+  if (!campaign || campaign.triggerType !== "MANUAL" || campaign.status !== "ACTIVE") {
+    return { respaced: 0, cancelled: 0 };
+  }
+  if (campaign.sequences.length === 0) return { respaced: 0, cancelled: 0 };
+
+  const pending = await prisma.campaignContact.findMany({
+    where: { campaignId, status: "SCHEDULED", nextSendAt: { not: null } },
+    select: { id: true, contactId: true },
+    orderBy: { nextSendAt: "asc" },
+  });
+  if (pending.length === 0) return { respaced: 0, cancelled: 0 };
+
+  const cancelled = await cancelManualJobsForCampaign(campaignId);
+
+  // Lay the whole run out in memory first, then write it in bulk.
+  //
+  // Calling enrolAndScheduleManualContact per contact would be the obvious
+  // reuse, but it re-queries the campaign's latest scheduled send on every
+  // iteration and adds its jobs one at a time. At 69 contacts that was ~100s
+  // of serial Neon + Upstash round-trips — far past an HTTP timeout, and this
+  // runs inside the edit/relaunch request. Here the running "latest" is just a
+  // local variable.
+  const windowOpts = {
+    scheduleDays: campaign.scheduleDays,
+    hourStart: campaign.scheduleHourStart,
+    hourEnd: campaign.scheduleHourEnd,
+    timeZone: campaign.timezone,
+  };
+  const gapMin = campaign.sendGapSeconds;
+  const gapMax = Math.max(campaign.sendGapMaxSeconds, gapMin);
+  const now = Date.now();
+
+  const jobs: Parameters<NonNullable<typeof manualStepQueue>["addBulk"]>[0] = [];
+  const rowUpdates: { id: string; sequenceId?: string; nextSendAt?: Date }[] = [];
+  let latestStep1: number | null = null;
+
+  for (const row of pending) {
+    const gap =
+      gapMax > gapMin ? gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1)) : gapMin;
+    const step1Base =
+      latestStep1 === null || gapMax === 0 ? now : Math.max(now, latestStep1 + gap * 1000);
+
+    let cumulativeDays = 0;
+    let soonest: { sequenceId: string; fireAt: Date } | null = null;
+    for (const [index, sequence] of campaign.sequences.entries()) {
+      cumulativeDays += sequence.delayValue;
+      const fireAt = nextSendSlot(new Date(step1Base + cumulativeDays * 86_400_000), windowOpts);
+      // Step 1 is what the gap chains on — later steps ride its offset.
+      if (index === 0) latestStep1 = fireAt.getTime();
+      jobs.push({
+        name: "send-manual-step",
+        data: {
+          campaignId: campaign.id,
+          sequenceStepId: sequence.id,
+          contactId: row.contactId,
+          scheduledFor: fireAt.toISOString(),
+        },
+        opts: {
+          delay: Math.max(0, fireAt.getTime() - now),
+          jobId: `manual-${campaign.id}-${sequence.id}-${row.contactId}`,
+          attempts: 3,
+          backoff: { type: "exponential", delay: 5 * 60 * 1000 },
+          removeOnComplete: 500,
+          removeOnFail: 500,
+        },
+      });
+      if (fireAt.getTime() >= now && (!soonest || fireAt < soonest.fireAt)) {
+        soonest = { sequenceId: sequence.id, fireAt };
+      }
+    }
+    rowUpdates.push({ id: row.id, sequenceId: soonest?.sequenceId, nextSendAt: soonest?.fireAt });
+  }
+
+  const ADD_CHUNK = 200;
+  try {
+    for (let i = 0; i < jobs.length; i += ADD_CHUNK) {
+      await manualStepQueue.addBulk(jobs.slice(i, i + ADD_CHUNK));
+    }
+  } catch (err) {
+    // Same classification /launch relies on, so an Upstash quota wall surfaces
+    // as an actionable 503 rather than a raw Redis reply in a 500.
+    throw classifyRedisError(err);
+  }
+
+  // Prisma has no bulk update with per-row values; bounded concurrency keeps
+  // this off the serial path without opening 69 connections at once.
+  const UPDATE_CONCURRENCY = 10;
+  for (let i = 0; i < rowUpdates.length; i += UPDATE_CONCURRENCY) {
+    await Promise.all(
+      rowUpdates.slice(i, i + UPDATE_CONCURRENCY).map((u) =>
+        prisma.campaignContact.update({
+          where: { id: u.id },
+          data: { sequenceId: u.sequenceId, nextSendAt: u.nextSendAt },
+        }),
+      ),
+    );
+  }
+
+  const respaced = rowUpdates.length;
+  console.log(
+    `[manual-scheduler] campaign=${campaignId}: respaced ${respaced} pending send(s) onto the current settings (dropped ${cancelled} job(s), queued ${jobs.length}).`,
+  );
+  return { respaced, cancelled };
+}
+
 export async function launchManualCampaign(campaignId: string, options?: { skipStaged?: boolean }) {
   if (!manualStepQueue || !(await ensureConnection())) {
     return { scheduled: 0, contacts: 0, skipped: "redis-unavailable" as const };
