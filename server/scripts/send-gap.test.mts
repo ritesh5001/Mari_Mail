@@ -149,6 +149,39 @@ t("editing only a subject line does NOT respace live send times", () =>
 t("an omitted field is 'unchanged', not 'cleared'", () =>
   assert.equal(scheduleFieldsChanged(CURRENT, { sendGapSeconds: undefined }), false));
 
+console.log("a relaunch restarts the run from now — it must not chain after the old one");
+/**
+ * The drift that pushed a campaign to "first send tomorrow morning".
+ *
+ * The per-contact path bases each contact on
+ *     max(now, latestScheduledSendForCampaign + gap)
+ * reading `latest` from the DB across ALL contacts, future ones included. On a
+ * relaunch every contact is re-enrolled, so contact 1 chains after the PREVIOUS
+ * run's last send and the rest chain after each other — the whole campaign
+ * marches one full run-length into the future on every relaunch. Three clicks
+ * on a 69-contact run at ~12 min spacing is ~45h of drift.
+ *
+ * respaceManualCampaign starts from `now` instead, which is what makes a
+ * relaunch pull the run back to the present.
+ */
+const RUN_LENGTH_MS = 14.8 * 3600_000; // the observed live run
+const staleLatest = Date.now() + RUN_LENGTH_MS; // last send of the previous run
+
+const chainedBase = Math.max(Date.now(), staleLatest + 600_000); // old behaviour
+const respacedBase = Date.now(); // layoutAndQueue with startAfterMs = null
+
+t("THE BUG: chaining off the previous run starts the campaign ~15h late", () =>
+  assert.ok(chainedBase - Date.now() > 14 * 3600_000,
+    "a relaunch used to push the whole run past the previous one"));
+t("respace starts the run from now instead", () =>
+  assert.ok(respacedBase - Date.now() < 1000,
+    "a respaced run must begin immediately, not after the stale schedule"));
+t("drift compounds — three relaunches used to stack three run-lengths", () => {
+  let base = Date.now();
+  for (let i = 0; i < 3; i += 1) base = Math.max(Date.now(), base + RUN_LENGTH_MS + 600_000);
+  assert.ok(base - Date.now() > 44 * 3600_000, "each relaunch added another run length");
+});
+
 console.log("an inverted sending window must be rejected, not silently ignored");
 /** Mirrors sendingWindowError() in routes/campaigns.ts. */
 const windowError = (
