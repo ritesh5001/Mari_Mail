@@ -25,6 +25,7 @@ import { useClientSort } from "@/hooks/useClientSort";
 import { SortableHeader } from "@/components/table/SortableHeader";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSection";
+import { ScheduleDripButton } from "@/components/lists/ScheduleDripButton";
 import {
   RoleFilterPanel,
   EMPTY_ROLE_FILTER,
@@ -381,7 +382,12 @@ export function ContactListDetail({
             <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
           </summary>
           <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
-            <CampaignByRolePanel listId={list.id} listName={list.name} scope="apollo" />
+            <CampaignByRolePanel
+              listId={list.id}
+              listName={list.name}
+              scope="apollo"
+              isSuperAdmin={isSuperAdmin}
+            />
           </div>
         </details>
 
@@ -828,6 +834,10 @@ type ApolloListResponse = {
     titleHistogram: Array<{ title: string; count: number }>;
     totalContacts: number;
     totalDomains: number;
+    /** Apollo-scope only: how many people match the filter in total, not just
+     *  on this page. Without it the UI could only ever report the 25 rows it
+     *  had in hand, so a filter matching thousands looked like it matched 25. */
+    total?: number;
     page: number;
     nextPage: number | null;
     warnings: string[];
@@ -876,6 +886,8 @@ type ApolloRolesState =
       totalDomains?: number;
       /** Companies in the list the search couldn't cover — see the server cap. */
       domainsOmitted?: number;
+      /** Apollo-scope only — total people matching the filter, all pages. */
+      apolloTotal?: number;
       loadedPage: number;
       nextPage: number | null;
       loadingMore: boolean;
@@ -980,9 +992,12 @@ export function CampaignByRolePanel({
   listName,
   vesselIds,
   scope = "vessels",
+  isSuperAdmin = false,
 }: {
   listId: string;
   listName: string;
+  /** Scheduling an unattended daily credit spend is admin-only. */
+  isSuperAdmin?: boolean;
   /** Restrict the search to these vessels' companies. Omit for the whole list. */
   vesselIds?: string[];
   /**
@@ -1275,6 +1290,7 @@ export function CampaignByRolePanel({
         warnings: d.warnings,
         totalDomains: d.totalDomains,
         domainsOmitted: d.domainsOmitted,
+        apolloTotal: d.total,
         loadedPage: d.page,
         nextPage: d.nextPage,
         loadingMore: false,
@@ -1668,7 +1684,16 @@ export function CampaignByRolePanel({
                   list, so claiming one would be inventing a number. */}
               {typeof loaded.totalDomains === "number"
                 ? ` across ${loaded.totalDomains} company domain${loaded.totalDomains === 1 ? "" : "s"}`
-                : ""}{" "}
+                : ""}
+              {/* Apollo's real match count. The page only ever holds 25, so
+                  without this a filter matching thousands read as "25 matches"
+                  and there was no way to tell how much you hadn't seen. */}
+              {typeof loaded.apolloTotal === "number" && loaded.apolloTotal > loaded.allRows.length ? (
+                <span className="font-medium text-slate-700 dark:text-white/70">
+                  {" "}
+                  of {loaded.apolloTotal.toLocaleString()} total in Apollo
+                </span>
+              ) : null}{" "}
               — {summarizeFilter(loaded.filter)}.
               {/* Say when the search didn't cover every company. This read
                   "across 50 primary company domains" whether the list had 50 or
@@ -1698,6 +1723,18 @@ export function CampaignByRolePanel({
                     </p>
                   );
                 })()}
+                {/* Revealing thousands of matches by hand isn't possible —
+                    each one costs a credit. Admins can hand the filter to the
+                    daily drip instead and let it work through the whole result
+                    set a batch at a time. */}
+                {isSuperAdmin && scope === "apollo" ? (
+                  <ScheduleDripButton
+                    listId={listId}
+                    listName={listName}
+                    filter={buildRoleBody(loaded.filter)}
+                    totalMatches={loaded.apolloTotal}
+                  />
+                ) : null}
                 <button
                   type="button"
                   onClick={addSelectedToList}

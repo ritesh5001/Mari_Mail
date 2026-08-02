@@ -1456,7 +1456,12 @@ async function reconcileListsForRevealedContact(contactId: string) {
   }
 }
 
-async function revealApolloPerson(
+/**
+ * Exported so the Apollo drip worker can reveal on a schedule through exactly
+ * the same path a manual click takes — same credit accounting, same reveal
+ * cache, same post-reveal list reconcile.
+ */
+export async function revealApolloPerson(
   field: RevealField,
   externalId: string,
   workspaceId: string,

@@ -381,6 +381,7 @@ model User {
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
   authEvents          AuthEvent[]
+  apolloDrips         ApolloDripJob[]      @relation("ApolloDripCreator")
 }
 
 model Account {
@@ -458,6 +459,7 @@ model Workspace {
   commercialManagers       CommercialManagerCompany[]
   contacts                 Contact[]
   contactLists             ContactList[]
+  apolloDrips              ApolloDripJob[]
   savedContacts            SavedContact[]
   savedFilters             SavedFilter[]
   vesselEtas               VesselETA[]
@@ -903,9 +905,63 @@ model ContactList {
   contacts     ListContact[]
   vessels      ListVessel[]
   companies    ListCompany[]
+  apolloDrips  ApolloDripJob[]
 
   @@index([workspaceId])
   @@index([ownerId])
+}
+
+enum ApolloDripStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  FAILED
+}
+
+/// A saved Apollo people-search filter that trickles into a contact list.
+///
+/// An Apollo filter can match thousands of people, but revealing an email
+/// costs a credit, so adding the whole result set at once is both expensive
+/// and impossible to page through by hand. Instead the FILTER is stored and a
+/// daily job reveals `dailyLimit` more people from it and appends them to the
+/// list, remembering where it stopped.
+///
+/// `page`/`offsetInPage` are the cursor into Apollo's paginated results. Apollo
+/// ranks deterministically for a fixed query, so replaying page N returns the
+/// same slice; the offset lets a run that stopped mid-page (hit the daily cap,
+/// ran out of credits) resume without re-revealing anyone.
+model ApolloDripJob {
+  id           String           @id @default(cuid())
+  workspaceId  String
+  listId       String
+  createdById  String?
+  name         String
+  /// The Apollo people-search filter, same shape the /apollo/search route takes.
+  filter       Json
+  dailyLimit   Int              @default(50)
+  status       ApolloDripStatus @default(ACTIVE)
+  /// Cursor into Apollo's result pages.
+  page         Int              @default(1)
+  offsetInPage Int              @default(0)
+  /// Apollo's reported match count when the drip was created — what the admin
+  /// saw when they chose "select all".
+  totalMatches Int?
+  revealed     Int              @default(0)
+  added        Int              @default(0)
+  skipped      Int              @default(0)
+  lastRunAt    DateTime?
+  lastRunAdded Int?
+  lastError    String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  list      ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  createdBy User?       @relation("ApolloDripCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([workspaceId])
+  @@index([listId])
 }
 
 model ListContact {
