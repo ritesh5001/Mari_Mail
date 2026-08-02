@@ -64,6 +64,20 @@ export function nextSendSlot(
 ): Date {
   const { scheduleDays, hourStart, hourEnd, timeZone } = opts;
   if (scheduleDays.length === 0 || hourEnd <= hourStart) return from;
+
+  // Already inside the sending window: keep the exact time, minutes and all.
+  //
+  // Those minutes ARE the send gap. This used to round every candidate up to
+  // the next whole hour before testing it, which silently destroyed the gap:
+  // contact 1 landed at 09:00, contact 2's base (09:00 + a random 5-20 min)
+  // rounded back up to 10:00, contact 3's to 11:00. A campaign configured for
+  // a 5-20 min random gap scheduled all 20 mails at a flat 60-minute spacing.
+  const at = tzHourAndDay(from, timeZone);
+  if (scheduleDays.includes(at.day) && at.hour >= hourStart && at.hour < hourEnd) return from;
+
+  // Outside it: walk hour by hour to the next open window and start at the top
+  // of that hour. Nothing to preserve across the jump — the next contact chains
+  // its gap off this new time and lands inside the window again.
   let cursor = new Date(Math.ceil(from.getTime() / 3_600_000) * 3_600_000);
   for (let i = 0; i < 24 * 21; i += 1) {
     const { hour, day } = tzHourAndDay(cursor, timeZone);
