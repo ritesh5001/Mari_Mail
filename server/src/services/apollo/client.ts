@@ -44,6 +44,18 @@ export type ApolloSearchParams = {
   person_seniorities?: string[];
   q_organization_domains_list?: string[];
   organization_locations?: string[];
+  // Where the PERSON is, as opposed to where their company is headquartered.
+  // Cities, states or countries — Apollo resolves the string itself.
+  person_locations?: string[];
+  // Company headcount bands, each "min,max" (e.g. "1,10", "250,500").
+  organization_num_employees_ranges?: string[];
+  // "verified" | "unverified" | "likely to engage" | "unavailable".
+  // Filtering here rather than after the fact means a page of 100 isn't
+  // returned mostly full of rows the UI then hides.
+  contact_email_status?: string[];
+  // Widens person_titles to near-matches — Apollo's own "include similar
+  // titles" toggle.
+  include_similar_titles?: boolean;
   page?: number;
   per_page?: number;
 };
@@ -205,6 +217,14 @@ export async function searchPersons(params: ApolloSearchParams): Promise<ApolloS
   if (params.person_seniorities?.length) body.person_seniorities = params.person_seniorities;
   if (params.q_organization_domains_list?.length) body.q_organization_domains_list = params.q_organization_domains_list;
   if (params.organization_locations?.length) body.organization_locations = params.organization_locations;
+  if (params.person_locations?.length) body.person_locations = params.person_locations;
+  if (params.organization_num_employees_ranges?.length) {
+    body.organization_num_employees_ranges = params.organization_num_employees_ranges;
+  }
+  if (params.contact_email_status?.length) body.contact_email_status = params.contact_email_status;
+  if (params.include_similar_titles !== undefined) {
+    body.include_similar_titles = params.include_similar_titles;
+  }
 
   type ApolloSearchResponse = {
     people?: ApolloPerson[];

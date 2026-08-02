@@ -1057,6 +1057,124 @@ function bodyAsQuery(req: Request, _res: Response, next: NextFunction) {
 contactRouter.get("/external-by-list/:listId", requireAuth, externalByListHandler);
 contactRouter.post("/external-by-list/:listId", requireAuth, bodyAsQuery, externalByListHandler);
 
+/**
+ * Free-form Apollo people search — NOT scoped to any vessel or list.
+ *
+ * `external-by-list` searches only the domains attached to a list's vessels,
+ * which is right for "who works at this ship's manager" and useless for cold
+ * outreach: every cold campaign created so far sits at zero contacts because
+ * the only way to add anyone was through a vessel. This endpoint takes the
+ * filters a cold prospector actually reasons in — title, seniority, headcount,
+ * location, keywords — and searches Apollo's whole database.
+ *
+ * Searching spends no credits; only revealing an email or phone does. That is
+ * why the filter surface can be generous here without costing anything.
+ */
+const apolloPeopleSearchSchema = z.object({
+  includeTitles: z.array(z.string().trim().min(1)).max(50).optional(),
+  excludeTitles: z.array(z.string().trim().min(1)).max(50).optional(),
+  seniorities: z.array(z.string().trim().min(1)).max(20).optional(),
+  /** Where the person is. */
+  personLocations: z.array(z.string().trim().min(1)).max(50).optional(),
+  /** Where their company is headquartered. */
+  companyLocations: z.array(z.string().trim().min(1)).max(50).optional(),
+  /** Headcount bands, each "min,max" — Apollo's own format. */
+  employeeRanges: z.array(z.string().trim().regex(/^\d+,\d+$/)).max(12).optional(),
+  /**
+   * Free-text terms. Apollo's public search API exposes no industry or
+   * market-segment facet — its UI industry picker maps to internal tag ids
+   * that aren't documented — so industry and segment terms ride here. Labelled
+   * as keywords in the UI rather than dressed up as a real industry filter
+   * that would silently match nothing.
+   */
+  keywords: z.string().trim().max(300).optional(),
+  emailStatus: z
+    .array(z.enum(["verified", "unverified", "likely to engage", "unavailable"]))
+    .max(4)
+    .optional(),
+  includeSimilarTitles: z.boolean().optional(),
+  page: z.number().int().min(1).max(50).optional(),
+  perPage: z.number().int().min(1).max(100).optional(),
+});
+
+contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
+  try {
+    const input = apolloPeopleSearchSchema.safeParse(req.body ?? {});
+    if (!input.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid filters");
+    }
+
+    const settings = await getOrCreateApolloSettings();
+    if (!settings.enabled || !settings.apiKey) {
+      return sendData(res, { rows: [], total: 0, page: 1, nextPage: null, warnings: ["apollo_disabled"] });
+    }
+
+    const f = input.data;
+    // At least one real constraint. An unfiltered search would page through
+    // Apollo's entire database and tell the user nothing.
+    const hasFilter =
+      (f.includeTitles?.length ?? 0) > 0 ||
+      (f.seniorities?.length ?? 0) > 0 ||
+      (f.personLocations?.length ?? 0) > 0 ||
+      (f.companyLocations?.length ?? 0) > 0 ||
+      (f.employeeRanges?.length ?? 0) > 0 ||
+      Boolean(f.keywords);
+    if (!hasFilter) {
+      return sendData(res, { rows: [], total: 0, page: 1, nextPage: null, warnings: ["no_filters"] });
+    }
+
+    const page = f.page ?? 1;
+    const perPage = f.perPage ?? 25;
+    const cacheKey = `apollo:people:${createHash("sha1")
+      .update(JSON.stringify({ ...f, page, perPage }))
+      .digest("hex")}`;
+
+    let cacheHit = true;
+    try {
+      const result = await cacheJson(cacheKey, settings.cacheTtlSeconds, async () => {
+        cacheHit = false;
+        await recordApolloQuery();
+        return apolloSearchPersons({
+          person_titles: f.includeTitles,
+          person_not_titles: f.excludeTitles,
+          person_seniorities: f.seniorities,
+          person_locations: f.personLocations,
+          organization_locations: f.companyLocations,
+          organization_num_employees_ranges: f.employeeRanges,
+          contact_email_status: f.emailStatus,
+          include_similar_titles: f.includeSimilarTitles,
+          q_keywords: f.keywords,
+          page,
+          per_page: perPage,
+        });
+      });
+      if (cacheHit) await recordApolloCacheHit();
+
+      return sendData(res, {
+        rows: result.rows.map(apolloPersonToContactRow),
+        total: result.total,
+        page,
+        nextPage: result.nextPage,
+        warnings: [],
+      });
+    } catch (error) {
+      console.warn(
+        "[apollo] people search failed:",
+        error instanceof ApolloError ? error.message : error,
+      );
+      return sendData(res, {
+        rows: [],
+        total: 0,
+        page,
+        nextPage: null,
+        warnings: [`apollo_unavailable:${classifyApolloFailure(error)}`],
+      });
+    }
+  } catch (error) {
+    return next(error);
+  }
+});
+
 contactRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const { workspaceId } = (req as AuthedRequest).auth;
