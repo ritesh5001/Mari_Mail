@@ -1,6 +1,6 @@
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
-import { prisma } from "@marimail/db";
+import { Prisma, prisma } from "@marimail/db";
 import { resolveCampaignContacts, stagedContactIds } from "./campaign-targets.js";
 
 export type ManualStepJob = {
@@ -244,7 +244,7 @@ export async function cancelManualJobsForCampaign(campaignId: string): Promise<n
   // over two minutes — long enough for the HTTP request to give up while the
   // campaign sat half-rescheduled. Bounded rather than unbounded because
   // Upstash bills per command and throttles bursts.
-  const REMOVE_CONCURRENCY = 12;
+  const REMOVE_CONCURRENCY = 32;
   let removed = 0;
   for (let i = 0; i < targets.length; i += REMOVE_CONCURRENCY) {
     const batch = targets.slice(i, i + REMOVE_CONCURRENCY);
@@ -395,54 +395,29 @@ export function scheduleFieldsChanged(
 }
 
 /**
- * Re-lay a live campaign's pending sends using its CURRENT options.
+ * Lay a batch of contacts onto the campaign's sending window and queue them.
  *
- * Editing the send gap or the sending window only rewrites the Campaign row.
- * Contacts already holding a nextSendAt keep it, and relaunching cannot fix
- * them either: enrol re-adds each job under the same deterministic jobId, and
- * BullMQ treats `add` on an existing id as a no-op. So the queued job keeps the
- * delay it was created with and the edit appears to do nothing.
+ * The whole run is computed in memory and written with one addBulk pass.
+ * Scheduling contact-by-contact through enrolAndScheduleManualContact is the
+ * obvious reuse, but it re-queries the campaign's latest scheduled send on
+ * every iteration and adds jobs one at a time: 69 contacts cost ~100s of
+ * serial Neon + Upstash round-trips. That is far past an HTTP timeout for
+ * something that runs inside the launch/edit request. Here the running
+ * "latest" is just a local variable.
  *
- * Dropping the jobs and clearing the times first is what makes the new settings
- * actually apply. Contacts that have already sent, replied, bounced, or are
- * staged for review are never touched — only SCHEDULED rows are re-laid, in
- * their existing order so nobody jumps the queue because of an edit.
+ * `startAfterMs` chains this batch behind sends that already exist, so
+ * contacts added to a running campaign queue up at the end of the run rather
+ * than jumping ahead of people who were already waiting.
  */
-export async function respaceManualCampaign(campaignId: string): Promise<{
-  respaced: number;
-  cancelled: number;
-  skipped?: "redis-unavailable";
-}> {
-  if (!manualStepQueue || !(await ensureConnection())) {
-    return { respaced: 0, cancelled: 0, skipped: "redis-unavailable" };
+async function layoutAndQueue(
+  campaign: NonNullable<ManualCampaign>,
+  rows: { id: string; contactId: string }[],
+  opts: { startAfterMs?: number | null } = {},
+): Promise<{ contacts: number; jobs: number }> {
+  if (!manualStepQueue || rows.length === 0 || campaign.sequences.length === 0) {
+    return { contacts: 0, jobs: 0 };
   }
 
-  const campaign = await prisma.campaign.findUnique({
-    where: { id: campaignId },
-    include: { sequences: { orderBy: { stepOrder: "asc" } } },
-  });
-  if (!campaign || campaign.triggerType !== "MANUAL" || campaign.status !== "ACTIVE") {
-    return { respaced: 0, cancelled: 0 };
-  }
-  if (campaign.sequences.length === 0) return { respaced: 0, cancelled: 0 };
-
-  const pending = await prisma.campaignContact.findMany({
-    where: { campaignId, status: "SCHEDULED", nextSendAt: { not: null } },
-    select: { id: true, contactId: true },
-    orderBy: { nextSendAt: "asc" },
-  });
-  if (pending.length === 0) return { respaced: 0, cancelled: 0 };
-
-  const cancelled = await cancelManualJobsForCampaign(campaignId);
-
-  // Lay the whole run out in memory first, then write it in bulk.
-  //
-  // Calling enrolAndScheduleManualContact per contact would be the obvious
-  // reuse, but it re-queries the campaign's latest scheduled send on every
-  // iteration and adds its jobs one at a time. At 69 contacts that was ~100s
-  // of serial Neon + Upstash round-trips — far past an HTTP timeout, and this
-  // runs inside the edit/relaunch request. Here the running "latest" is just a
-  // local variable.
   const windowOpts = {
     scheduleDays: campaign.scheduleDays,
     hourStart: campaign.scheduleHourStart,
@@ -455,9 +430,9 @@ export async function respaceManualCampaign(campaignId: string): Promise<{
 
   const jobs: Parameters<NonNullable<typeof manualStepQueue>["addBulk"]>[0] = [];
   const rowUpdates: { id: string; sequenceId?: string; nextSendAt?: Date }[] = [];
-  let latestStep1: number | null = null;
+  let latestStep1: number | null = opts.startAfterMs ?? null;
 
-  for (const row of pending) {
+  for (const row of rows) {
     const gap =
       gapMax > gapMin ? gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1)) : gapMin;
     const step1Base =
@@ -501,32 +476,88 @@ export async function respaceManualCampaign(campaignId: string): Promise<{
     }
   } catch (err) {
     // Same classification /launch relies on, so an Upstash quota wall surfaces
-    // as an actionable 503 rather than a raw Redis reply in a 500.
+    // as an actionable 503 rather than a raw Redis reply inside a 500.
     throw classifyRedisError(err);
   }
 
-  // Prisma has no bulk update with per-row values; bounded concurrency keeps
-  // this off the serial path without opening 69 connections at once.
-  const UPDATE_CONCURRENCY = 10;
-  for (let i = 0; i < rowUpdates.length; i += UPDATE_CONCURRENCY) {
-    await Promise.all(
-      rowUpdates.slice(i, i + UPDATE_CONCURRENCY).map((u) =>
-        prisma.campaignContact.update({
-          where: { id: u.id },
-          data: { sequenceId: u.sequenceId, nextSendAt: u.nextSendAt },
-        }),
+  // One statement per chunk instead of one round-trip per contact. Prisma has
+  // no bulk update with per-row values, and firing individual updates
+  // concurrently just queues on the connection pool, so a large campaign
+  // serialises no matter what concurrency we ask for.
+  const UPDATE_CHUNK = 500;
+  for (let i = 0; i < rowUpdates.length; i += UPDATE_CHUNK) {
+    const chunk = rowUpdates.slice(i, i + UPDATE_CHUNK);
+    const values = Prisma.join(
+      chunk.map(
+        (u) =>
+          Prisma.sql`(${u.id}::text, ${u.sequenceId ?? null}::text, ${u.nextSendAt ?? null}::timestamptz)`,
       ),
     );
+    await prisma.$executeRaw`
+      UPDATE "CampaignContact" AS c
+      SET "status" = 'SCHEDULED'::"CampaignContactStatus",
+          "sequenceId" = v.seq,
+          "nextSendAt" = v.ts
+      FROM (VALUES ${values}) AS v(id, seq, ts)
+      WHERE c."id" = v.id
+    `;
   }
 
-  const respaced = rowUpdates.length;
+  return { contacts: rowUpdates.length, jobs: jobs.length };
+}
+
+/**
+ * Re-lay a live campaign's pending sends using its CURRENT options.
+ *
+ * Editing the send gap or the sending window only rewrites the Campaign row.
+ * Contacts already holding a nextSendAt keep it, and relaunching cannot fix
+ * them either: enrol re-adds each job under the same deterministic jobId, and
+ * BullMQ treats `add` on an existing id as a no-op. So the queued job keeps the
+ * delay it was created with and the edit appears to do nothing.
+ *
+ * Dropping the jobs and clearing the times first is what makes the new settings
+ * actually apply. Contacts that have already sent, replied, bounced, or are
+ * staged for review are never touched — only SCHEDULED rows are re-laid, in
+ * their existing order so nobody jumps the queue because of an edit.
+ */
+export async function respaceManualCampaign(campaignId: string): Promise<{
+  respaced: number;
+  cancelled: number;
+  skipped?: "redis-unavailable";
+}> {
+  if (!manualStepQueue || !(await ensureConnection())) {
+    return { respaced: 0, cancelled: 0, skipped: "redis-unavailable" };
+  }
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    include: { sequences: { orderBy: { stepOrder: "asc" } } },
+  });
+  if (!campaign || campaign.triggerType !== "MANUAL" || campaign.status !== "ACTIVE") {
+    return { respaced: 0, cancelled: 0 };
+  }
+  if (campaign.sequences.length === 0) return { respaced: 0, cancelled: 0 };
+
+  const pending = await prisma.campaignContact.findMany({
+    where: { campaignId, status: "SCHEDULED", nextSendAt: { not: null } },
+    select: { id: true, contactId: true },
+    orderBy: { nextSendAt: "asc" },
+  });
+  if (pending.length === 0) return { respaced: 0, cancelled: 0 };
+
+  const cancelled = await cancelManualJobsForCampaign(campaignId);
+  const { contacts: respaced, jobs } = await layoutAndQueue(campaign, pending);
+
   console.log(
-    `[manual-scheduler] campaign=${campaignId}: respaced ${respaced} pending send(s) onto the current settings (dropped ${cancelled} job(s), queued ${jobs.length}).`,
+    `[manual-scheduler] campaign=${campaignId}: respaced ${respaced} pending send(s) onto the current settings (dropped ${cancelled} job(s), queued ${jobs}).`,
   );
   return { respaced, cancelled };
 }
 
-export async function launchManualCampaign(campaignId: string, options?: { skipStaged?: boolean }) {
+export async function launchManualCampaign(
+  campaignId: string,
+  options?: { skipStaged?: boolean; onlyUnscheduled?: boolean },
+) {
   if (!manualStepQueue || !(await ensureConnection())) {
     return { scheduled: 0, contacts: 0, skipped: "redis-unavailable" as const };
   }
@@ -557,10 +588,40 @@ export async function launchManualCampaign(campaignId: string, options?: { skipS
     );
   }
 
-  let scheduled = 0;
-  for (const contact of contacts) {
-    scheduled += await enrolAndScheduleManualContact(campaign, contact.id);
-  }
+  // Make sure every target has a row, then schedule in one bulk pass.
+  await prisma.campaignContact.createMany({
+    data: contacts.map((contact) => ({
+      workspaceId: campaign.workspaceId,
+      campaignId: campaign.id,
+      contactId: contact.id,
+      status: "SCHEDULED" as const,
+    })),
+    skipDuplicates: true,
+  });
 
-  return { scheduled, contacts: contacts.length };
+  const rows = await prisma.campaignContact.findMany({
+    where: { campaignId: campaign.id, contactId: { in: contacts.map((c) => c.id) } },
+    select: { id: true, contactId: true, nextSendAt: true },
+  });
+
+  // On a relaunch, respaceManualCampaign has already re-laid everyone who was
+  // waiting. Re-scheduling them here would redo the whole run for nothing —
+  // and it was the bulk of the time a relaunch took, since each contact went
+  // through the per-contact path. Only genuinely new contacts need laying out;
+  // they chain behind the existing run rather than in front of it.
+  const needing = options?.onlyUnscheduled ? rows.filter((r) => r.nextSendAt === null) : rows;
+  if (needing.length === 0) return { scheduled: 0, contacts: 0 };
+
+  const latest = options?.onlyUnscheduled
+    ? await prisma.campaignContact.aggregate({
+        where: { campaignId: campaign.id, nextSendAt: { not: null } },
+        _max: { nextSendAt: true },
+      })
+    : null;
+
+  const { contacts: laid, jobs } = await layoutAndQueue(campaign, needing, {
+    startAfterMs: latest?._max.nextSendAt?.getTime() ?? null,
+  });
+
+  return { scheduled: jobs, contacts: laid };
 }

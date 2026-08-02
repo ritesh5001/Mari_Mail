@@ -230,7 +230,7 @@ export function CampaignEditor({
   const inboxSelectionLocked = campaign.status !== "DRAFT";
 
   // ---- Save + activate ------------------------------------------------------
-  async function save(overrides?: { status?: Campaign["status"] }) {
+  async function save(overrides?: { status?: Campaign["status"]; skipRespace?: boolean }) {
     setError(null);
     setSaving(true);
     try {
@@ -269,11 +269,16 @@ export function CampaignEditor({
         })),
       };
 
-      const res = await apiFetch(`/api/campaigns/${campaign.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // When this save is the first half of a relaunch, let the launch do the
+      // rescheduling — otherwise one click re-lays the whole run twice.
+      const res = await apiFetch(
+        `/api/campaigns/${campaign.id}${overrides?.skipRespace ? "?applySchedule=0" : ""}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
       const payload = (await res.json()) as {
         error?: { message?: string };
         data?: { respaced?: { respaced: number; skipped?: string } | null };
@@ -307,7 +312,7 @@ export function CampaignEditor({
     // server read it as a first launch, which also sweeps in contacts that are
     // still staged for review. Keep the status as-is when relaunching.
     const relaunching = campaign.status === "ACTIVE";
-    const ok = await save(relaunching ? undefined : { status: "DRAFT" });
+    const ok = await save(relaunching ? { skipRespace: true } : { status: "DRAFT" });
     if (!ok) return;
     setSaving(true);
     try {
@@ -1874,11 +1879,17 @@ function ScheduleTab({
                 onChange={(event) => onHourStart(Number(event.target.value))}
                 className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
               >
-                {Array.from({ length: 24 }, (_, i) => (
-                  <option key={i} value={i}>
-                    {fmtHour(i)}
-                  </option>
-                ))}
+                {/* Only hours before the end time. An inverted window (end at
+                    or before start) makes the scheduler drop the window
+                    entirely and send around the clock, so it must not be
+                    selectable. */}
+                {Array.from({ length: 24 }, (_, i) => i)
+                  .filter((i) => i < hourEnd)
+                  .map((i) => (
+                    <option key={i} value={i}>
+                      {fmtHour(i)}
+                    </option>
+                  ))}
               </select>
             </label>
             <label className="block text-xs font-medium text-slate-600 dark:text-white/60">
@@ -1888,11 +1899,13 @@ function ScheduleTab({
                 onChange={(event) => onHourEnd(Number(event.target.value))}
                 className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
               >
-                {Array.from({ length: 24 }, (_, i) => i + 1).map((h) => (
-                  <option key={h} value={h}>
-                    {fmtHour(h % 24)}
-                  </option>
-                ))}
+                {Array.from({ length: 24 }, (_, i) => i + 1)
+                  .filter((h) => h > hourStart)
+                  .map((h) => (
+                    <option key={h} value={h}>
+                      {fmtHour(h % 24)}
+                    </option>
+                  ))}
               </select>
             </label>
             <label className="block text-xs font-medium text-slate-600 dark:text-white/60">

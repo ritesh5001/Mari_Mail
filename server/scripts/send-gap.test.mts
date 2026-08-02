@@ -149,6 +149,36 @@ t("editing only a subject line does NOT respace live send times", () =>
 t("an omitted field is 'unchanged', not 'cleared'", () =>
   assert.equal(scheduleFieldsChanged(CURRENT, { sendGapSeconds: undefined }), false));
 
+console.log("an inverted sending window must be rejected, not silently ignored");
+/** Mirrors sendingWindowError() in routes/campaigns.ts. */
+const windowError = (
+  d: { scheduleHourStart?: number; scheduleHourEnd?: number },
+  existing?: { scheduleHourStart: number; scheduleHourEnd: number },
+) => {
+  const start = d.scheduleHourStart ?? existing?.scheduleHourStart;
+  const end = d.scheduleHourEnd ?? existing?.scheduleHourEnd;
+  if (start === undefined || end === undefined) return null;
+  return end <= start ? `bad ${start}-${end}` : null;
+};
+
+t("THE BUG: 09:00-08:00 is rejected", () =>
+  assert.ok(windowError({ scheduleHourStart: 9, scheduleHourEnd: 8 })));
+t("a zero-length window is rejected too", () =>
+  assert.ok(windowError({ scheduleHourStart: 9, scheduleHourEnd: 9 })));
+t("a normal window passes", () =>
+  assert.equal(windowError({ scheduleHourStart: 9, scheduleHourEnd: 17 }), null));
+t("moving only the end is checked against the stored start", () =>
+  assert.ok(windowError({ scheduleHourEnd: 8 }, { scheduleHourStart: 9, scheduleHourEnd: 17 })));
+t("moving only the start is checked against the stored end", () =>
+  assert.ok(windowError({ scheduleHourStart: 20 }, { scheduleHourStart: 9, scheduleHourEnd: 17 })));
+t("a save that touches neither hour is fine", () =>
+  assert.equal(windowError({}, { scheduleHourStart: 9, scheduleHourEnd: 17 }), null));
+t("why it matters: nextSendSlot drops the window when end <= start", () => {
+  const night = at("2026-08-02T22:30:00Z");
+  const out = nextSendSlot(night, { ...WINDOW, hourStart: 9, hourEnd: 8 });
+  assert.equal(+out, +night, "an inverted window sends around the clock");
+});
+
 console.log("new campaigns inherit workspace settings rather than hardcoded ones");
 /** Mirrors the seeding block in POST /api/campaigns. */
 const seed = (

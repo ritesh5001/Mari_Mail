@@ -203,6 +203,30 @@ const updateCampaignSchema = createCampaignSchema.partial().extend({
     .optional(),
 });
 
+/**
+ * Reject an inverted sending window (end at or before start).
+ *
+ * nextSendSlot treats `hourEnd <= hourStart` as "no window at all" and hands
+ * back the candidate time untouched, so saving 09:00–08:00 silently removed
+ * every scheduling restriction and let mail go out at 4am. Failing open like
+ * that is the opposite of what someone setting sending hours wants, and the
+ * UI happily produced it, so catch it at the door on both create and update.
+ *
+ * Applied after .partial() so a PATCH that touches only one of the two hours
+ * is still checked against the value already stored.
+ */
+function sendingWindowError(
+  data: { scheduleHourStart?: number; scheduleHourEnd?: number },
+  existing?: { scheduleHourStart: number; scheduleHourEnd: number },
+): string | null {
+  const start = data.scheduleHourStart ?? existing?.scheduleHourStart;
+  const end = data.scheduleHourEnd ?? existing?.scheduleHourEnd;
+  if (start === undefined || end === undefined) return null;
+  return end <= start
+    ? `Sending window must end after it starts — got ${start}:00 to ${end}:00.`
+    : null;
+}
+
 const sampleValues = {
   vessel_name: "MV Pacific Eagle",
   imo_number: "IMO 9781234",
@@ -492,6 +516,10 @@ campaignRouter.post("/", requireAuth, async (req, res, next) => {
       parsed.data.sendGapMaxSeconds ?? workspaceDefaults?.defaultSendGapMaxSeconds ?? 0;
     const timezone = parsed.data.timezone ?? workspaceDefaults?.timezone ?? "UTC";
 
+    const windowErrorOnCreate = sendingWindowError(parsed.data);
+    if (windowErrorOnCreate)
+      return sendError(res, 400, "INVALID_SENDING_WINDOW", windowErrorOnCreate);
+
     const sequences: SequenceInput[] = parsed.data.sequences.length
       ? parsed.data.sequences
       : parsed.data.triggerType === "MANUAL"
@@ -711,6 +739,11 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
       return sendError(res, 404, "LIST_NOT_FOUND", "One or more selected lists were not found.");
     }
 
+    // Checked against the stored hours so a PATCH that moves only one of them
+    // can't produce an inverted window.
+    const windowError = sendingWindowError(parsed.data, existing);
+    if (windowError) return sendError(res, 400, "INVALID_SENDING_WINDOW", windowError);
+
     const sequencesInput = parsed.data.sequences;
 
     const campaign = await prisma.$transaction(async (tx) => {
@@ -784,7 +817,16 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
     // reasonably concluded the setting did nothing.
     let respaced: Awaited<ReturnType<typeof respaceManualCampaign>> | null = null;
     const scheduleChanged = scheduleFieldsChanged(existing, parsed.data);
-    if (scheduleChanged && campaign.triggerType === "MANUAL" && campaign.status === "ACTIVE") {
+    // The editor's "Apply changes & relaunch" saves and then launches, and the
+    // launch respaces anyway. Doing it here too meant one click re-laid the
+    // whole run twice.
+    const applySchedule = req.query.applySchedule !== "0";
+    if (
+      applySchedule &&
+      scheduleChanged &&
+      campaign.triggerType === "MANUAL" &&
+      campaign.status === "ACTIVE"
+    ) {
       try {
         respaced = await respaceManualCampaign(campaign.id);
       } catch (err) {
@@ -1043,7 +1085,13 @@ campaignRouter.post("/:id/launch", requireAuth, async (req, res, next) => {
       // onto the current settings first, then enrol whoever is new — they queue
       // up behind the existing run rather than in front of it.
       const respaced = isRelaunch ? await respaceManualCampaign(campaign.id) : null;
-      const result = await launchManualCampaign(campaign.id, { skipStaged: isRelaunch });
+      const result = await launchManualCampaign(campaign.id, {
+        skipStaged: isRelaunch,
+        // The respace above already re-laid everyone who was waiting; without
+        // this, launch redid the entire run contact-by-contact and that was
+        // most of the time a relaunch spent.
+        onlyUnscheduled: isRelaunch,
+      });
       // Redis reachable but not usable — surface it explicitly so the client
       // shows a helpful message instead of a silent no-op.
       if ("skipped" in result && result.skipped === "redis-unavailable") {
