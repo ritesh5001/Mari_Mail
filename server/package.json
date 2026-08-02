@@ -16,7 +16,8 @@
     "test:apollo": "node scripts/apollo-retry.test.mjs",
     "test:apollo-people": "node scripts/apollo-people-search.test.mjs",
     "test:oauth": "node scripts/oauth-inbox.test.mjs",
-    "test:inbox": "node scripts/inbox-edit.test.mjs"
+    "test:inbox": "node scripts/inbox-edit.test.mjs",
+    "test:reveal": "node scripts/reveal-batching.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",

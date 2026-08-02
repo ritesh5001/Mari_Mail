@@ -960,6 +960,16 @@ function summarizeFilter(filter: RoleFilter): string {
 }
 
 /**
+ * How many reveals may be in flight at once.
+ *
+ * Each one spends a credit and hits Apollo's match endpoint, which rate-limits
+ * aggressively — a "select all" of 40+ rows fired at once mostly came back 429.
+ * Kept well below the search fan-out because a throttled reveal costs a
+ * deduct-then-refund round trip, not just latency.
+ */
+const REVEAL_CONCURRENCY = 3;
+
+/**
  * Apollo role search → reveal → add-to-list, in one panel. Exported because the
  * campaign Leads tab reuses it verbatim to find more people at a staged
  * vessel's company: adding through it runs the list reconciler, so the new
@@ -992,6 +1002,9 @@ export function CampaignByRolePanel({
   const [revealing, setRevealing] = useState<Map<string, "email" | "phone">>(new Map());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  // Live counter during a multi-row reveal — a 40-row run is slow enough that
+  // a bare spinner reads as a hang.
+  const [revealProgress, setRevealProgress] = useState<{ done: number; total: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [filter, setFilter] = useState<RoleFilter>(EMPTY_ROLE_FILTER);
   // Post-search result filters — narrow the already-fetched rows so unusable
@@ -1060,45 +1073,78 @@ export function CampaignByRolePanel({
 
     setAdding(true);
     try {
-      // 1) Reveal in parallel. Track successes vs failure reasons so the
-      //    toast can explain what actually happened.
+      // 1) Reveal, a few at a time.
+      //
+      // This used to be `Promise.allSettled` over the whole selection, so
+      // "select all → Reveal & add" on 42 rows fired 42 simultaneous Apollo
+      // match calls. Apollo rate-limits well below that, so most came back 429
+      // and the user saw "6 revealed, 36 skipped" — the selection rate-limiting
+      // itself. Credits are refunded on a failed reveal, so nothing was lost
+      // but the work.
+      //
+      // REVEAL_CONCURRENCY is deliberately low. Unlike search, every one of
+      // these calls costs a credit, so a burst that gets throttled wastes real
+      // money on refund round-trips; going slower is strictly better.
       let outOfCredits = false;
       let latestBalance: number | null = null;
-      const revealResults =
-        needsReveal.length > 0
-          ? await Promise.allSettled(
-              needsReveal.map(async (row) => {
-                const revealRes = await apiFetch(
-                  `/api/contacts/reveal-apollo/${row.externalId}/email`,
-                  { method: "POST" },
-                );
-                if (!revealRes.ok) {
-                  const body = (await revealRes.json().catch(() => null)) as
-                    | { error?: { code?: string } }
-                    | null;
-                  throw new Error(body?.error?.code ?? "reveal_failed");
-                }
-                const payload = (await revealRes.json().catch(() => null)) as
-                  | { data?: { balance?: number } }
-                  | null;
-                if (typeof payload?.data?.balance === "number") {
-                  latestBalance = payload.data.balance;
-                }
-                return row;
-              }),
-            )
-          : [];
       const revealedRows: ApolloRow[] = [];
       let revealSkipped = 0;
-      for (let idx = 0; idx < revealResults.length; idx += 1) {
-        const outcome = revealResults[idx];
-        if (outcome.status === "fulfilled") {
-          revealedRows.push(needsReveal[idx]);
-        } else {
-          revealSkipped += 1;
-          if ((outcome.reason as Error).message === "INSUFFICIENT_CREDITS") outOfCredits = true;
+      let rateLimited = false;
+
+      const revealOne = async (row: ApolloRow) => {
+        const revealRes = await apiFetch(
+          `/api/contacts/reveal-apollo/${row.externalId}/email`,
+          { method: "POST" },
+        );
+        if (!revealRes.ok) {
+          const body = (await revealRes.json().catch(() => null)) as
+            | { error?: { code?: string; message?: string } }
+            | null;
+          const err = new Error(body?.error?.code ?? "reveal_failed");
+          // Apollo throttling surfaces as APOLLO_UNAVAILABLE from the reveal
+          // route. Distinguishing it is what lets the toast say "try again"
+          // rather than implying these people simply have no email.
+          (err as Error & { detail?: string }).detail = body?.error?.message ?? "";
+          throw err;
         }
+        const payload = (await revealRes.json().catch(() => null)) as
+          | { data?: { balance?: number } }
+          | null;
+        if (typeof payload?.data?.balance === "number") {
+          latestBalance = payload.data.balance;
+        }
+        return row;
+      };
+
+      for (let i = 0; i < needsReveal.length; i += REVEAL_CONCURRENCY) {
+        const batch = needsReveal.slice(i, i + REVEAL_CONCURRENCY);
+        const outcomes = await Promise.allSettled(batch.map(revealOne));
+        for (let j = 0; j < outcomes.length; j += 1) {
+          const outcome = outcomes[j];
+          if (outcome.status === "fulfilled") {
+            revealedRows.push(batch[j]);
+          } else {
+            revealSkipped += 1;
+            const reason = outcome.reason as Error & { detail?: string };
+            if (reason.message === "INSUFFICIENT_CREDITS") outOfCredits = true;
+            if (
+              reason.message === "APOLLO_UNAVAILABLE" ||
+              /rate|429|limit/i.test(reason.detail ?? "")
+            ) {
+              rateLimited = true;
+            }
+          }
+        }
+        // Out of credits stops the run — every further call would fail the
+        // same way and there is nothing to gain from finding that out 30 more
+        // times.
+        if (outOfCredits) {
+          revealSkipped += needsReveal.length - (i + batch.length);
+          break;
+        }
+        setRevealProgress({ done: revealedRows.length + revealSkipped, total: needsReveal.length });
       }
+      setRevealProgress(null);
       if (latestBalance !== null) setCreditBalance(latestBalance);
 
       // 2) Only the rows we can actually email land in the list. Combined
@@ -1154,10 +1200,15 @@ export function CampaignByRolePanel({
         notes.push(`${noEmailOnFile.length} skipped (no email on file)`);
       }
       if (revealSkipped > 0) {
+        // "reveal failed" for a throttled batch told the user nothing and
+        // implied the contacts were unusable. Name the cause so retrying is an
+        // obvious next step rather than a guess.
         notes.push(
           outOfCredits
-            ? `${revealSkipped} skipped (out of credits)`
-            : `${revealSkipped} skipped (reveal failed)`,
+            ? `${revealSkipped} skipped — out of credits`
+            : rateLimited
+              ? `${revealSkipped} skipped — Apollo rate limit, credits refunded; select them and try again`
+              : `${revealSkipped} skipped — reveal failed, credits refunded`,
         );
       }
       const detail = notes.length > 0 ? ` — ${notes.join(", ")}.` : ".";
@@ -1655,7 +1706,12 @@ export function CampaignByRolePanel({
                   title="Reveals emails first, then adds to the list. Locked previews are not added."
                 >
                   {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Reveal &amp; add {selected.size || ""} to this list
+                  {/* Reveals run a few at a time, so a large selection takes a
+                      while. Counting them off makes a slow run legible instead
+                      of looking stalled. */}
+                  {revealProgress
+                    ? `Revealing ${revealProgress.done} of ${revealProgress.total}…`
+                    : `Reveal & add ${selected.size || ""} to this list`}
                 </button>
               </div>
             ) : null}
