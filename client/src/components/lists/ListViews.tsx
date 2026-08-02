@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Clock, Eye, Loader2, Plus, Ship, Trash2, Users } from "lucide-react";
+import {
+  Building2,
+  ChevronRight,
+  Clock,
+  Eye,
+  Loader2,
+  Plus,
+  Search,
+  Ship,
+  Trash2,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type {
@@ -341,6 +352,37 @@ export function ContactListDetail({
         </section>
 
         {!isEta && isSuperAdmin ? <ImportContactsCsvSection listId={list.id} /> : null}
+
+        {/*
+          Apollo people search for CONTACT lists.
+          
+          An ETA list already has this, scoped to its vessels' company domains.
+          A contact list has no vessels, so that endpoint would always return
+          nothing — and CSV was the only way to populate one. That's why cold
+          campaigns sat at zero contacts: the list feeding them could only be
+          filled by hand.
+        */}
+        {!isEta ? (
+          <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+              <Search className="h-4 w-4 shrink-0 text-accent-500" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Find people with Apollo
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
+                  Search by title, seniority, location, company size and keywords, then add
+                  them straight to this list. Searching is free — only revealing an email
+                  spends a credit.
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
+            </summary>
+            <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
+              <CampaignByRolePanel listId={list.id} listName={list.name} scope="apollo" />
+            </div>
+          </details>
+        ) : null}
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div className="flex border-b border-slate-100 dark:border-white/[0.06]">
@@ -829,7 +871,8 @@ type ApolloRolesState =
       filter: RoleFilter;
       allRows: ApolloRow[];
       warnings: string[];
-      totalDomains: number;
+      /** Vessel-scope only — the Apollo-wide search has no domain list. */
+      totalDomains?: number;
       /** Companies in the list the search couldn't cover — see the server cap. */
       domainsOmitted?: number;
       loadedPage: number;
@@ -859,13 +902,42 @@ function buildRoleBody(filter: RoleFilter, vesselIds?: string[]): Record<string,
   };
 }
 
-/** POST the role filter, carrying paging/extra params in the same body. */
+/**
+ * POST the role filter, carrying paging/extra params in the same body.
+ *
+ * The single place the two search scopes diverge. "vessels" keeps the original
+ * behaviour — Apollo restricted to the domains attached to a list's vessels,
+ * right for "who works at this ship's manager". "apollo" searches the whole
+ * database, which is what a cold list needs: it has no vessels to derive
+ * domains from, so the vessel-scoped endpoint would always return nothing.
+ */
 function roleSearchRequest(
   listId: string,
   filter: RoleFilter,
   vesselIds?: string[],
   extra?: Record<string, unknown>,
+  scope: "vessels" | "apollo" = "vessels",
 ) {
+  if (scope === "apollo") {
+    const page = typeof extra?.page === "number" ? extra.page : 1;
+    return {
+      path: `/api/contacts/apollo/search`,
+      init: {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          includeTitles: filter.includeTitles,
+          excludeTitles: filter.excludeTitles,
+          seniorities: filter.seniorities,
+          personLocations: filter.personLocations,
+          companyLocations: filter.companyLocations,
+          employeeRanges: filter.employeeRanges,
+          keywords: filter.keywords.trim() || undefined,
+          page,
+        }),
+      } as RequestInit,
+    };
+  }
   return {
     path: `/api/contacts/external-by-list/${listId}`,
     init: {
@@ -896,11 +968,18 @@ export function CampaignByRolePanel({
   listId,
   listName,
   vesselIds,
+  scope = "vessels",
 }: {
   listId: string;
   listName: string;
   /** Restrict the search to these vessels' companies. Omit for the whole list. */
   vesselIds?: string[];
+  /**
+   * Where to search. "vessels" (default) keeps every existing caller on the
+   * list-scoped endpoint; "apollo" searches Apollo's whole database for a
+   * contact list that has no vessels to derive company domains from.
+   */
+  scope?: "vessels" | "apollo";
 }) {
   // Stable identity for the vessel scope — see the fetchTitleSuggestions deps.
   const vesselKey = (vesselIds ?? []).join(",");
@@ -1124,7 +1203,7 @@ export function CampaignByRolePanel({
     setState({ status: "loading" });
     setSelected(new Set());
     try {
-      const { path, init } = roleSearchRequest(listId, active, vesselIds, { page: 1 });
+      const { path, init } = roleSearchRequest(listId, active, vesselIds, { page: 1 }, scope);
       const res = await apiFetch(path, init);
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as ApolloListResponse | null;
@@ -1159,7 +1238,7 @@ export function CampaignByRolePanel({
     const activeFilter = state.filter;
     setState((prev) => (prev.status === "loaded" ? { ...prev, loadingMore: true } : prev));
     try {
-      const { path, init } = roleSearchRequest(listId, activeFilter, vesselIds, { page: targetPage });
+      const { path, init } = roleSearchRequest(listId, activeFilter, vesselIds, { page: targetPage }, scope);
       const res = await apiFetch(path, init);
       if (!res.ok) {
         setState((prev) => (prev.status === "loaded" ? { ...prev, loadingMore: false } : prev));
@@ -1454,15 +1533,24 @@ export function CampaignByRolePanel({
             value={filter}
             onChange={setFilter}
             onApply={() => void runSearch(filter)}
+            scope={scope}
             resultFilter={resultFilter}
             onResultFilterChange={setResultFilter}
             countryOptions={countryOptions}
             resultCount={loaded?.allRows.length ?? 0}
             suggestionsFromResults={suggestionsFromResults}
             companySuggestionsFromResults={companySuggestionsFromResults}
-            fetchTitleSuggestions={fetchTitleSuggestions}
-            fetchAllTitles={fetchAllTitles}
-            fetchAllCompanies={fetchAllCompanies}
+            {...(scope === "apollo"
+              ? {}
+              : {
+                  // These build their options from the vessel-scoped endpoint's
+                  // title histogram. An Apollo-wide search has no equivalent —
+                  // wiring them here would fire a request that always comes
+                  // back empty and leave a Select-all pill that does nothing.
+                  fetchTitleSuggestions,
+                  fetchAllTitles,
+                  fetchAllCompanies,
+                })}
             disabled={state.status === "loading"}
           />
         </div>
@@ -1518,8 +1606,14 @@ export function CampaignByRolePanel({
             <p className="text-[11px] text-slate-500 dark:text-white/50">
               {visibleRows.length}
               {visibleRows.length !== loaded.allRows.length ? ` of ${loaded.allRows.length}` : ""} match
-              {loaded.allRows.length === 1 ? "" : "es"} across {loaded.totalDomains} company domain
-              {loaded.totalDomains === 1 ? "" : "s"} — {summarizeFilter(loaded.filter)}.
+              {loaded.allRows.length === 1 ? "" : "es"}
+              {/* The domain count only means something for a vessel-scoped
+                  search. An Apollo-wide search isn't restricted to a domain
+                  list, so claiming one would be inventing a number. */}
+              {typeof loaded.totalDomains === "number"
+                ? ` across ${loaded.totalDomains} company domain${loaded.totalDomains === 1 ? "" : "s"}`
+                : ""}{" "}
+              — {summarizeFilter(loaded.filter)}.
               {/* Say when the search didn't cover every company. This read
                   "across 50 primary company domains" whether the list had 50 or
                   500, so a truncated search looked complete. */}

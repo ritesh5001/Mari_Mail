@@ -15,6 +15,17 @@ export type RoleFilter = {
   includeCompanies: string[];
   excludeCompanies: string[];
   seniorities: string[];
+  /**
+   * The rest only apply to an Apollo-wide search (`scope="apollo"`). A
+   * vessel-scoped search is already pinned to specific company domains, so
+   * location and headcount would only ever narrow it further for no reason.
+   */
+  personLocations: string[];
+  companyLocations: string[];
+  /** Headcount bands in Apollo's "min,max" form — see EMPLOYEE_BANDS. */
+  employeeRanges: string[];
+  /** Industry / market-segment terms. Apollo has no industry facet — see below. */
+  keywords: string;
 };
 
 /** Refinements over results already fetched. Applied client-side, instantly. */
@@ -34,7 +45,30 @@ export const EMPTY_ROLE_FILTER: RoleFilter = {
   includeCompanies: [],
   excludeCompanies: [],
   seniorities: [],
+  personLocations: [],
+  companyLocations: [],
+  employeeRanges: [],
+  keywords: "",
 };
+
+/**
+ * Apollo's headcount bands, as it expects them: "min,max" strings.
+ *
+ * Sent verbatim rather than derived from a slider — Apollo matches on these
+ * exact bands, and an arbitrary range like "37,412" silently returns nothing.
+ */
+export const EMPLOYEE_BANDS: Array<{ value: string; label: string }> = [
+  { value: "1,10", label: "1–10" },
+  { value: "11,20", label: "11–20" },
+  { value: "21,50", label: "21–50" },
+  { value: "51,100", label: "51–100" },
+  { value: "101,200", label: "101–200" },
+  { value: "201,500", label: "201–500" },
+  { value: "501,1000", label: "501–1k" },
+  { value: "1001,5000", label: "1k–5k" },
+  { value: "5001,10000", label: "5k–10k" },
+  { value: "10001,1000000", label: "10k+" },
+];
 
 /**
  * Curated maritime-role suggestions that show up in the include-title
@@ -154,6 +188,7 @@ export function RoleFilterPanel({
   onResultFilterChange,
   countryOptions = [],
   resultCount,
+  scope = "vessels",
 }: {
   value: RoleFilter;
   onChange: (next: RoleFilter) => void;
@@ -189,13 +224,24 @@ export function RoleFilterPanel({
   countryOptions?: string[];
   /** Rows currently loaded — the refine group is meaningless without any. */
   resultCount?: number;
+  /**
+   * "vessels" searches only the companies attached to a list's vessels.
+   * "apollo" searches Apollo's whole database, which is what cold outreach
+   * needs — and only then do location and headcount mean anything, since a
+   * vessel-scoped search is already pinned to specific domains.
+   */
+  scope?: "vessels" | "apollo";
 }) {
   const totalActive =
     value.includeTitles.length +
     value.excludeTitles.length +
     value.includeCompanies.length +
     value.excludeCompanies.length +
-    value.seniorities.length;
+    value.seniorities.length +
+    value.personLocations.length +
+    value.companyLocations.length +
+    value.employeeRanges.length +
+    (value.keywords.trim() ? 1 : 0);
 
   function patch(part: Partial<RoleFilter>) {
     onChange({ ...value, ...part });
@@ -373,6 +419,98 @@ export function RoleFilterPanel({
             })}
           </div>
         </FilterSection>
+
+        {scope === "apollo" ? (
+          <>
+            <FilterSection
+              title="Location"
+              count={value.personLocations.length + value.companyLocations.length}
+            >
+              <div className="space-y-3">
+                <ChipInput
+                  label="Person is in"
+                  placeholder="e.g. London, Singapore"
+                  values={value.personLocations}
+                  onChange={(next) => patch({ personLocations: next })}
+                  suggestions={[]}
+                  tone="include"
+                  disabled={disabled}
+                  emptyHint="City, state or country — Apollo resolves the name."
+                />
+                <ChipInput
+                  label="Company HQ is in"
+                  placeholder="e.g. United Kingdom"
+                  values={value.companyLocations}
+                  onChange={(next) => patch({ companyLocations: next })}
+                  suggestions={[]}
+                  tone="include"
+                  disabled={disabled}
+                  emptyHint="Where the business is based, not the person."
+                />
+              </div>
+            </FilterSection>
+
+            <FilterSection
+              title="Company size"
+              count={value.employeeRanges.length}
+              hint={value.employeeRanges.length === 0 ? "Any" : undefined}
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {EMPLOYEE_BANDS.map((band) => {
+                  const active = value.employeeRanges.includes(band.value);
+                  return (
+                    <button
+                      key={band.value}
+                      type="button"
+                      disabled={disabled}
+                      aria-pressed={active}
+                      onClick={() =>
+                        patch({
+                          employeeRanges: active
+                            ? value.employeeRanges.filter((v) => v !== band.value)
+                            : [...value.employeeRanges, band.value],
+                        })
+                      }
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                        active
+                          ? "border-accent-500 bg-accent-500 text-[#ffffff]"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                      }`}
+                    >
+                      {band.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
+                Apollo matches these exact bands — employees, not revenue.
+              </p>
+            </FilterSection>
+
+            <FilterSection
+              title="Industry & keywords"
+              count={value.keywords.trim() ? 1 : 0}
+              hint={value.keywords.trim() || undefined}
+            >
+              <input
+                value={value.keywords}
+                onChange={(e) => patch({ keywords: e.target.value })}
+                disabled={disabled}
+                placeholder="e.g. Computer Software, E-commerce, SaaS"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 outline-none focus:border-accent-400 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+              />
+              {/* Deliberately labelled keywords, not "Industry". Apollo's public
+                  search API has no industry facet — its UI picker maps to
+                  undocumented internal tag ids — so industry and market-segment
+                  terms are matched as free text. Calling this an industry filter
+                  would promise exact matching we can't deliver. */}
+              <p className="mt-1.5 text-[10px] leading-4 text-slate-400 dark:text-white/30">
+                Free-text match across the company profile. Industry and market
+                segment go here — Apollo exposes no exact industry filter.
+              </p>
+            </FilterSection>
+          </>
+        ) : null}
 
         {/* Result refinements. Kept in the same rail so there is one place to
             look, but below the Search button and labelled, because they take
@@ -685,6 +823,12 @@ function normalizeRoleFilter(raw: unknown): RoleFilter {
     includeCompanies: arr(r.includeCompanies),
     excludeCompanies: arr(r.excludeCompanies),
     seniorities: arr(r.seniorities),
+    // Added after the first saved sets shipped — absent in older rows, so
+    // they normalise to empty rather than breaking the load.
+    personLocations: arr(r.personLocations),
+    companyLocations: arr(r.companyLocations),
+    employeeRanges: arr(r.employeeRanges),
+    keywords: typeof r.keywords === "string" ? r.keywords : "",
   };
 }
 
