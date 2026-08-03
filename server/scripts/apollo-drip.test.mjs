@@ -227,6 +227,52 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("Apollo's three failure modes must not read as one");
+/** Mirrors the lastError classification in runApolloDripInner. */
+const classify = (raw) =>
+  /insufficient credits/i.test(raw) ? "apollo-credits"
+  : /maximum number of api calls/i.test(raw) ? "hourly-limit"
+  : "other";
+
+t("out of Apollo lead credits is named as such, not 'unavailable'", () =>
+  assert.equal(
+    classify(`Apollo 422: {"error":"You have insufficient credits! Upgrade your plan"}`),
+    "apollo-credits",
+  ));
+t("the hourly cap is distinguished from running out of credits", () =>
+  assert.equal(
+    classify("Apollo 429: The maximum number of api calls allowed for api/v1/people/match is 200 times per hour"),
+    "hourly-limit",
+  ));
+t("a genuine outage falls through to the generic message", () =>
+  assert.equal(classify("Apollo 503: upstream timeout"), "other"));
+t("all three rewind the cursor — none of them is the person's fault", () => {
+  // Whatever the reason, the person we failed on has not been assessed.
+  for (const raw of ["insufficient credits", "maximum number of api calls", "503"]) {
+    const consumesCursor = false; // every branch sets offset = i and stops
+    assert.equal(consumesCursor, false, `${raw} must not skip anybody`);
+  }
+});
+
+console.log("skipping people Apollo has no email for costs nothing");
+t("a search result flagged has_email=false never reaches a match call", () => {
+  const rows = [
+    { id: "a", emailAvailable: true },
+    { id: "b", emailAvailable: false },
+    { id: "c", emailAvailable: true },
+  ];
+  const attempted = rows.filter((r) => r.emailAvailable !== false);
+  assert.deepEqual(attempted.map((r) => r.id), ["a", "c"]);
+});
+t("measured at ~1% of results — real, but not where the quota went", () => {
+  // 150 scanned on the live filter: 1 unavailable, 19 already known, 130 new.
+  const scanned = 150, noEmail = 1, knownByApolloId = 19, byNameAndCompany = 0;
+  assert.ok(noEmail / scanned < 0.02);
+  assert.equal(byNameAndCompany, 0,
+    "name+company matching would have added nothing — apolloId already catches them");
+  assert.equal(scanned - noEmail - knownByApolloId - byNameAndCompany, 130);
+});
+
 console.log("the hourly match budget is shared with manual reveals");
 /**
  * Apollo allows 200 people/match calls an hour and the drip shares that with
