@@ -19,7 +19,7 @@ import {
   scheduleFieldsChanged,
 } from "../services/campaign-manual-scheduler.js";
 import { sendCampaignNow } from "../services/campaign-send-now.js";
-import { resolveCampaignDailyCap } from "../services/sequence-sender.js";
+import { resolveCampaignPacing } from "../services/campaign-capacity.js";
 import {
   buildTransport,
   classifyTransportError,
@@ -713,9 +713,11 @@ campaignRouter.get("/:id", requireAuth, async (req, res, next) => {
     // The real daily cap, derived from the mailboxes attached right now. The
     // editor shows this instead of an input, so it has to come from the same
     // helper the sender gates on — a second implementation here would drift.
-    const { cap, inboxes } = await resolveCampaignDailyCap(
+    const { cap, inboxes, gap } = await resolveCampaignPacing(
       workspaceId,
       campaign.fromAccountIds,
+      campaign.sendGapSeconds,
+      campaign.sendGapMaxSeconds,
     );
     return sendData(res, {
       ...campaign,
@@ -729,6 +731,9 @@ campaignRouter.get("/:id", requireAuth, async (req, res, next) => {
         })),
         /** True when no explicit choice was made and it rotates across all. */
         usingAllInboxes: campaign.fromAccountIds.length === 0,
+        /** The configured gap divided across the mailboxes, in seconds. */
+        effectiveGapMinSeconds: gap.min,
+        effectiveGapMaxSeconds: gap.max,
       },
     });
   } catch (error) {

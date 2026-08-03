@@ -2,6 +2,7 @@ import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { Prisma, prisma } from "@marimail/db";
 import { resolveCampaignContacts, stagedContactIds } from "./campaign-targets.js";
+import { dividedCampaignGap, campaignInboxes } from "./campaign-capacity.js";
 
 export type ManualStepJob = {
   campaignId: string;
@@ -125,9 +126,20 @@ export async function enrolAndScheduleManualContact(
   // Result: every mail went out at the same instant regardless of gap. We
   // now look at the max `nextSendAt` across all campaignContacts (past or
   // future) and clamp with Math.max(now, latest + gap).
+  // Same division as the bulk layout: the configured gap is per-mailbox
+  // pacing, so a fleet of N sends N times faster overall. A contact enrolled
+  // one at a time (the list reconciler's path) must queue at the same rate the
+  // bulk path uses, or drip arrivals would pace themselves as if there were a
+  // single mailbox.
+  const enrolInboxes = await campaignInboxes(campaign.workspaceId, campaign.fromAccountIds);
+  const enrolPaced = dividedCampaignGap(
+    campaign.sendGapSeconds,
+    campaign.sendGapMaxSeconds,
+    enrolInboxes.length,
+  );
   let step1Base = now;
-  const gapMin = campaign.sendGapSeconds;
-  const gapMax = Math.max(campaign.sendGapMaxSeconds, gapMin);
+  const gapMin = enrolPaced.min;
+  const gapMax = Math.max(enrolPaced.max, gapMin);
   if (gapMax > 0 && campaign.sequences.length > 0) {
     const gapSeconds =
       gapMax > gapMin ? gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1)) : gapMin;
@@ -424,8 +436,19 @@ async function layoutAndQueue(
     hourEnd: campaign.scheduleHourEnd,
     timeZone: campaign.timezone,
   };
-  const gapMin = campaign.sendGapSeconds;
-  const gapMax = Math.max(campaign.sendGapMaxSeconds, gapMin);
+  // Lay the run out at the rate the fleet can actually sustain. The configured
+  // gap is per-mailbox pacing; spread across N mailboxes the campaign as a
+  // whole emits N times faster, and rotation gives each mailbox back its own
+  // full gap. Scheduling at the undivided rate would put times on the calendar
+  // that ignore nine tenths of a ten-mailbox fleet.
+  const inboxes = await campaignInboxes(campaign.workspaceId, campaign.fromAccountIds);
+  const paced = dividedCampaignGap(
+    campaign.sendGapSeconds,
+    campaign.sendGapMaxSeconds,
+    inboxes.length,
+  );
+  const gapMin = paced.min;
+  const gapMax = Math.max(paced.max, gapMin);
   const now = Date.now();
 
   const jobs: Parameters<NonNullable<typeof manualStepQueue>["addBulk"]>[0] = [];

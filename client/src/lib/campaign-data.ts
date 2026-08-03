@@ -723,10 +723,21 @@ export async function getCampaignDetailData(campaignId: string) {
       select: { id: true, email: true, dailyLimit: true, status: true },
       orderBy: { createdAt: "asc" },
     });
+    // The configured gap is per-mailbox pacing. Spread across N mailboxes the
+    // campaign as a whole emits N times faster, while rotation gives each
+    // mailbox back its own full gap — so throughput scales with the fleet
+    // without any single mailbox sending faster. Mirrors dividedCampaignGap.
+    const MIN_CAMPAIGN_GAP_SECONDS = 5;
+    const fleet = Math.max(1, sendInboxes.length);
+    const rawMax = Math.max(campaign.sendGapMaxSeconds, campaign.sendGapSeconds);
     const sendCapacity = {
       dailyCap: sendInboxes.reduce((sum, inbox) => sum + inbox.dailyLimit, 0),
       inboxes: sendInboxes,
       usingAllInboxes: campaign.fromAccountIds.length === 0,
+      effectiveGapMinSeconds:
+        rawMax <= 0 ? 0 : Math.max(MIN_CAMPAIGN_GAP_SECONDS, Math.round(campaign.sendGapSeconds / fleet)),
+      effectiveGapMaxSeconds:
+        rawMax <= 0 ? 0 : Math.max(MIN_CAMPAIGN_GAP_SECONDS, Math.round(rawMax / fleet)),
     };
 
     return {

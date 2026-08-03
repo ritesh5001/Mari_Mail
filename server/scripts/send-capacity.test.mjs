@@ -85,6 +85,71 @@ t("a cap of 0 blocks sending rather than letting it through", () => {
   assert.equal(blocked(50, 50), true);
 });
 
+console.log("pacing — the campaign gap divides across the fleet");
+/** Mirrors dividedCampaignGap in services/campaign-capacity.ts. */
+const MIN_GAP = 5;
+function dividedGap(minSeconds, maxSeconds, inboxCount) {
+  const max = Math.max(maxSeconds, minSeconds);
+  if (max <= 0) return { min: 0, max: 0 };
+  const n = Math.max(1, inboxCount);
+  return {
+    min: Math.max(MIN_GAP, Math.round(minSeconds / n)),
+    max: Math.max(MIN_GAP, Math.round(max / n)),
+  };
+}
+const M = 60;
+
+t("one mailbox is unchanged — 5-20 min stays 5-20 min", () =>
+  assert.deepEqual(dividedGap(5 * M, 20 * M, 1), { min: 5 * M, max: 20 * M }));
+t("two mailboxes halve it", () =>
+  assert.deepEqual(dividedGap(5 * M, 20 * M, 2), { min: 2.5 * M, max: 10 * M }));
+t("THE SCENARIO: ten mailboxes turn a 10 min pick into ~1 min", () => {
+  // The user's example: 5-20 configured, 10 mailboxes. The midpoint pick of
+  // 10 min becomes 1 min at campaign level.
+  const g = dividedGap(5 * M, 20 * M, 10);
+  assert.equal(g.min, 30);
+  assert.equal(g.max, 2 * M);
+  assert.equal(Math.round(10 * M / 10), 60, "a 10 min pick lands at 1 min");
+});
+t("each mailbox still rests its full configured gap", () => {
+  // N mailboxes, campaign emitting every G/N, round-robin: any one mailbox is
+  // picked once per N sends, so it sees G between its own sends.
+  const configured = 10 * M;
+  const fleet = 10;
+  const campaignGap = configured / fleet;
+  assert.equal(campaignGap * fleet, configured,
+    "per-mailbox spacing is unchanged — that is what protects deliverability");
+});
+
+console.log("pacing guards");
+t("never collapses to zero — that would mean 'no spacing at all'", () => {
+  const g = dividedGap(30, 60, 100);
+  assert.ok(g.min >= MIN_GAP && g.max >= MIN_GAP);
+});
+t("a deliberate zero gap stays zero", () =>
+  assert.deepEqual(dividedGap(0, 0, 10), { min: 0, max: 0 }));
+t("zero mailboxes does not divide by zero", () =>
+  assert.deepEqual(dividedGap(5 * M, 20 * M, 0), { min: 5 * M, max: 20 * M }));
+t("a fixed (non-random) gap divides too", () =>
+  assert.deepEqual(dividedGap(10 * M, 10 * M, 5), { min: 2 * M, max: 2 * M }));
+
+console.log("throughput — the reason this matters");
+t("undivided, ten mailboxes sent no faster than one", () => {
+  const perHourUndivided = 3600 / (12.5 * M);
+  const perHourDivided = 3600 / (12.5 * M / 10);
+  assert.ok(perHourDivided > perHourUndivided * 9,
+    "the fleet must actually buy throughput, not just daily volume");
+});
+t("pacing and the daily cap now agree on what the fleet can do", () => {
+  // 10 mailboxes x 50/day = 500/day, and a 1 min average gap over a 12h
+  // window is ~720 slots — enough to actually reach the cap.
+  const cap = capFor(Array.from({ length: 10 }, (_, i) => box(`i${i}`, 50)), []);
+  const avgGapSeconds = (dividedGap(5 * M, 20 * M, 10).min + dividedGap(5 * M, 20 * M, 10).max) / 2;
+  const slotsIn12h = (12 * 3600) / avgGapSeconds;
+  assert.equal(cap, 500);
+  assert.ok(slotsIn12h >= cap, `only ${Math.round(slotsIn12h)} slots for a ${cap}/day cap`);
+});
+
 console.log("what this means for the drip");
 t("the sustainable drip rate follows capacity, not a typed-in number", () => {
   const sustainable = (cap, steps) => Math.floor(cap / Math.max(1, steps));

@@ -135,6 +135,13 @@ function ShipEtaCell({ vessels }: { vessels: MatchedVessel[] }) {
   );
 }
 
+/** "45 s" / "2 min" — the effective campaign pacing reads better in both. */
+function formatGap(seconds: number): string {
+  if (seconds < 60) return `${seconds} s`;
+  const mins = seconds / 60;
+  return `${Number.isInteger(mins) ? mins : mins.toFixed(1)} min`;
+}
+
 export function CampaignEditor({
   campaign,
   sendCapacity,
@@ -1992,7 +1999,7 @@ function OptionsTab({
   onRotationStrategy: (next: Campaign["rotationStrategy"]) => void;
   fromAccountIds: string[];
   onFromAccountIds: (next: string[]) => void;
-  sendCapacity: { dailyCap: number; usingAllInboxes: boolean; inboxes: { id: string; email: string; dailyLimit: number; status: string }[] };
+  sendCapacity: CampaignDetailData["sendCapacity"];
 }) {
   // Present the gap in minutes for a human-friendly "5 to 20 min" mental model
   // while storing seconds. Rounded to whole minutes.
@@ -2088,9 +2095,21 @@ function OptionsTab({
             {sendGapSeconds === 0 && sendGapMaxSeconds === 0
               ? "No gap — send as fast as the schedule allows."
               : isRandom
-                ? `Each email waits a random ${minGapMinutes}–${maxGapMinutes} min after the previous one — natural, human-like pacing.`
-                : `Each email waits a fixed ${minGapMinutes} min after the previous one. Set a higher Max to randomise.`}
+                ? `Each mailbox waits a random ${minGapMinutes}–${maxGapMinutes} min between its own sends — natural, human-like pacing.`
+                : `Each mailbox waits a fixed ${minGapMinutes} min between its own sends. Set a higher Max to randomise.`}
           </span>
+          {/* The gap above is per mailbox. Spread across the fleet the campaign
+              as a whole goes that many times faster, while each mailbox still
+              paces itself — which is the part that protects deliverability.
+              Without saying so, adding mailboxes looks like it changes nothing. */}
+          {sendCapacity.inboxes.length > 1 && sendCapacity.effectiveGapMaxSeconds > 0 ? (
+            <span className="mt-1 block text-[11px] font-medium text-slate-600 dark:text-white/60">
+              Across {sendCapacity.inboxes.length} mailboxes that&rsquo;s about one email every{" "}
+              {formatGap(sendCapacity.effectiveGapMinSeconds)}–
+              {formatGap(sendCapacity.effectiveGapMaxSeconds)} from the campaign, with each mailbox
+              still resting {minGapMinutes}–{maxGapMinutes} min between its own.
+            </span>
+          ) : null}
         </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-slate-600 dark:text-white/60">
