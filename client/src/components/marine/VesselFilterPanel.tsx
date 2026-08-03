@@ -905,9 +905,9 @@ export function VesselFilterPanel({
 
   const sizeSpecsBody = (
     <>
-      <RangeRow label="DWT" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
-      <RangeRow label="Gross tonnage" min={state.gtMin} max={state.gtMax} onMin={(v) => patch({ gtMin: v })} onMax={(v) => patch({ gtMax: v })} />
-      <RangeRow label="Net tonnage" min={state.netTonMin} max={state.netTonMax} onMin={(v) => patch({ netTonMin: v })} onMax={(v) => patch({ netTonMax: v })} />
+      <RangeRow label="DWT (mt)" min={state.dwtMin} max={state.dwtMax} onMin={(v) => patch({ dwtMin: v })} onMax={(v) => patch({ dwtMax: v })} />
+      <RangeRow label="Gross tonnage (mt)" min={state.gtMin} max={state.gtMax} onMin={(v) => patch({ gtMin: v })} onMax={(v) => patch({ gtMax: v })} />
+      <RangeRow label="Net tonnage (mt)" min={state.netTonMin} max={state.netTonMax} onMin={(v) => patch({ netTonMin: v })} onMax={(v) => patch({ netTonMax: v })} />
       <RangeRow label="Built year" min={state.builtMin} max={state.builtMax} onMin={(v) => patch({ builtMin: v })} onMax={(v) => patch({ builtMax: v })} />
       <RangeRow label="Length (LOA)" min={state.loaMin} max={state.loaMax} onMin={(v) => patch({ loaMin: v })} onMax={(v) => patch({ loaMax: v })} />
       <RangeRow label="Beam (m)" min={state.beamMin} max={state.beamMax} onMin={(v) => patch({ beamMin: v })} onMax={(v) => patch({ beamMax: v })} />
