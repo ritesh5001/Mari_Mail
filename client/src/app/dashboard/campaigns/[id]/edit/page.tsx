@@ -21,6 +21,7 @@ export default async function EditCampaignPage({
   return (
     <CampaignEditor
       campaign={data.campaign}
+      sendCapacity={data.sendCapacity}
       targetContacts={data.targetContacts}
       targetLists={data.targetLists}
       targetVessels={data.targetVessels}

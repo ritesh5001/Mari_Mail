@@ -50,6 +50,49 @@ export type EtaSendContext = {
 
 export { buildTransport };
 
+/**
+ * The inboxes a campaign is actually allowed to send from.
+ *
+ * An empty `accountIds` means "rotate across every connected mailbox", which is
+ * what a campaign created without an explicit choice gets. Platform inboxes are
+ * always excluded — campaign mail must come from a user's own mailbox so replies
+ * reach them and the message lands in their Sent folder.
+ */
+export async function campaignInboxes(workspaceId: string, accountIds: string[]) {
+  return prisma.emailAccount.findMany({
+    where: {
+      workspaceId,
+      status: { in: ["ACTIVE", "WARMING"] },
+      isPlatformDefault: false,
+      id: accountIds.length ? { in: accountIds } : undefined,
+    },
+    select: { id: true, email: true, dailyLimit: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+/**
+ * A campaign's daily send cap: the sum of its mailboxes' own daily limits.
+ *
+ * Derived rather than stored, deliberately. Mailboxes can be attached and
+ * detached at any point in a campaign's life — including mid-flight — and each
+ * mailbox's own limit can be edited independently. A copy of this number taken
+ * at launch would be wrong the moment any of that happened, and wrong in the
+ * expensive direction: silently throttling a campaign the user had just added
+ * capacity to, with nothing on screen to explain it.
+ *
+ * Two mailboxes at 50 give the campaign 100/day; ten give 500. Attaching an
+ * eleventh raises it immediately, and detaching one lowers it just as fast —
+ * whatever is already queued simply waits for the smaller allowance.
+ */
+export async function resolveCampaignDailyCap(
+  workspaceId: string,
+  accountIds: string[],
+): Promise<{ cap: number; inboxes: Awaited<ReturnType<typeof campaignInboxes>> }> {
+  const inboxes = await campaignInboxes(workspaceId, accountIds);
+  return { cap: inboxes.reduce((sum, inbox) => sum + inbox.dailyLimit, 0), inboxes };
+}
+
 export async function selectInbox(
   workspaceId: string,
   accountIds: string[],
@@ -368,7 +411,16 @@ export async function sendSequenceStep(args: {
   const campaignSent = Number(
     (await getToken(campaignDailyCounterKey(campaign.id))) ?? 0,
   );
-  if (campaignSent >= campaign.dailyLimit) {
+  // The cap is the sum of this campaign's mailboxes' own daily limits, read
+  // fresh on every send rather than from campaign.dailyLimit. Mailboxes can be
+  // attached or detached mid-flight, so a stored copy would be stale the moment
+  // that happened — throttling a campaign whose capacity had just gone up, with
+  // nothing to explain why.
+  const { cap: campaignCap } = await resolveCampaignDailyCap(
+    campaign.workspaceId,
+    campaign.fromAccountIds,
+  );
+  if (campaignSent >= campaignCap) {
     // Campaign has hit its daily cap. Push to tomorrow's window instead of
     // marking the contact FAILED. The `reservedSlotAt` from any earlier
     // gap-reservation for this job is intentionally NOT passed forward —

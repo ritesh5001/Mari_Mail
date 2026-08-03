@@ -707,8 +707,31 @@ export async function getCampaignDetailData(campaignId: string) {
 
     const stepBreakdown = buildStepBreakdown(campaign, stepEvents);
 
+    // The campaign's real daily cap: the sum of its mailboxes' own limits.
+    // Derived rather than read from campaign.dailyLimit, because mailboxes can
+    // be attached or detached at any time and the stored number would be stale
+    // the moment they were. Mirrors resolveCampaignDailyCap on the server —
+    // same filters, same arithmetic. An empty fromAccountIds means the campaign
+    // rotates across every connected mailbox.
+    const sendInboxes = await prisma.emailAccount.findMany({
+      where: {
+        workspaceId,
+        status: { in: ["ACTIVE", "WARMING"] },
+        isPlatformDefault: false,
+        ...(campaign.fromAccountIds.length ? { id: { in: campaign.fromAccountIds } } : {}),
+      },
+      select: { id: true, email: true, dailyLimit: true, status: true },
+      orderBy: { createdAt: "asc" },
+    });
+    const sendCapacity = {
+      dailyCap: sendInboxes.reduce((sum, inbox) => sum + inbox.dailyLimit, 0),
+      inboxes: sendInboxes,
+      usingAllInboxes: campaign.fromAccountIds.length === 0,
+    };
+
     return {
       campaign,
+      sendCapacity,
       targetConfig,
       stepBreakdown,
       targetContacts: allTargetContacts.sort((a, b) =>

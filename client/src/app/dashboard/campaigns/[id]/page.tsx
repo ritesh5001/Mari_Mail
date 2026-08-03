@@ -272,7 +272,13 @@ export default async function CampaignDetailPage({
               <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                 <Badge label={formatEnum(campaign.triggerType)} />
                 <Badge label={formatEnum(campaign.sendingMode)} />
-                <Badge label={`${campaign.dailyLimit} daily limit`} />
+                {/* The real cap: the sum of the attached mailboxes' own limits, not the
+                    stale stored column. */}
+                <Badge
+                  label={`${data.sendCapacity.dailyCap}/day from ${data.sendCapacity.inboxes.length} mailbox${
+                    data.sendCapacity.inboxes.length === 1 ? "" : "es"
+                  }`}
+                />
                 <Badge label={campaign.timezone} />
               </div>
             </div>

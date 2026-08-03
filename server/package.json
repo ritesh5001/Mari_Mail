@@ -19,7 +19,8 @@
     "test:inbox": "node scripts/inbox-edit.test.mjs",
     "test:reveal": "node scripts/reveal-batching.test.mjs",
     "test:gap": "tsx scripts/send-gap.test.mts",
-    "test:drip": "node scripts/apollo-drip.test.mjs"
+    "test:drip": "node scripts/apollo-drip.test.mjs",
+    "test:capacity": "node scripts/send-capacity.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",

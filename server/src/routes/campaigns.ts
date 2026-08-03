@@ -19,6 +19,7 @@ import {
   scheduleFieldsChanged,
 } from "../services/campaign-manual-scheduler.js";
 import { sendCampaignNow } from "../services/campaign-send-now.js";
+import { resolveCampaignDailyCap } from "../services/sequence-sender.js";
 import {
   buildTransport,
   classifyTransportError,
@@ -708,7 +709,28 @@ campaignRouter.get("/:id", requireAuth, async (req, res, next) => {
     });
     if (!campaign)
       return sendError(res, 404, "NOT_FOUND", "Campaign not found");
-    return sendData(res, campaign);
+
+    // The real daily cap, derived from the mailboxes attached right now. The
+    // editor shows this instead of an input, so it has to come from the same
+    // helper the sender gates on — a second implementation here would drift.
+    const { cap, inboxes } = await resolveCampaignDailyCap(
+      workspaceId,
+      campaign.fromAccountIds,
+    );
+    return sendData(res, {
+      ...campaign,
+      sendCapacity: {
+        dailyCap: cap,
+        inboxes: inboxes.map((i) => ({
+          id: i.id,
+          email: i.email,
+          dailyLimit: i.dailyLimit,
+          status: i.status,
+        })),
+        /** True when no explicit choice was made and it rotates across all. */
+        usingAllInboxes: campaign.fromAccountIds.length === 0,
+      },
+    });
   } catch (error) {
     return next(error);
   }

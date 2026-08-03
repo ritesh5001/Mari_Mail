@@ -137,6 +137,7 @@ function ShipEtaCell({ vessels }: { vessels: MatchedVessel[] }) {
 
 export function CampaignEditor({
   campaign,
+  sendCapacity,
   targetContacts,
   targetLists,
   targetVessels,
@@ -145,6 +146,8 @@ export function CampaignEditor({
   initialTab,
 }: {
   campaign: Campaign;
+  /** Derived daily cap + the mailboxes it comes from. See campaign-data.ts. */
+  sendCapacity: CampaignDetailData["sendCapacity"];
   targetContacts: CampaignDetailData["targetContacts"];
   targetLists: CampaignDetailData["targetLists"];
   targetVessels: CampaignDetailData["targetVessels"];
@@ -214,7 +217,10 @@ export function CampaignEditor({
   const [hourEnd, setHourEnd] = useState(campaign.scheduleHourEnd);
   const [timezone, setTimezone] = useState(campaign.timezone);
 
-  const [dailyLimit, setDailyLimit] = useState(campaign.dailyLimit);
+  // No longer editable: the campaign's cap is the sum of its mailboxes'
+  // limits, computed per send. Kept only so saving doesn't rewrite the stored
+  // column to something different from what the campaign was created with.
+  const [dailyLimit] = useState(campaign.dailyLimit);
   const [sendGapSeconds, setSendGapSeconds] = useState(campaign.sendGapSeconds);
   const [sendGapMaxSeconds, setSendGapMaxSeconds] = useState(campaign.sendGapMaxSeconds);
   const [trackOpens, setTrackOpens] = useState(campaign.trackOpens);
@@ -226,8 +232,11 @@ export function CampaignEditor({
   const [stopOnUnsubscribe, setStopOnUnsubscribe] = useState(campaign.stopOnUnsubscribe);
   const [rotationStrategy, setRotationStrategy] = useState(campaign.rotationStrategy);
   const [fromAccountIds, setFromAccountIds] = useState<string[]>(campaign.fromAccountIds);
-  // Once launched, sending routing is locked to whatever was chosen at launch.
-  const inboxSelectionLocked = campaign.status !== "DRAFT";
+  // Mailboxes are editable for the whole life of a campaign, launched or not.
+  // Adding one raises the daily cap immediately (the cap is the sum of the
+  // attached mailboxes' own limits, computed per send); removing one lowers it,
+  // and whatever is already queued simply waits for the smaller allowance.
+  // Nothing about a running campaign needs the routing frozen.
 
   // ---- Save + activate ------------------------------------------------------
   async function save(overrides?: { status?: Campaign["status"]; skipRespace?: boolean }) {
@@ -533,8 +542,6 @@ export function CampaignEditor({
               onTimezone={setTimezone}
             />
             <OptionsTab
-              dailyLimit={dailyLimit}
-              onDailyLimit={setDailyLimit}
               sendGapSeconds={sendGapSeconds}
               onSendGapSeconds={setSendGapSeconds}
               sendGapMaxSeconds={sendGapMaxSeconds}
@@ -551,7 +558,7 @@ export function CampaignEditor({
               onRotationStrategy={setRotationStrategy}
               fromAccountIds={fromAccountIds}
               onFromAccountIds={setFromAccountIds}
-              inboxSelectionLocked={inboxSelectionLocked}
+              sendCapacity={sendCapacity}
             />
           </div>
         )}
@@ -1951,8 +1958,6 @@ function ScheduleTab({
 // ─── Options ────────────────────────────────────────────────────────────────
 
 function OptionsTab({
-  dailyLimit,
-  onDailyLimit,
   sendGapSeconds,
   onSendGapSeconds,
   sendGapMaxSeconds,
@@ -1969,10 +1974,8 @@ function OptionsTab({
   onRotationStrategy,
   fromAccountIds,
   onFromAccountIds,
-  inboxSelectionLocked,
+  sendCapacity,
 }: {
-  dailyLimit: number;
-  onDailyLimit: (next: number) => void;
   sendGapSeconds: number;
   onSendGapSeconds: (next: number) => void;
   sendGapMaxSeconds: number;
@@ -1989,7 +1992,7 @@ function OptionsTab({
   onRotationStrategy: (next: Campaign["rotationStrategy"]) => void;
   fromAccountIds: string[];
   onFromAccountIds: (next: string[]) => void;
-  inboxSelectionLocked: boolean;
+  sendCapacity: { dailyCap: number; usingAllInboxes: boolean; inboxes: { id: string; email: string; dailyLimit: number; status: string }[] };
 }) {
   // Present the gap in minutes for a human-friendly "5 to 20 min" mental model
   // while storing seconds. Rounded to whole minutes.
@@ -2002,25 +2005,46 @@ function OptionsTab({
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white">
           <Settings className="h-4 w-4" /> Sending
         </h3>
-        {/* This is enforced campaign-wide, not per inbox — the sender checks
-            `campaignSent >= campaign.dailyLimit` across every inbox and every
-            step. The old "per inbox" label made a two-step campaign look like
-            it had twice the headroom it actually has. Each inbox has its own
-            separate cap in Mailboxes. */}
-        <label className="mt-4 block text-xs font-medium text-slate-600 dark:text-white/60">
-          Daily send limit for this campaign
-          <input
-            type="number"
-            min={1}
-            value={dailyLimit}
-            onChange={(event) => onDailyLimit(Number(event.target.value) || 1)}
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
-          />
-          <span className="mt-1 block font-normal text-[11px] text-slate-500 dark:text-white/50">
+        {/* Derived, not typed in. The cap is the sum of the attached mailboxes'
+            own daily limits and is recomputed on every send, so attaching a
+            mailbox raises it the moment it's saved. A number stored here would
+            be stale as soon as anyone touched the mailbox list. */}
+        <div className="mt-4">
+          <p className="text-xs font-medium text-slate-600 dark:text-white/60">
+            Daily send limit for this campaign
+          </p>
+          <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">
+              {sendCapacity.dailyCap.toLocaleString()} emails/day
+              <span className="ml-1.5 font-normal text-[11px] text-slate-500 dark:text-white/50">
+                from {sendCapacity.inboxes.length} mailbox
+                {sendCapacity.inboxes.length === 1 ? "" : "es"}
+                {sendCapacity.usingAllInboxes ? " (all connected)" : ""}
+              </span>
+            </p>
+            {sendCapacity.inboxes.length > 0 ? (
+              <ul className="mt-1.5 space-y-0.5">
+                {sendCapacity.inboxes.map((inbox) => (
+                  <li key={inbox.id} className="text-[11px] text-slate-500 dark:text-white/50">
+                    {inbox.email} — {inbox.dailyLimit}/day
+                    {inbox.status === "WARMING" ? " (warming)" : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              /* Zero capacity means nothing can go out at all, which is worth
+                 saying plainly rather than leaving as a silent 0. */
+              <p className="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                No usable mailbox — nothing will send. Connect one, or fix any
+                mailbox showing an error.
+              </p>
+            )}
+          </div>
+          <span className="mt-1 block text-[11px] text-slate-500 dark:text-white/50">
             Counts every send, follow-ups included — a 2-step sequence uses two
-            of these per contact. Each mailbox also has its own daily cap.
+            of these per contact.
           </span>
-        </label>
+        </div>
         <div className="mt-3">
           <p className="text-xs font-medium text-slate-600 dark:text-white/60">
             Gap between emails (minutes)
@@ -2071,17 +2095,12 @@ function OptionsTab({
         <div className="mt-3">
           <p className="text-xs font-medium text-slate-600 dark:text-white/60">
             Send from
-            {inboxSelectionLocked ? (
-              <span className="ml-2 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-slate-600 dark:bg-white/10 dark:text-white/60">
-                locked after launch
-              </span>
-            ) : null}
           </p>
-          <InboxPicker
-            value={fromAccountIds}
-            onChange={onFromAccountIds}
-            disabled={inboxSelectionLocked}
-          />
+          <InboxPicker value={fromAccountIds} onChange={onFromAccountIds} />
+          <span className="mt-1 block text-[11px] text-slate-500 dark:text-white/45">
+            Add or remove mailboxes at any time, including while the campaign is
+            running. Each one raises the daily limit by its own cap.
+          </span>
         </div>
         <label className="mt-3 block text-xs font-medium text-slate-600 dark:text-white/60">
           Inbox rotation strategy
