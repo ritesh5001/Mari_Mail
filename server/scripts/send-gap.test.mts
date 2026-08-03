@@ -182,6 +182,73 @@ t("drift compounds — three relaunches used to stack three run-lengths", () => 
   assert.ok(base - Date.now() > 44 * 3600_000, "each relaunch added another run length");
 });
 
+console.log("relaunch must not re-mail people who already received it");
+/**
+ * A completed send clears nextSendAt but leaves the row SCHEDULED, so
+ * "already delivered" and "never scheduled" were indistinguishable. A relaunch
+ * re-queued every past recipient: 62 of 72 contacts on the live campaign were
+ * holding a second copy of a mail they had already been sent.
+ *
+ * SentMessage is the authority on what actually went out.
+ */
+type Row = { contactId: string; nextSendAt: number | null };
+const selectForRelaunch = (rows: Row[], mailed: Set<string>, onlyUnscheduled: boolean) => {
+  const candidates = rows.filter((r) => !mailed.has(r.contactId));
+  return onlyUnscheduled ? candidates.filter((r) => r.nextSendAt === null) : candidates;
+};
+
+// The live shape: 62 sent (nextSendAt cleared), 10 still waiting.
+const liveRows: Row[] = [
+  ...Array.from({ length: 62 }, (_, i) => ({ contactId: `sent${i}`, nextSendAt: null })),
+  ...Array.from({ length: 10 }, (_, i) => ({ contactId: `wait${i}`, nextSendAt: 1_000 + i })),
+];
+const liveMailed = new Set(Array.from({ length: 62 }, (_, i) => `sent${i}`));
+
+t("THE BUG: a cleared nextSendAt used to look like 'never scheduled'", () => {
+  const naive = liveRows.filter((r) => r.nextSendAt === null);
+  assert.equal(naive.length, 62, "which is exactly how 62 duplicates got queued");
+});
+t("already-mailed contacts are excluded from a relaunch", () =>
+  assert.equal(selectForRelaunch(liveRows, liveMailed, true).length, 0));
+t("a newly added contact IS still picked up", () => {
+  const withNew: Row[] = [...liveRows, { contactId: "brand-new", nextSendAt: null }];
+  const picked = selectForRelaunch(withNew, liveMailed, true);
+  assert.deepEqual(picked.map((r) => r.contactId), ["brand-new"]);
+});
+t("contacts still waiting keep their existing schedule, not a second one", () => {
+  const picked = selectForRelaunch(liveRows, liveMailed, true);
+  assert.ok(!picked.some((r) => r.contactId.startsWith("wait")),
+    "respace re-paces those; launch must not queue them again");
+});
+t("a first launch enrols everyone, since nobody has been mailed", () =>
+  assert.equal(selectForRelaunch(liveRows, new Set(), false).length, 72));
+t("even a non-relaunch path skips past recipients", () =>
+  assert.equal(selectForRelaunch(liveRows, liveMailed, false).length, 10));
+
+console.log("applying changes must not drag the schedule forward");
+/** Mirrors the respace anchor: max(now, earliest send already on the books). */
+const anchorFor = (now: number, earliest: number | null) =>
+  earliest === null ? now : Math.max(now, earliest);
+
+const AM_930 = Date.parse("2026-08-03T04:00:00Z");  // 09:30 IST
+const PM_200 = Date.parse("2026-08-03T08:30:00Z");  // 14:00 IST
+
+t("THE BUG: saving at 2pm used to move a 9:30am batch to 2pm", () =>
+  assert.equal(anchorFor(PM_200, AM_930), PM_200,
+    "unanchored, the run restarts at whenever save was pressed"));
+t("anchoring keeps a future run where the user put it", () => {
+  // Editing at 06:25 IST with the batch due 09:30 IST leaves it at 09:30.
+  const earlyMorning = Date.parse("2026-08-03T00:55:00Z");
+  assert.equal(anchorFor(earlyMorning, AM_930), AM_930);
+});
+t("an overdue run still snaps to now rather than scheduling into the past", () => {
+  const yesterday = Date.parse("2026-08-02T04:00:00Z");
+  assert.equal(anchorFor(PM_200, yesterday), PM_200,
+    "a past anchor would fire the whole batch at once");
+});
+t("with nothing scheduled the anchor is simply now", () =>
+  assert.equal(anchorFor(PM_200, null), PM_200));
+
 console.log("an inverted sending window must be rejected, not silently ignored");
 /** Mirrors sendingWindowError() in routes/campaigns.ts. */
 const windowError = (

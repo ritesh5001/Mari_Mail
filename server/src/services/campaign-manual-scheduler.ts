@@ -417,14 +417,17 @@ export function scheduleFieldsChanged(
  * something that runs inside the launch/edit request. Here the running
  * "latest" is just a local variable.
  *
- * `startAfterMs` chains this batch behind sends that already exist, so
+ * `startAtMs` pins where the run begins — used by respace to hold the batch
+ * at the time it was already due rather than dragging it to whenever the user
+ * pressed save. `startAfterMs` chains this batch behind sends that already
+ * exist, so
  * contacts added to a running campaign queue up at the end of the run rather
  * than jumping ahead of people who were already waiting.
  */
 async function layoutAndQueue(
   campaign: NonNullable<ManualCampaign>,
   rows: { id: string; contactId: string }[],
-  opts: { startAfterMs?: number | null } = {},
+  opts: { startAfterMs?: number | null; startAtMs?: number | null } = {},
 ): Promise<{ contacts: number; jobs: number }> {
   if (!manualStepQueue || rows.length === 0 || campaign.sequences.length === 0) {
     return { contacts: 0, jobs: 0 };
@@ -449,7 +452,11 @@ async function layoutAndQueue(
   );
   const gapMin = paced.min;
   const gapMax = Math.max(paced.max, gapMin);
-  const now = Date.now();
+  // Where this batch begins. Defaults to now; respace pins it to the run's
+  // existing start so a settings change doesn't drag the schedule forward.
+  const now = opts.startAtMs ?? Date.now();
+  // Queue delays are always measured from the real clock, whatever the anchor.
+  const realNow = Date.now();
 
   const jobs: Parameters<NonNullable<typeof manualStepQueue>["addBulk"]>[0] = [];
   const rowUpdates: { id: string; sequenceId?: string; nextSendAt?: Date }[] = [];
@@ -477,7 +484,7 @@ async function layoutAndQueue(
           scheduledFor: fireAt.toISOString(),
         },
         opts: {
-          delay: Math.max(0, fireAt.getTime() - now),
+          delay: Math.max(0, fireAt.getTime() - realNow),
           jobId: `manual-${campaign.id}-${sequence.id}-${row.contactId}`,
           attempts: 3,
           backoff: { type: "exponential", delay: 5 * 60 * 1000 },
@@ -485,7 +492,7 @@ async function layoutAndQueue(
           removeOnFail: 500,
         },
       });
-      if (fireAt.getTime() >= now && (!soonest || fireAt < soonest.fireAt)) {
+      if (fireAt.getTime() >= realNow && (!soonest || fireAt < soonest.fireAt)) {
         soonest = { sequenceId: sequence.id, fireAt };
       }
     }
@@ -563,13 +570,27 @@ export async function respaceManualCampaign(campaignId: string): Promise<{
 
   const pending = await prisma.campaignContact.findMany({
     where: { campaignId, status: "SCHEDULED", nextSendAt: { not: null } },
-    select: { id: true, contactId: true },
+    select: { id: true, contactId: true, nextSendAt: true },
     orderBy: { nextSendAt: "asc" },
   });
   if (pending.length === 0) return { respaced: 0, cancelled: 0 };
 
+  // Keep the run where the user put it. Re-pacing from `now` moved everything
+  // to whenever they happened to hit save — editing at 2pm dragged a batch due
+  // at 9:30am forward to 2pm, which is not what "apply changes" should mean.
+  // Anchor on the earliest send already on the books instead, so a settings
+  // change alters spacing and capacity without moving the start.
+  //
+  // Overdue runs still snap to now: an anchor in the past would schedule into
+  // the past, and layoutAndQueue floors each delay at zero, which would fire
+  // the whole batch at once.
+  const earliest = pending[0].nextSendAt!.getTime();
+  const anchor = Math.max(Date.now(), earliest);
+
   const cancelled = await cancelManualJobsForCampaign(campaignId);
-  const { contacts: respaced, jobs } = await layoutAndQueue(campaign, pending);
+  const { contacts: respaced, jobs } = await layoutAndQueue(campaign, pending, {
+    startAtMs: anchor,
+  });
 
   console.log(
     `[manual-scheduler] campaign=${campaignId}: respaced ${respaced} pending send(s) onto the current settings (dropped ${cancelled} job(s), queued ${jobs}).`,
@@ -627,12 +648,30 @@ export async function launchManualCampaign(
     select: { id: true, contactId: true, nextSendAt: true },
   });
 
+  // Anyone this campaign has already mailed must never be enrolled again.
+  //
+  // A completed send clears nextSendAt but leaves the row SCHEDULED, so
+  // "already delivered" and "never scheduled" looked identical to the filter
+  // below. A relaunch therefore re-queued every past recipient: 62 of 72
+  // contacts on the live campaign were sitting on a second copy of a mail they
+  // had already received. SentMessage is the authority on what actually went
+  // out, so ask it rather than inferring from scheduling state.
+  const mailed = await prisma.sentMessage.findMany({
+    where: { campaignId: campaign.id },
+    select: { contactId: true },
+    distinct: ["contactId"],
+  });
+  const alreadyMailed = new Set(mailed.map((row) => row.contactId));
+
   // On a relaunch, respaceManualCampaign has already re-laid everyone who was
   // waiting. Re-scheduling them here would redo the whole run for nothing —
   // and it was the bulk of the time a relaunch took, since each contact went
   // through the per-contact path. Only genuinely new contacts need laying out;
   // they chain behind the existing run rather than in front of it.
-  const needing = options?.onlyUnscheduled ? rows.filter((r) => r.nextSendAt === null) : rows;
+  const candidates = rows.filter((r) => !alreadyMailed.has(r.contactId));
+  const needing = options?.onlyUnscheduled
+    ? candidates.filter((r) => r.nextSendAt === null)
+    : candidates;
   if (needing.length === 0) return { scheduled: 0, contacts: 0 };
 
   const latest = options?.onlyUnscheduled
