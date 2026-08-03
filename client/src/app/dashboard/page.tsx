@@ -107,10 +107,19 @@ function ActivationChecklist({ hasCampaigns }: { hasCampaigns: boolean }) {
   );
 }
 
-async function DashboardKpis({ workspaceId, days }: { workspaceId: string; days: number }) {
+async function DashboardKpis({
+  workspaceId,
+  days,
+  countries,
+}: {
+  workspaceId: string;
+  days: number;
+  /** The plan's country grant — null means unrestricted. */
+  countries: string[] | null;
+}) {
   let overview: Awaited<ReturnType<typeof getOverview>> | null = null;
   try {
-    overview = await getOverview(workspaceId, days);
+    overview = await getOverview(workspaceId, days, countries);
   } catch (err) {
     console.error("[dashboard] getOverview failed", err);
   }
@@ -366,7 +375,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { workspaceId, workspace } = await requireAnalyticsWorkspace();
+  const { workspaceId, workspace, countries } = await requireAnalyticsWorkspace();
   const days = (() => {
     const raw = typeof searchParams.range === "string" ? Number(searchParams.range) : 30;
     return [7, 30, 90].includes(raw) ? raw : 30;
@@ -403,7 +412,7 @@ export default async function DashboardPage({
       </section>
 
       <Suspense fallback={<KpiSkeleton />}>
-        <DashboardKpis workspaceId={workspaceId} days={days} />
+        <DashboardKpis workspaceId={workspaceId} days={days} countries={countries} />
       </Suspense>
     </div>
   );

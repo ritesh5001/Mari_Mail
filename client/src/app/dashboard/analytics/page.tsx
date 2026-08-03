@@ -9,9 +9,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function AnalyticsHome() {
-  const { workspaceId } = await requireAnalyticsWorkspace();
+  const { workspaceId, countries } = await requireAnalyticsWorkspace();
   const [overview, campaigns] = await Promise.all([
-    getOverview(workspaceId, 30),
+    getOverview(workspaceId, 30, countries),
     listWorkspaceCampaigns(workspaceId),
   ]);
 

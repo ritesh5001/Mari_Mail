@@ -39,7 +39,7 @@ export async function requireEtaWorkspaceId() {
  * multi-country plan allowlist, `= country` for a single legacy country, or
  * `{}` (no restriction) when the workspace hasn't picked any.
  */
-function countryClause(scope: CountryScope): Prisma.VesselETAWhereInput {
+export function countryClause(scope: CountryScope): Prisma.VesselETAWhereInput {
   // An EMPTY array means "no country qualifies" and must match nothing. It used
   // to return `{}` (unrestricted) — harmless while empty arrays never occurred,
   // but `resolveCountryFilter` now produces one whenever a user requests only

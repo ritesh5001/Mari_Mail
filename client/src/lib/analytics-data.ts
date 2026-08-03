@@ -2,13 +2,23 @@ import { notFound } from "next/navigation";
 import { unstable_cache } from "next/cache";
 import { Prisma, prisma, type EmailEventType } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
+import { countryClause } from "@/lib/eta-data";
+import { workspaceCountryScope, type CountryScope } from "@/lib/country-scope";
 
 const HOT_EVENTS: EmailEventType[] = ["OPENED", "CLICKED", "REPLIED"];
 
 export async function requireAnalyticsWorkspace() {
   const session = await getServerSession();
   if (!session?.activeWorkspace) notFound();
-  return { workspaceId: session.activeWorkspace.id, userId: session.user.id, workspace: session.activeWorkspace };
+  // The plan's country grant, resolved once here so every caller scopes the
+  // same way rather than each remembering to.
+  const scope = workspaceCountryScope(session.activeWorkspace);
+  return {
+    workspaceId: session.activeWorkspace.id,
+    userId: session.user.id,
+    workspace: session.activeWorkspace,
+    countries: Array.isArray(scope) ? scope : scope ? [scope] : null,
+  };
 }
 
 function rate(numerator: number, denominator: number) {
@@ -36,12 +46,28 @@ function trend(current: number, previous: number) {
 // The date windows use `new Date()` internally, so a 60s cache shifts the
 // window boundaries by at most a minute — immaterial for these KPIs.
 export const getOverview = unstable_cache(
-  (workspaceId: string, days = 30) => getOverviewImpl(workspaceId, days),
+  (workspaceId: string, days = 30, countries: string[] | null = null) =>
+    getOverviewImpl(workspaceId, days, countries),
   ["analytics-overview"],
   { revalidate: 60, tags: ["analytics"] },
 );
 
-async function getOverviewImpl(workspaceId: string, days = 30) {
+async function getOverviewImpl(
+  workspaceId: string,
+  days = 30,
+  countries: string[] | null = null,
+) {
+  /**
+   * Every ETA figure on this dashboard is restricted to the countries the
+   * plan grants.
+   *
+   * Port Radar and Vessels have always clamped to the grant; the overview
+   * never did, so a workspace paying for two countries saw "410 ETAs this
+   * week" broken down by regions it has no access to — a straight read of the
+   * global ETA table. Same clause builder as Port Radar, so the two cannot
+   * disagree about what the plan covers.
+   */
+  const etaCountry = countryClause(countries as CountryScope);
   const now = new Date();
   const startMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -69,10 +95,22 @@ async function getOverviewImpl(workspaceId: string, days = 30) {
       // Include workspace-owned + global (admin-authored) ETAs so per-
       // workspace analytics don't zero out when ETAs are shared across
       // workspaces.
-      prisma.vesselETA.count({ where: { OR: [{ workspaceId }, { workspaceId: null }], createdAt: { gte: startMonth } } }),
-      prisma.vesselETA.count({ where: { OR: [{ workspaceId }, { workspaceId: null }], createdAt: { gte: startLastMonth, lte: endLastMonth } } }),
+      prisma.vesselETA.count({
+        where: { OR: [{ workspaceId }, { workspaceId: null }], createdAt: { gte: startMonth }, ...etaCountry },
+      }),
+      prisma.vesselETA.count({
+        where: {
+          OR: [{ workspaceId }, { workspaceId: null }],
+          createdAt: { gte: startLastMonth, lte: endLastMonth },
+          ...etaCountry,
+        },
+      }),
       prisma.vesselETA.findMany({
-        where: { OR: [{ workspaceId }, { workspaceId: null }], eta: { gte: startWeek, lt: endWeek } },
+        where: {
+          OR: [{ workspaceId }, { workspaceId: null }],
+          eta: { gte: startWeek, lt: endWeek },
+          ...etaCountry,
+        },
         select: { port: { select: { region: true } } },
       }),
       prisma.campaign.count({ where: { workspaceId, status: "ACTIVE" } }),
@@ -81,7 +119,14 @@ async function getOverviewImpl(workspaceId: string, days = 30) {
       prisma.emailEvent.count({ where: { workspaceId, eventType: "SENT", occurredAt: { gte: startPrevious, lt: startRecent } } }),
       prisma.emailEvent.count({ where: { workspaceId, eventType: "REPLIED", occurredAt: { gte: startRecent } } }),
       prisma.emailEvent.count({ where: { workspaceId, eventType: "REPLIED", occurredAt: { gte: startPrevious, lt: startRecent } } }),
-      prisma.vesselETA.count({ where: { OR: [{ workspaceId }, { workspaceId: null }], eta: { gte: now, lte: in48h }, triggers: { none: {} } } }),
+      prisma.vesselETA.count({
+        where: {
+          OR: [{ workspaceId }, { workspaceId: null }],
+          eta: { gte: now, lte: in48h },
+          triggers: { none: {} },
+          ...etaCountry,
+        },
+      }),
     ]);
 
     const regions: Record<string, number> = {};
