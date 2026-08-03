@@ -225,6 +225,46 @@ t("a first launch enrols everyone, since nobody has been mailed", () =>
 t("even a non-relaunch path skips past recipients", () =>
   assert.equal(selectForRelaunch(liveRows, liveMailed, false).length, 10));
 
+console.log("two independent guards — neither has to be perfect alone");
+const CONTACTED = new Set([
+  "SENT", "OPENED", "CLICKED", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "FAILED",
+]);
+type Row2 = { contactId: string; nextSendAt: number | null; status: string };
+const guardedSelect = (rows: Row2[], mailed: Set<string>) =>
+  rows.filter((r) => !mailed.has(r.contactId) && !CONTACTED.has(r.status))
+      .filter((r) => r.nextSendAt === null);
+
+t("the status guard alone catches a contact missing its SentMessage row", () => {
+  const rows: Row2[] = [{ contactId: "a", nextSendAt: null, status: "SENT" }];
+  assert.equal(guardedSelect(rows, new Set()).length, 0,
+    "status must exclude them even with no SentMessage evidence");
+});
+t("the SentMessage guard alone catches a stale SCHEDULED status", () => {
+  // Sent before the status fix shipped: row still reads SCHEDULED.
+  const rows: Row2[] = [{ contactId: "a", nextSendAt: null, status: "SCHEDULED" }];
+  assert.equal(guardedSelect(rows, new Set(["a"])).length, 0);
+});
+t("a replied contact is never re-enrolled", () =>
+  assert.equal(guardedSelect([{ contactId: "a", nextSendAt: null, status: "REPLIED" }], new Set()).length, 0));
+t("an unsubscribed contact is never re-enrolled", () =>
+  assert.equal(guardedSelect([{ contactId: "a", nextSendAt: null, status: "UNSUBSCRIBED" }], new Set()).length, 0));
+t("a bounced contact is not retried by a relaunch", () =>
+  assert.equal(guardedSelect([{ contactId: "a", nextSendAt: null, status: "BOUNCED" }], new Set()).length, 0));
+t("a genuinely new contact still gets through both guards", () =>
+  assert.deepEqual(
+    guardedSelect([{ contactId: "new", nextSendAt: null, status: "SCHEDULED" }], new Set()).map((r) => r.contactId),
+    ["new"],
+  ));
+t("a later step does not demote an OPENED contact back to SENT", () => {
+  // Mirrors the updateMany status guard in the sender.
+  const advance = (current: string) =>
+    ["SCHEDULED", "PENDING"].includes(current) ? "SENT" : current;
+  assert.equal(advance("SCHEDULED"), "SENT");
+  assert.equal(advance("PENDING"), "SENT");
+  assert.equal(advance("OPENED"), "OPENED", "engagement must not be overwritten");
+  assert.equal(advance("REPLIED"), "REPLIED");
+});
+
 console.log("applying changes must not drag the schedule forward");
 /** Mirrors the respace anchor: max(now, earliest send already on the books). */
 const anchorFor = (now: number, earliest: number | null) =>

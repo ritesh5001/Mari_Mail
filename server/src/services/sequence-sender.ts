@@ -669,6 +669,20 @@ export async function sendSequenceStep(args: {
           nextSendAt: null,
         },
       }),
+      // Record that this contact has actually been mailed.
+      //
+      // Until now a delivered send only cleared nextSendAt and left the row
+      // SCHEDULED, so nothing distinguished "already received it" from "never
+      // scheduled" — which is how a relaunch came to re-queue 62 people who
+      // had already been mailed. The row now says what happened.
+      //
+      // updateMany with a status guard rather than update, so a contact who
+      // has already opened, clicked or replied is not demoted back to SENT by
+      // a later step going out.
+      prisma.campaignContact.updateMany({
+        where: { id: campaignContactId, status: { in: ["SCHEDULED", "PENDING"] } },
+        data: { status: "SENT" },
+      }),
       prisma.emailAccount.update({
         where: { id: inbox.id },
         data: { todaySent: { increment: 1 } },

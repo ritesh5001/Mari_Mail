@@ -645,7 +645,7 @@ export async function launchManualCampaign(
 
   const rows = await prisma.campaignContact.findMany({
     where: { campaignId: campaign.id, contactId: { in: contacts.map((c) => c.id) } },
-    select: { id: true, contactId: true, nextSendAt: true },
+    select: { id: true, contactId: true, nextSendAt: true, status: true },
   });
 
   // Anyone this campaign has already mailed must never be enrolled again.
@@ -668,7 +668,18 @@ export async function launchManualCampaign(
   // and it was the bulk of the time a relaunch took, since each contact went
   // through the per-contact path. Only genuinely new contacts need laying out;
   // they chain behind the existing run rather than in front of it.
-  const candidates = rows.filter((r) => !alreadyMailed.has(r.contactId));
+  // Two independent guards, because re-mailing someone is not recoverable.
+  //
+  // The row status is the primary signal now that a delivered send sets it,
+  // but it only became reliable recently, so SentMessage backs it up for
+  // anything sent before that. Either one is enough to exclude a contact —
+  // neither has to be perfect on its own.
+  const CONTACTED: ReadonlySet<string> = new Set([
+    "SENT", "OPENED", "CLICKED", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "FAILED",
+  ]);
+  const candidates = rows.filter(
+    (r) => !alreadyMailed.has(r.contactId) && !CONTACTED.has(r.status),
+  );
   const needing = options?.onlyUnscheduled
     ? candidates.filter((r) => r.nextSendAt === null)
     : candidates;
