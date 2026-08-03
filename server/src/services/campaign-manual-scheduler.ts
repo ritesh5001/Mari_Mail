@@ -528,7 +528,11 @@ async function layoutAndQueue(
           removeOnFail: 500,
         },
       });
-      if (fireAt.getTime() >= realNow && (!soonest || fireAt < soonest.fireAt)) {
+      // Compare against the layout's own clock, not the wall clock. The first
+      // contact's step 1 lands exactly on `now`, and racing it against a
+      // freshly-read realNow dropped it from consideration — the row then
+      // advertised step 2 as its next send while step 1 sat queued and due.
+      if (fireAt.getTime() >= Math.min(now, realNow) && (!soonest || fireAt < soonest.fireAt)) {
         soonest = { sequenceId: sequence.id, fireAt };
       }
     }
@@ -586,7 +590,18 @@ async function layoutAndQueue(
  * staged for review are never touched — only SCHEDULED rows are re-laid, in
  * their existing order so nobody jumps the queue because of an edit.
  */
-export async function respaceManualCampaign(campaignId: string): Promise<{
+export async function respaceManualCampaign(
+  campaignId: string,
+  opts: {
+    /**
+     * Re-lay the run starting now, ignoring the window's opening hour for
+     * today. Off by default — a settings change must not drag an established
+     * run outside the hours the user chose. Used when the operator explicitly
+     * wants the pending batch to go out immediately.
+     */
+    startImmediately?: boolean;
+  } = {},
+): Promise<{
   respaced: number;
   cancelled: number;
   skipped?: "redis-unavailable";
@@ -621,11 +636,14 @@ export async function respaceManualCampaign(campaignId: string): Promise<{
   // the past, and layoutAndQueue floors each delay at zero, which would fire
   // the whole batch at once.
   const earliest = pending[0].nextSendAt!.getTime();
-  const anchor = Math.max(Date.now(), earliest);
+  // Starting immediately means exactly that — don't hold the run at a future
+  // time it was previously given.
+  const anchor = opts.startImmediately ? Date.now() : Math.max(Date.now(), earliest);
 
   const cancelled = await cancelManualJobsForCampaign(campaignId);
   const { contacts: respaced, jobs } = await layoutAndQueue(campaign, pending, {
     startAtMs: anchor,
+    startImmediately: opts.startImmediately === true,
   });
 
   console.log(
