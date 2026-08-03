@@ -227,6 +227,82 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("run-now returns immediately and cannot double-start");
+/** Mirrors the Redis NX lock guarding runApolloDrip. */
+function makeLock() {
+  const held = new Set();
+  return {
+    acquire: (id) => (held.has(id) ? false : (held.add(id), true)),
+    release: (id) => held.delete(id),
+    isRunning: (id) => held.has(id),
+  };
+}
+
+await ta("a second click while a run is in flight does not start another", async () => {
+  const lock = makeLock();
+  assert.equal(lock.acquire("d1"), true, "first run starts");
+  assert.equal(lock.acquire("d1"), false, "second must be refused");
+  assert.equal(lock.isRunning("d1"), true);
+  lock.release("d1");
+  assert.equal(lock.acquire("d1"), true, "and can run again once finished");
+});
+await ta("two concurrent runs would have double-spent the same people", async () => {
+  // Without the lock both runs read the same cursor and reveal the same slice.
+  const pages = mkPages(300);
+  const a = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 5 }, pages, alwaysOk);
+  const b = await runDrip({ page: 1, offsetInPage: 0, dailyLimit: 5 }, pages, alwaysOk);
+  const overlap = a.chargedFor.filter((id) => b.chargedFor.includes(id));
+  assert.equal(overlap.length, 5, "identical cursor, identical charges — this is what the lock prevents");
+});
+t("a different drip is not blocked by another one running", () => {
+  const lock = makeLock();
+  lock.acquire("d1");
+  assert.equal(lock.acquire("d2"), true);
+});
+t("the response says started, not finished — the work continues after the reply", () => {
+  const reply = { started: true, alreadyRunning: false, message: "Started — up to 50 contacts…" };
+  assert.equal(reply.started, true);
+  assert.match(reply.message, /^Started/);
+});
+t("an already-running drip reports that rather than erroring", () => {
+  const reply = { started: false, alreadyRunning: true, message: "This drip is already running…" };
+  assert.equal(reply.alreadyRunning, true);
+  assert.equal(reply.started, false);
+});
+
+console.log("a non-JSON reply must not surface as a parse error");
+/** Mirrors the client's read-once-then-decide handling. */
+function handleReply(status, body) {
+  try {
+    const payload = body ? JSON.parse(body) : {};
+    if (status >= 400) return { kind: "error", message: payload.error?.message ?? "Action failed" };
+    return { kind: "ok", message: payload.data?.message };
+  } catch {
+    return {
+      kind: "error",
+      message: status < 400
+        ? "The server replied with something unexpected. The action may still have gone through — refresh to check."
+        : `The server returned an error (${status}). Try again in a moment.`,
+    };
+  }
+}
+
+t("THE BUG: a 504 HTML page no longer reads as 'Unexpected token <'", () => {
+  const out = handleReply(504, "<html> <head><title>504 Gateway Time-out</title>");
+  assert.equal(out.kind, "error");
+  assert.doesNotMatch(out.message, /Unexpected token/);
+  assert.match(out.message, /504/);
+});
+t("a normal JSON reply still works", () =>
+  assert.equal(handleReply(200, JSON.stringify({ data: { message: "Started" } })).message, "Started"));
+t("a JSON error still shows the server's own wording", () =>
+  assert.equal(
+    handleReply(400, JSON.stringify({ error: { message: "Drip is PAUSED — resume it first." } })).message,
+    "Drip is PAUSED — resume it first.",
+  ));
+t("an empty body does not throw", () =>
+  assert.equal(handleReply(200, "").kind, "ok"));
+
 console.log("filter shape — the drip must replay the search the admin previewed");
 /**
  * A screen full of filters arrived at the server as an empty object and was

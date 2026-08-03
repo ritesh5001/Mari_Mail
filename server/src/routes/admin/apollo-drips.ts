@@ -4,7 +4,7 @@ import { Prisma, prisma } from "@marimail/db";
 import { requireSuperAdmin } from "../../auth/middleware.js";
 import type { AuthedRequest } from "../../auth/middleware.js";
 import { sendData, sendError } from "../../lib/http.js";
-import { runApolloDrip } from "../../services/apollo-drip.service.js";
+import { runApolloDrip, isDripRunning } from "../../services/apollo-drip.service.js";
 
 /**
  * Admin-only scheduled Apollo reveals.
@@ -149,9 +149,17 @@ adminApolloDripRouter.delete("/:id", requireSuperAdmin, async (req, res, next) =
 });
 
 /**
- * Run one drip immediately instead of waiting for 07:00 UTC — for verifying a
- * new filter actually returns people before leaving it on a standing order.
- * It consumes the same daily allowance, so it can't be used to double-spend.
+ * Start a run now instead of waiting for 07:00 UTC — for checking a new filter
+ * returns people before leaving it on a standing order. Consumes the same daily
+ * allowance, so it can't be used to double-spend.
+ *
+ * Returns as soon as the run is accepted rather than awaiting it. A run is
+ * dozens of reveals performed one at a time and takes minutes; holding the
+ * request open meant the proxy timed out at 504 and answered with an HTML
+ * error page, which the browser then tried to parse as JSON — the spinner
+ * never stopped and the failure surfaced as
+ * `Unexpected token '<', "<html>..."`. Progress lands on the row itself, so
+ * there is nothing to wait for.
  */
 adminApolloDripRouter.post("/:id/run", requireSuperAdmin, async (req, res, next) => {
   try {
@@ -160,8 +168,26 @@ adminApolloDripRouter.post("/:id/run", requireSuperAdmin, async (req, res, next)
     if (existing.status !== "ACTIVE") {
       return sendError(res, 400, "NOT_ACTIVE", `Drip is ${existing.status} — resume it first.`);
     }
-    const result = await runApolloDrip(existing.id);
-    return sendData(res, result);
+    if (await isDripRunning(existing.id)) {
+      return sendData(res, {
+        started: false,
+        alreadyRunning: true,
+        message: "This drip is already running — its progress will update when it finishes.",
+      });
+    }
+
+    // Deliberately not awaited: the caller gets an answer straight away and the
+    // work continues in this process. Errors are swallowed into the row's
+    // lastError by runApolloDrip itself, so nothing is lost by not waiting.
+    void runApolloDrip(existing.id).catch((err) => {
+      console.warn(`[apollo-drip] background run failed job=${existing.id}: ${(err as Error).message}`);
+    });
+
+    return sendData(res, {
+      started: true,
+      alreadyRunning: false,
+      message: `Started — up to ${existing.dailyLimit} contacts are being revealed and added in the background. Refresh in a minute to see progress.`,
+    });
   } catch (error) {
     return next(error);
   }

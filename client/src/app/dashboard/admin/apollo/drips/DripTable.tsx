@@ -65,23 +65,32 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ status: action === "pause" ? "PAUSED" : "ACTIVE" }),
               });
-      const payload = (await res.json()) as {
+      // A proxy timeout or gateway error answers with an HTML page, and
+      // res.json() on that threw `Unexpected token '<'` straight at the user.
+      // Read the body once and decide what it is.
+      const raw = await res.text();
+      let payload: {
         error?: { message?: string };
-        data?: { added?: number; skipped?: number; alreadyOnList?: number; stoppedBecause?: string };
-      };
+        data?: { started?: boolean; alreadyRunning?: boolean; message?: string };
+      } = {};
+      try {
+        payload = raw ? JSON.parse(raw) : {};
+      } catch {
+        setError(
+          res.ok
+            ? "The server replied with something unexpected. The action may still have gone through — refresh to check."
+            : `The server returned an error (${res.status}). Try again in a moment.`,
+        );
+        return;
+      }
       if (!res.ok) {
         setError(payload.error?.message ?? "Action failed");
         return;
       }
       if (action === "run") {
-        const d = payload.data ?? {};
-        setNote(
-          `Run finished — ${d.added ?? 0} added, ${d.alreadyOnList ?? 0} already on the list (no credits spent), ${
-            d.skipped ?? 0
-          } skipped${
-            d.stoppedBecause ? ` (${d.stoppedBecause.replace(/_/g, " ")})` : ""
-          }. It uses the same daily allowance, so today's quota is now spent.`,
-        );
+        // The run is now started, not finished — it continues in the
+        // background and the row updates when it lands.
+        setNote(payload.data?.message ?? "Started — contacts are being added in the background.");
       }
       router.refresh();
     } catch (err) {
@@ -182,7 +191,7 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
                               <button
                                 type="button"
                                 onClick={() => act(d.id, "run")}
-                                title="Run now (uses today's allowance)"
+                                title="Start a run now (uses today’s allowance). Runs in the background."
                                 className="rounded p-1.5 text-slate-500 hover:bg-slate-100 dark:text-white/60 dark:hover:bg-white/10"
                               >
                                 <Zap className="h-4 w-4" />
