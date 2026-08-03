@@ -362,6 +362,10 @@ export function VesselFilterPanel({
 }) {
   const router = useRouter();
   const [state, setState] = useState<FilterState>(() => searchParamsToState(searchParams));
+  // Two hundred countries is a scroll, not a chooser. Both lists get a filter
+  // box so a known destination is two keystrokes away rather than a hunt.
+  const [countryQuery, setCountryQuery] = useState("");
+  const [portQuery, setPortQuery] = useState("");
   const [typeSearch, setTypeSearch] = useState("");
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [ports, setPorts] = useState<PortOption[]>([]);
@@ -389,6 +393,7 @@ export function VesselFilterPanel({
       setPorts([]);
       if (state.destPort.length > 0) {
         setState((prev) => ({ ...prev, destPort: [] }));
+        setPortQuery("");
       }
       return;
     }
@@ -442,6 +447,47 @@ export function VesselFilterPanel({
     });
   }
 
+  /**
+   * Add or remove a whole set at once, for the select-all controls.
+   *
+   * Acts on the values passed in, which are the ones currently VISIBLE after
+   * any search. Selecting "all" while a search is narrowing the list to three
+   * countries should select those three, not all two hundred — otherwise the
+   * control silently does far more than it appears to.
+   */
+  const visibleCountries = useMemo(() => {
+    const q = countryQuery.trim().toLowerCase();
+    if (!q) return countries;
+    // Name or ISO code — people type "Singapore" or "SG" with equal confidence.
+    return countries.filter(
+      (c) => c.countryName.toLowerCase().includes(q) || c.country.toLowerCase().includes(q),
+    );
+  }, [countries, countryQuery]);
+
+  const visiblePorts = useMemo(() => {
+    const q = portQuery.trim().toLowerCase();
+    if (!q) return ports;
+    return ports.filter(
+      (p) =>
+        p.portName.toLowerCase().includes(q) ||
+        p.portCode.toLowerCase().includes(q) ||
+        p.country.toLowerCase().includes(q),
+    );
+  }, [ports, portQuery]);
+
+  function setListValues(
+    field: "destCountry" | "destPort",
+    values: string[],
+    selected: boolean,
+  ) {
+    setState((prev) => {
+      const set = new Set(prev[field]);
+      if (selected) values.forEach((v) => set.add(v));
+      else values.forEach((v) => set.delete(v));
+      return { ...prev, [field]: Array.from(set) };
+    });
+  }
+
   function toggleCategory(types: string[], allSelected: boolean) {
     setState((prev) => {
       const set = new Set(prev.vesselType);
@@ -475,6 +521,10 @@ export function VesselFilterPanel({
   function reset() {
     setState(searchParamsToState({}));
     setTypeSearch("");
+    // Leaving a search term behind would make a freshly-reset filter look like
+    // it still had one applied.
+    setCountryQuery("");
+    setPortQuery("");
     router.push(basePath);
   }
 
@@ -656,7 +706,24 @@ export function VesselFilterPanel({
       */}
       {countries.length > 1 ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          <FilterCard title="Destination country" count={state.destCountry.length}>
+          <FilterCard
+            title="Destination country"
+            count={state.destCountry.length}
+            action={
+              <SelectAll
+                visible={visibleCountries.map((c) => c.country)}
+                selected={state.destCountry}
+                onChange={(values, selected) => setListValues("destCountry", values, selected)}
+              />
+            }
+          >
+            {countries.length > 8 ? (
+              <ListSearch
+                value={countryQuery}
+                onChange={setCountryQuery}
+                placeholder="Search country or code…"
+              />
+            ) : null}
             {/* Only scrolls once the list is long enough to need it. A
                 two-country plan shouldn't get a scroll region around two rows. */}
             <div
@@ -665,7 +732,12 @@ export function VesselFilterPanel({
                 countries.length > 8 && "max-h-56 overflow-y-auto",
               )}
             >
-              {countries.map((option) => (
+              {visibleCountries.length === 0 ? (
+                <p className="px-1 py-2 text-xs text-slate-400">
+                  No country matches &ldquo;{countryQuery}&rdquo;.
+                </p>
+              ) : null}
+              {visibleCountries.map((option) => (
                 <label
                   key={option.country}
                   className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
@@ -685,7 +757,19 @@ export function VesselFilterPanel({
             </div>
           </FilterCard>
 
-          <FilterCard title="Destination port" count={state.destPort.length}>
+          <FilterCard
+            title="Destination port"
+            count={state.destPort.length}
+            action={
+              state.destCountry.length > 0 && ports.length > 0 ? (
+                <SelectAll
+                  visible={visiblePorts.map((p) => p.portCode)}
+                  selected={state.destPort}
+                  onChange={(values, selected) => setListValues("destPort", values, selected)}
+                />
+              ) : null
+            }
+          >
             {state.destCountry.length === 0 ? (
               <p className="rounded-md border border-dashed border-slate-200 px-3 py-3 text-xs text-slate-400 dark:border-white/10">
                 Pick a country first to filter by specific ports.
@@ -693,8 +777,21 @@ export function VesselFilterPanel({
             ) : ports.length === 0 ? (
               <p className="px-1 py-1 text-xs text-slate-400">Loading ports…</p>
             ) : (
-              <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
-                {ports.map((port) => (
+              <>
+                {ports.length > 8 ? (
+                  <ListSearch
+                    value={portQuery}
+                    onChange={setPortQuery}
+                    placeholder="Search port, code or country…"
+                  />
+                ) : null}
+                <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+                  {visiblePorts.length === 0 ? (
+                    <p className="px-1 py-2 text-xs text-slate-400">
+                      No port matches &ldquo;{portQuery}&rdquo;.
+                    </p>
+                  ) : null}
+                  {visiblePorts.map((port) => (
                   <label
                     key={port.portCode}
                     className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
@@ -711,9 +808,10 @@ export function VesselFilterPanel({
                         ({port.portCode} · {port.country})
                       </span>
                     </span>
-                  </label>
-                ))}
-              </div>
+                    </label>
+                  ))}
+                </div>
+              </>
             )}
           </FilterCard>
         </div>
@@ -1079,6 +1177,68 @@ export function VesselFilterPanel({
  * Cards visually separate what used to be flat stacked <div>s so the pane
  * reads like a real form instead of a wall of labels.
  */
+/** Compact filter box for a long checkbox list. */
+function ListSearch({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="relative mb-2">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-slate-300 bg-white py-1.5 pl-8 pr-7 text-xs text-slate-900 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
+      />
+      {value ? (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"
+          aria-label="Clear search"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Select-all for a checkbox list.
+ *
+ * Acts on what is visible, so it stays honest while a search is narrowing the
+ * list — "Select all 4" says exactly how many it will take.
+ */
+function SelectAll({
+  visible,
+  selected,
+  onChange,
+}: {
+  visible: string[];
+  selected: string[];
+  onChange: (values: string[], selected: boolean) => void;
+}) {
+  if (visible.length === 0) return null;
+  const chosen = visible.filter((v) => selected.includes(v)).length;
+  const allChosen = chosen === visible.length;
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(visible, !allChosen)}
+      className="text-[11px] font-medium text-ocean hover:underline"
+    >
+      {allChosen ? `Clear ${visible.length}` : `Select all ${visible.length}`}
+    </button>
+  );
+}
+
 function FilterCard({
   title,
   count,
