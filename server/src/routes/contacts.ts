@@ -15,6 +15,7 @@ import { filterConfigToMaribizParams, maribizPersonToContactRow } from "../servi
 import { recordQuery as recordMaribizQuery, recordCacheHit as recordMaribizCacheHit } from "../services/maribiz/usage.js";
 import { getOrCreateApolloSettings } from "../services/apollo/settings.js";
 import { resolveApolloCredentials, markApolloAccountResult } from "../services/apollo/credentials.js";
+import { recordMatchCall } from "../services/apollo/rate-limit.js";
 import {
   searchPersons as apolloSearchPersons,
   matchPerson as apolloMatchPerson,
@@ -1578,6 +1579,9 @@ export async function revealApolloPerson(
 
   let person;
   try {
+    // Counted against the plan's hourly match budget before the call, so a
+    // failure still consumes a slot — which is what Apollo does too.
+    await recordMatchCall(creds.accountId ?? "platform");
     person = await apolloMatchPerson(
       externalId,
       {

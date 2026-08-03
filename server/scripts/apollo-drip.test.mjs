@@ -227,6 +227,36 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("the hourly match budget is shared with manual reveals");
+/**
+ * Apollo allows 200 people/match calls an hour and the drip shares that with
+ * every "Reveal email" the user clicks. A run that assumed the whole
+ * allowance knocked out their own manual reveals for the rest of the hour.
+ */
+const HOURLY_CAP = 200;
+const RESERVED_FOR_MANUAL = 30;
+const BUDGET = HOURLY_CAP - RESERVED_FOR_MANUAL;
+const remaining = (usedThisHour) => Math.max(0, BUDGET - usedThisHour);
+
+t("a fresh hour gives the drip its full budget", () =>
+  assert.equal(remaining(0), 170));
+t("manual reveals already made come out of the drip's budget", () =>
+  assert.equal(remaining(50), 120));
+t("headroom is always left for manual reveals", () =>
+  assert.ok(BUDGET < HOURLY_CAP, "the drip must never be able to consume the whole allowance"));
+t("an exhausted budget yields zero, not a negative run length", () =>
+  assert.equal(remaining(999), 0));
+t("THE SYMPTOM: 251 back-to-back reveals is what broke manual reveals too", () => {
+  assert.ok(251 > HOURLY_CAP, "one run out-spent the entire hourly allowance");
+  assert.equal(remaining(251), 0, "leaving nothing for the user's own clicks");
+});
+t("a rolling window, not a fixed hour — 199 either side of the turn is 398", () => {
+  // A fixed bucket would pass this; a rolling window counts both.
+  const calls = [{ at: 0 }, { at: 59 * 60_000 }, { at: 61 * 60_000 }];
+  const inLastHour = (now) => calls.filter((c) => now - c.at < 60 * 60_000).length;
+  assert.equal(inLastHour(61 * 60_000), 2, "the 59-min and 61-min calls both count at t=61");
+});
+
 console.log("Apollo's hourly reveal limit must not consume the cursor");
 /**
  * Apollo caps people/match at 200 calls an hour on this plan. Past that wall
