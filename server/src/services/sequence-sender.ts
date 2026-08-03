@@ -21,7 +21,7 @@ import {
   reserveInboxSendSlot,
   resolveFromAddress,
 } from "./email-account.service.js";
-import { getToken, incrementToken } from "./token-store.js";
+import { getToken, incrementToken, setToken } from "./token-store.js";
 import { nextSendSlot } from "./campaign-manual-scheduler.js";
 import { resolveCampaignPacing } from "./campaign-capacity.js";
 
@@ -51,10 +51,27 @@ export type EtaSendContext = {
 
 export { buildTransport };
 
+/**
+ * Pick the mailbox this send goes out from.
+ *
+ * `avoidInboxId` is the one that sent the campaign's previous mail. Ordering by
+ * least-used-today already balances the fleet over a day, but it says nothing
+ * about consecutive sends: once two mailboxes are level the stable sort returns
+ * whichever was created first, which is often the one that just sent. Real
+ * traffic showed pairs like 21:18 and 21:28 both leaving the same mailbox while
+ * its partner sat idle.
+ *
+ * Skipping the previous mailbox whenever another is available makes the
+ * rotation strict — mail 1 from mailbox 1, mail 2 from mailbox 2 — which both
+ * spreads reputation evenly and stops a fresh domain emitting visible bursts
+ * from one address. With a single usable mailbox there is nothing to alternate
+ * with and it is ignored.
+ */
 export async function selectInbox(
   workspaceId: string,
   accountIds: string[],
   strategy: string,
+  avoidInboxId?: string | null,
 ) {
   // Campaign sends must go from a user-connected mailbox, never the platform
   // Resend inbox — otherwise replies go to no-reply and the message doesn't
@@ -78,10 +95,16 @@ export async function selectInbox(
       ),
     ),
   );
-  const available = accounts.filter(
+  const allAvailable = accounts.filter(
     (account) => (sentCounts.get(account.id) ?? 0) < account.dailyLimit,
   );
-  if (!available.length) return null;
+  if (!allAvailable.length) return null;
+  // Never hand two consecutive sends to the same mailbox while another one
+  // could take it. Falls back to the full set when it's the only candidate.
+  const withoutPrevious = avoidInboxId
+    ? allAvailable.filter((account) => account.id !== avoidInboxId)
+    : allAvailable;
+  const available = withoutPrevious.length > 0 ? withoutPrevious : allAvailable;
   if (strategy === "LEAST_USED") {
     return (
       available.sort(
@@ -325,6 +348,16 @@ function retryAfterMsForDailyCap(now: number, campaign: CampaignSendFields): num
 
 // Picks a fresh random gap (ms) in [min, max] seconds for human-like pacing —
 // same formula the manual scheduler uses for the campaign-level gap.
+/**
+ * The mailbox this campaign last sent from. Kept in Redis rather than on the
+ * campaign row: it changes on every send and is pure routing state, worthless
+ * after a restart, so it does not belong in Postgres. 36h TTL matches the
+ * daily counter — long enough to survive an overnight gap in sending.
+ */
+function campaignLastInboxKey(campaignId: string) {
+  return `campaign:${campaignId}:lastInbox`;
+}
+
 function randomGapMs(minSeconds: number, maxSeconds: number) {
   const min = Math.max(0, minSeconds);
   const max = Math.max(min, maxSeconds);
@@ -430,10 +463,14 @@ export async function sendSequenceStep(args: {
     }
   }
 
+  const previousInboxId = (await getToken(campaignLastInboxKey(campaign.id))) as
+    | string
+    | null;
   const inbox = await selectInbox(
     campaign.workspaceId,
     campaign.fromAccountIds,
     campaign.rotationStrategy,
+    typeof previousInboxId === "string" ? previousInboxId : null,
   );
   if (!inbox) {
     // Every configured inbox is either at its per-inbox daily cap or offline.
@@ -640,6 +677,8 @@ export async function sendSequenceStep(args: {
     await Promise.all([
       incrementTodaySent(inbox.id),
       incrementToken(campaignDailyCounterKey(campaign.id), 36 * 60 * 60),
+      // So the next send for this campaign picks a different mailbox.
+      setToken(campaignLastInboxKey(campaign.id), inbox.id, 36 * 60 * 60),
       // Stamp the inbox's last-sent time so the next send from this mailbox
       // waits out a fresh randomized gap.
       markInboxSent(inbox.id),

@@ -150,6 +150,76 @@ t("pacing and the daily cap now agree on what the fleet can do", () => {
   assert.ok(slotsIn12h >= cap, `only ${Math.round(slotsIn12h)} slots for a ${cap}/day cap`);
 });
 
+console.log("strict rotation — consecutive sends must alternate mailboxes");
+/** Mirrors selectInbox: least-used-today, never the previous mailbox. */
+function pick(boxes, sent, previousId) {
+  const usable = boxes.filter(
+    (b) => USABLE.has(b.status) && !b.isPlatformDefault && (sent[b.id] ?? 0) < b.dailyLimit,
+  );
+  if (!usable.length) return null;
+  const withoutPrev = previousId ? usable.filter((b) => b.id !== previousId) : usable;
+  const pool = withoutPrev.length ? withoutPrev : usable;
+  return [...pool].sort((a, b) => (sent[a.id] ?? 0) - (sent[b.id] ?? 0))[0];
+}
+
+/** Run n sends and return the mailbox order. */
+function simulate(boxes, n) {
+  const sent = {};
+  let prev = null;
+  const order = [];
+  for (let i = 0; i < n; i += 1) {
+    const box = pick(boxes, sent, prev);
+    if (!box) break;
+    sent[box.id] = (sent[box.id] ?? 0) + 1;
+    prev = box.id;
+    order.push(box.id);
+  }
+  return { order, sent };
+}
+
+t("THE BUG: two mailboxes now strictly alternate", () => {
+  const { order } = simulate([box("a", 50), box("b", 50)], 10);
+  assert.deepEqual(order, ["a", "b", "a", "b", "a", "b", "a", "b", "a", "b"]);
+});
+t("no mailbox is ever used twice in a row", () => {
+  const boxes = Array.from({ length: 10 }, (_, i) => box(`i${i}`, 50));
+  const { order } = simulate(boxes, 200);
+  for (let i = 1; i < order.length; i += 1) {
+    assert.notEqual(order[i], order[i - 1], `mailbox ${order[i]} sent twice in a row at ${i}`);
+  }
+});
+t("ten mailboxes cycle through all ten before repeating", () => {
+  const boxes = Array.from({ length: 10 }, (_, i) => box(`i${i}`, 50));
+  const { order } = simulate(boxes, 10);
+  assert.equal(new Set(order).size, 10, "every mailbox should be used once per cycle");
+});
+t("load stays even across a long run", () => {
+  const boxes = Array.from({ length: 10 }, (_, i) => box(`i${i}`, 50));
+  const { sent } = simulate(boxes, 300);
+  const counts = Object.values(sent);
+  assert.equal(Math.max(...counts) - Math.min(...counts), 0, "all mailboxes should carry equal load");
+});
+t("a single usable mailbox still sends — nothing to alternate with", () => {
+  const { order } = simulate([box("a", 50)], 3);
+  assert.deepEqual(order, ["a", "a", "a"]);
+});
+t("a mailbox at its daily cap drops out of the rotation", () => {
+  const { order } = simulate([box("a", 2), box("b", 50)], 6);
+  assert.equal(order.filter((x) => x === "a").length, 2, "a must stop at its cap");
+  assert.equal(order.length, 6, "b picks up the rest");
+});
+t("an ERRORed mailbox is never selected", () => {
+  const { order } = simulate([box("a", 50), box("bad", 50, "ERROR")], 6);
+  assert.deepEqual(new Set(order), new Set(["a"]));
+});
+t("rotation survives a restart losing the previous-mailbox marker", () => {
+  // previousId null on the first call after a restart: it may repeat once,
+  // but least-used ordering pulls it straight back into balance.
+  const boxes = [box("a", 50), box("b", 50)];
+  const sent = { a: 5, b: 4 };
+  assert.equal(pick(boxes, sent, null).id, "b", "least-used wins with no marker");
+});
+
 console.log("what this means for the drip");
 t("the sustainable drip rate follows capacity, not a typed-in number", () => {
   const sustainable = (cap, steps) => Math.floor(cap / Math.max(1, steps));
