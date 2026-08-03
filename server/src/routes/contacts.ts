@@ -14,6 +14,7 @@ import { searchPersons as maribizSearchPersons, getPerson as maribizGetPerson, M
 import { filterConfigToMaribizParams, maribizPersonToContactRow } from "../services/maribiz/mapper.js";
 import { recordQuery as recordMaribizQuery, recordCacheHit as recordMaribizCacheHit } from "../services/maribiz/usage.js";
 import { getOrCreateApolloSettings } from "../services/apollo/settings.js";
+import { resolveApolloCredentials, markApolloAccountResult } from "../services/apollo/credentials.js";
 import {
   searchPersons as apolloSearchPersons,
   matchPerson as apolloMatchPerson,
@@ -1104,10 +1105,16 @@ contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
       return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid filters");
     }
 
-    const settings = await getOrCreateApolloSettings();
-    if (!settings.enabled || !settings.apiKey) {
+    // Search through this workspace's own Apollo account when it has one, so a
+    // customer on their own key isn't consuming the shared platform quota just
+    // to look. Reveals resolve the same way, so the two never disagree.
+    const { workspaceId: searchWorkspaceId } = (req as AuthedRequest).auth;
+    const creds = await resolveApolloCredentials(searchWorkspaceId);
+    if (!creds) {
       return sendData(res, { rows: [], total: 0, page: 1, nextPage: null, warnings: ["apollo_disabled"] });
     }
+    const settings = await getOrCreateApolloSettings();
+    const apolloConfig = { baseUrl: creds.apiBaseUrl.replace(/\/$/, ""), apiKey: creds.apiKey };
 
     const f = input.data;
     // At least one real constraint. An unfiltered search would page through
@@ -1126,7 +1133,7 @@ contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
     const page = f.page ?? 1;
     const perPage = f.perPage ?? 25;
     const cacheKey = `apollo:people:${createHash("sha1")
-      .update(JSON.stringify({ ...f, page, perPage }))
+      .update(JSON.stringify({ ...f, page, perPage, acct: creds.accountId ?? "platform" }))
       .digest("hex")}`;
 
     let cacheHit = true;
@@ -1146,7 +1153,7 @@ contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
           q_keywords: f.keywords,
           page,
           per_page: perPage,
-        });
+        }, apolloConfig);
       });
       if (cacheHit) await recordApolloCacheHit();
 
@@ -1541,9 +1548,21 @@ export async function revealApolloPerson(
   }
 
   // Cache miss for the requested field — pay Apollo.
-  let balance: number;
+  //
+  // Whose Apollo account, and therefore who pays, is decided here. A workspace
+  // that connected its own key is spending its own Apollo quota, so charging
+  // platform credits on top would bill them twice for one lookup.
+  const creds = await resolveApolloCredentials(workspaceId);
+  if (!creds) {
+    return { status: 403 as const, code: "APOLLO_DISABLED", message: "Apollo integration is disabled" };
+  }
+  const apolloConfig = { baseUrl: creds.apiBaseUrl.replace(/\/$/, ""), apiKey: creds.apiKey };
+
+  let balance: number | null = null;
   try {
-    balance = await deductCredits(workspaceId, price, reason, `apollo:${externalId}`, userId);
+    if (creds.billsPlatformCredits) {
+      balance = await deductCredits(workspaceId, price, reason, `apollo:${externalId}`, userId);
+    }
   } catch (error) {
     if (error instanceof CreditDeductionError) {
       return {
@@ -1559,13 +1578,19 @@ export async function revealApolloPerson(
 
   let person;
   try {
-    person = await apolloMatchPerson(externalId, {
-      reveal_personal_emails: field === "email",
-      reveal_phone_number: field === "phone",
-    });
+    person = await apolloMatchPerson(
+      externalId,
+      {
+        reveal_personal_emails: field === "email",
+        reveal_phone_number: field === "phone",
+      },
+      apolloConfig,
+    );
   } catch (error) {
+    await markApolloAccountResult(creds.accountId, { ok: false, error: (error as Error).message });
     // Refund on failure
-    await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:${field}:failed`, userId).catch(
+    if (creds.billsPlatformCredits)
+      await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:${field}:failed`, userId).catch(
       (refundErr) => {
         console.error("[apollo] refund failed:", refundErr);
       },
@@ -1589,7 +1614,8 @@ export async function revealApolloPerson(
       : null;
 
   if (field === "email" && !realEmail) {
-    await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:email:no-data`, userId).catch(
+    if (creds.billsPlatformCredits)
+      await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:email:no-data`, userId).catch(
       () => undefined,
     );
     return {
@@ -1599,7 +1625,8 @@ export async function revealApolloPerson(
     };
   }
   if (field === "phone" && !realPhone) {
-    await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:phone:no-data`, userId).catch(
+    if (creds.billsPlatformCredits)
+      await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:phone:no-data`, userId).catch(
       () => undefined,
     );
     return {

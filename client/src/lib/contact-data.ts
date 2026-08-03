@@ -257,12 +257,48 @@ export type ListActivityEntry =
   | { kind: "vessel_added"; label: string; imoNumber: string; at: string }
   | { kind: "contact_added"; label: string; contactId: string; at: string };
 
+/**
+ * "Founder, CEO · 1-10 employees · India" — enough to recognise which search
+ * is feeding the list without reproducing the whole filter panel.
+ */
+function summarizeApolloFilter(raw: unknown): string {
+  const f = (raw ?? {}) as Record<string, unknown>;
+  const arr = (k: string) => (Array.isArray(f[k]) ? (f[k] as string[]) : []);
+  const parts: string[] = [];
+  if (arr("includeTitles").length) parts.push(arr("includeTitles").slice(0, 3).join(", "));
+  if (arr("seniorities").length) parts.push(arr("seniorities").join(", "));
+  if (arr("employeeRanges").length) parts.push(`${arr("employeeRanges").join(", ")} employees`);
+  if (arr("personLocations").length) parts.push(arr("personLocations").slice(0, 2).join(", "));
+  if (arr("companyLocations").length) parts.push(arr("companyLocations").slice(0, 2).join(", "));
+  if (typeof f.keywords === "string" && f.keywords) parts.push(`“${f.keywords}”`);
+  if (arr("excludeTitles").length) parts.push(`excluding ${arr("excludeTitles").join(", ")}`);
+  return parts.join(" · ") || "no filters";
+}
+
+/** A scheduled Apollo reveal feeding this list, if one is set up. */
+export type ListAutomation = {
+  id: string;
+  name: string;
+  status: "ACTIVE" | "PAUSED" | "COMPLETED" | "FAILED";
+  dailyLimit: number;
+  added: number;
+  revealed: number;
+  skipped: number;
+  totalMatches: number | null;
+  lastRunAt: string | null;
+  lastRunAdded: number | null;
+  lastError: string | null;
+  filterSummary: string;
+};
+
 export type ContactListDetailResponse = {
   list: ContactListModel;
   companies: ListCompanyRow[];
   contacts: ListContactRow[];
   vessels: ListVesselRow[];
   activity: ListActivityEntry[];
+  /** Empty when nothing is topping this list up automatically. */
+  automations: ListAutomation[];
 };
 
 export async function getContactListDetail(id: string): Promise<ContactListDetailResponse> {
@@ -689,7 +725,29 @@ export async function getContactListDetail(id: string): Promise<ContactListDetai
       })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
 
-  return { list, companies, contacts: contactRows, vessels, activity };
+  // Scheduled reveals feeding this list. Shown on the list itself so the
+  // contact count moving on its own has a visible cause — otherwise people
+  // appear overnight with nothing on the page explaining where from.
+  const dripRows = await prisma.apolloDripJob.findMany({
+    where: { listId: list.id },
+    orderBy: { createdAt: "desc" },
+  });
+  const automations: ListAutomation[] = dripRows.map((d) => ({
+    id: d.id,
+    name: d.name,
+    status: d.status,
+    dailyLimit: d.dailyLimit,
+    added: d.added,
+    revealed: d.revealed,
+    skipped: d.skipped,
+    totalMatches: d.totalMatches,
+    lastRunAt: d.lastRunAt?.toISOString() ?? null,
+    lastRunAdded: d.lastRunAdded,
+    lastError: d.lastError,
+    filterSummary: summarizeApolloFilter(d.filter),
+  }));
+
+  return { list, companies, contacts: contactRows, vessels, activity, automations };
 }
 
 

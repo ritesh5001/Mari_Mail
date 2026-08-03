@@ -344,44 +344,45 @@ enum AdminAuditAction {
 }
 
 model User {
-  id                  String               @id @default(cuid())
+  id                  String                   @id @default(cuid())
   name                String?
-  email               String               @unique
+  email               String                   @unique
   emailVerified       DateTime?
   image               String?
   passwordHash        String?
   defaultWorkspaceId  String?
-  isSuperAdmin        Boolean              @default(false)
+  isSuperAdmin        Boolean                  @default(false)
   bannedAt            DateTime?
   // --- MFA (TOTP) ---
-  mfaEnabled          Boolean              @default(false)
+  mfaEnabled          Boolean                  @default(false)
   // AES-GCM envelope (see @marimail/utils encryptSecret) — never plaintext.
   mfaSecret           Json?
   // SHA-256 hashes of single-use recovery codes; the plaintext is shown once.
-  mfaRecoveryCodes    String[]             @default([])
+  mfaRecoveryCodes    String[]                 @default([])
   mfaEnrolledAt       DateTime?
   themePreference     String?
-  hiddenNavItems      String[]             @default([])
+  hiddenNavItems      String[]                 @default([])
   lastActiveAt        DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
   accounts            Account[]
   sessions            Session[]
   memberships         WorkspaceMember[]
-  ownedWorkspaces     Workspace[]          @relation("WorkspaceOwner")
-  ownedContacts       Contact[]            @relation("ContactOwner")
-  ownedContactLists   ContactList[]        @relation("ContactListOwner")
-  savedContacts       SavedContact[]       @relation("UserSavedContacts")
-  savedFilters        SavedFilter[]        @relation("SavedFilterCreator")
-  serviceRecords      ServiceRecord[]      @relation("ServiceRecordCreator")
-  creditLedger        CreditLedger[]       @relation("CreditLedgerActor")
-  paymentLinks        PaymentLink[]        @relation("PaymentLinkCreator")
-  payments            Payment[]            @relation("PaymentInitiator")
-  adminAuditLog       AdminAuditLog[]      @relation("AdminAuditActor")
+  ownedWorkspaces     Workspace[]              @relation("WorkspaceOwner")
+  ownedContacts       Contact[]                @relation("ContactOwner")
+  ownedContactLists   ContactList[]            @relation("ContactListOwner")
+  savedContacts       SavedContact[]           @relation("UserSavedContacts")
+  savedFilters        SavedFilter[]            @relation("SavedFilterCreator")
+  serviceRecords      ServiceRecord[]          @relation("ServiceRecordCreator")
+  creditLedger        CreditLedger[]           @relation("CreditLedgerActor")
+  paymentLinks        PaymentLink[]            @relation("PaymentLinkCreator")
+  payments            Payment[]                @relation("PaymentInitiator")
+  adminAuditLog       AdminAuditLog[]          @relation("AdminAuditActor")
   verificationTokens  VerificationToken[]
   passwordResetTokens PasswordResetToken[]
   authEvents          AuthEvent[]
-  apolloDrips         ApolloDripJob[]      @relation("ApolloDripCreator")
+  apolloDrips         ApolloDripJob[]          @relation("ApolloDripCreator")
+  apolloAccounts      WorkspaceApolloAccount[] @relation("ApolloAccountCreator")
 }
 
 model Account {
@@ -460,6 +461,7 @@ model Workspace {
   contacts                 Contact[]
   contactLists             ContactList[]
   apolloDrips              ApolloDripJob[]
+  apolloAccounts           WorkspaceApolloAccount[]
   savedContacts            SavedContact[]
   savedFilters             SavedFilter[]
   vesselEtas               VesselETA[]
@@ -1648,6 +1650,50 @@ model DataSourceSettings {
   persistApolloSearchRows Boolean  @default(true)
   updatedAt               DateTime @updatedAt
   updatedById             String?
+}
+
+enum ApolloAccountStatus {
+  /// Added but never verified against Apollo.
+  UNTESTED
+  /// A test call succeeded.
+  ACTIVE
+  /// The last test or live call was rejected — key revoked, out of credits.
+  ERROR
+}
+
+/// A workspace's OWN Apollo API key, used instead of the platform's.
+///
+/// The platform key in ApolloSettings is shared by everyone and billed to the
+/// platform. A workspace that brings its own key spends its own Apollo quota
+/// instead, so reveals made through it are not charged platform credits — see
+/// resolveApolloCredentials. Scoped strictly to one workspace: it is never a
+/// fallback for anybody else.
+///
+/// A workspace may hold several. `isDefault` picks the one live traffic uses;
+/// the rest are kept so keys can be rotated without retyping, or so a second
+/// Apollo plan can be swapped in when the first runs dry.
+model WorkspaceApolloAccount {
+  id            String              @id @default(cuid())
+  workspaceId   String
+  createdById   String?
+  label         String
+  /// AES-GCM envelope, same shape as mailbox credentials. Never plaintext.
+  apiKey        Json
+  apiBaseUrl    String              @default("https://api.apollo.io/api/v1")
+  isDefault     Boolean             @default(false)
+  status        ApolloAccountStatus @default(UNTESTED)
+  lastTestAt    DateTime?
+  lastTestError String?
+  /// Free-text note from the last successful test, e.g. the plan name.
+  lastTestInfo  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation("ApolloAccountCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId])
+  @@index([workspaceId, isDefault])
 }
 
 model ApolloSettings {

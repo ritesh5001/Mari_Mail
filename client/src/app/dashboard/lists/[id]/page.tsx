@@ -15,6 +15,7 @@ export default async function ContactListPage({ params }: { params: { id: string
         contacts={data.contacts}
         vessels={data.vessels}
         activity={data.activity}
+        automations={data.automations}
         isSuperAdmin={session?.user.isSuperAdmin ?? false}
       />
     </div>

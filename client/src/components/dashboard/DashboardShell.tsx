@@ -23,6 +23,7 @@ import {
   X,
   Zap,
   CalendarClock,
+  KeyRound,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import Link from "next/link";
@@ -64,6 +65,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/admin/maribiz", label: "Secondary Data Source", icon: Database, superAdminOnly: true },
   { href: "/dashboard/admin/apollo", label: "Apollo Data Source", icon: Zap, superAdminOnly: true },
   { href: "/dashboard/admin/apollo/drips", label: "Scheduled Reveals", icon: CalendarClock, superAdminOnly: true },
+  { href: "/dashboard/admin/apollo/accounts", label: "Apollo Accounts", icon: KeyRound, superAdminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
 

@@ -78,7 +78,7 @@ export class ApolloError extends Error {
   }
 }
 
-type ApolloConfig = { baseUrl: string; apiKey: string };
+export type ApolloConfig = { baseUrl: string; apiKey: string };
 
 async function getConfig(): Promise<ApolloConfig> {
   const settings = await getOrCreateApolloSettings();
@@ -112,8 +112,12 @@ function retryDelayMs(response: Response, attemptIndex: number) {
   return base + Math.random() * 250;
 }
 
-async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const { baseUrl, apiKey } = await getConfig();
+async function postJson<T>(
+  path: string,
+  body: Record<string, unknown>,
+  config?: ApolloConfig,
+): Promise<T> {
+  const { baseUrl, apiKey } = config ?? (await getConfig());
   const url = `${baseUrl}${path}`;
 
   const attempt = async (): Promise<Response> => {
@@ -207,7 +211,16 @@ async function getJson<T>(path: string): Promise<T> {
   }
 }
 
-export async function searchPersons(params: ApolloSearchParams): Promise<ApolloSearchResult> {
+/**
+ * `config` routes the call through a specific Apollo account. Omitted, it uses
+ * the platform key — every existing caller keeps its behaviour. Passing a
+ * workspace's own credentials is what makes bring-your-own-Apollo work without
+ * a parallel client.
+ */
+export async function searchPersons(
+  params: ApolloSearchParams,
+  config?: ApolloConfig,
+): Promise<ApolloSearchResult> {
   const perPage = params.per_page ?? 25;
   const page = params.page ?? 1;
   const body: Record<string, unknown> = { page, per_page: perPage };
@@ -232,7 +245,7 @@ export async function searchPersons(params: ApolloSearchParams): Promise<ApolloS
     total_entries?: number;
     pagination?: { page?: number; per_page?: number; total_pages?: number; total_entries?: number };
   };
-  const data = await postJson<ApolloSearchResponse>("/mixed_people/api_search", body);
+  const data = await postJson<ApolloSearchResponse>("/mixed_people/api_search", body, config);
   const rows = [...(data.people ?? []), ...(data.contacts ?? [])];
   const totalEntries = data.total_entries ?? data.pagination?.total_entries ?? rows.length;
   const totalPages = data.pagination?.total_pages ?? Math.ceil(totalEntries / perPage);
@@ -240,13 +253,21 @@ export async function searchPersons(params: ApolloSearchParams): Promise<ApolloS
   return { rows, total: totalEntries, nextPage };
 }
 
-export async function matchPerson(id: string, options: ApolloMatchOptions): Promise<ApolloPerson> {
+export async function matchPerson(
+  id: string,
+  options: ApolloMatchOptions,
+  config?: ApolloConfig,
+): Promise<ApolloPerson> {
   type ApolloMatchResponse = { person?: ApolloPerson; matches?: ApolloPerson[] };
-  const data = await postJson<ApolloMatchResponse>("/people/match", {
-    id,
-    reveal_personal_emails: options.reveal_personal_emails ?? false,
-    reveal_phone_number: options.reveal_phone_number ?? false,
-  });
+  const data = await postJson<ApolloMatchResponse>(
+    "/people/match",
+    {
+      id,
+      reveal_personal_emails: options.reveal_personal_emails ?? false,
+      reveal_phone_number: options.reveal_phone_number ?? false,
+    },
+    config,
+  );
   const person = data.person ?? data.matches?.[0];
   if (!person) throw new ApolloError("Apollo did not return a person record", 404, false);
   return person;
@@ -255,4 +276,23 @@ export async function matchPerson(id: string, options: ApolloMatchOptions): Prom
 export async function healthCheck(): Promise<{ ok: true }> {
   await getJson<unknown>("/auth/health");
   return { ok: true };
+}
+
+/**
+ * Check a key that may not be saved yet.
+ *
+ * Runs the smallest real search rather than /auth/health: a key can authenticate
+ * and still be unusable because the plan has no search access left, and finding
+ * that out at 07:00 during a drip run is too late. Costs no Apollo credits —
+ * only reveals do.
+ */
+export async function testCredentials(
+  config: ApolloConfig,
+): Promise<{ ok: true; total: number }> {
+  const result = await postJson<{ pagination?: { total_entries?: number } }>(
+    "/mixed_people/api_search",
+    { page: 1, per_page: 1, person_seniorities: ["owner"] },
+    config,
+  );
+  return { ok: true, total: result.pagination?.total_entries ?? 0 };
 }

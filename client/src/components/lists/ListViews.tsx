@@ -26,6 +26,7 @@ import { SortableHeader } from "@/components/table/SortableHeader";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSection";
 import { ScheduleDripButton } from "@/components/lists/ScheduleDripButton";
+import { ListAutomationCard } from "@/components/lists/ListAutomationCard";
 import {
   RoleFilterPanel,
   EMPTY_ROLE_FILTER,
@@ -182,6 +183,7 @@ export function ContactListDetail({
   contacts,
   vessels,
   activity,
+  automations,
   isSuperAdmin = false,
 }: ContactListDetailResponse & { isSuperAdmin?: boolean }) {
   const router = useRouter();
@@ -351,6 +353,11 @@ export function ContactListDetail({
             </button>
           )}
         </section>
+
+        {/* Sits directly under the header so the reason the contact count
+            moves on its own is the first thing seen, not buried below the
+            import and search panels. */}
+        <ListAutomationCard automations={automations} isSuperAdmin={isSuperAdmin} />
 
         {/* Same reasoning as the Apollo panel below: importing contacts is
             about contacts, not about whether the list also tracks vessels. */}
