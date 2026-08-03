@@ -239,10 +239,34 @@ function buildStepBreakdown(
     eventType: string;
     occurredAt: Date;
   }>,
+  /**
+   * Delivered mail, attributed by stepOrder rather than sequenceId.
+   *
+   * Saving a campaign used to delete and recreate its sequence rows, and the
+   * FK is onDelete: SetNull — so every past event lost its sequenceId and the
+   * loop below skipped it, reporting recipients as PENDING on steps they had
+   * already been mailed. The save is fixed, but the events it already orphaned
+   * cannot be reattached. SentMessage.stepOrder is a plain column and survived,
+   * so it repairs the display for that history.
+   */
+  sentMessages: Array<{ stepOrder: number; contactId: string; sentAt: Date | null }> = [],
 ): StepBreakdownRow[] {
   const sent = new Set<string>();
   const failed = new Set<string>();
   const sentAt = new Map<string, Date>();
+
+  const sequenceIdByOrder = new Map(campaign.sequences.map((s) => [s.stepOrder, s.id]));
+  for (const msg of sentMessages) {
+    const sequenceId = sequenceIdByOrder.get(msg.stepOrder);
+    if (!sequenceId) continue;
+    const key = `${sequenceId}:${msg.contactId}`;
+    sent.add(key);
+    if (msg.sentAt) {
+      const prev = sentAt.get(key);
+      if (!prev || msg.sentAt < prev) sentAt.set(key, msg.sentAt);
+    }
+  }
+
   for (const event of stepEvents) {
     if (!event.sequenceId) continue;
     const key = `${event.sequenceId}:${event.contactId}`;
@@ -482,7 +506,7 @@ export async function getCampaignDetailData(campaignId: string) {
     if (!campaign) return null;
 
     const targetConfig = parseCampaignTargetConfig(campaign.targetConfig);
-    const [targetContacts, targetLists, targetVessels, stepEvents, stagedRows] = await Promise.all([
+    const [targetContacts, targetLists, targetVessels, stepEvents, stagedRows, sentMessages] = await Promise.all([
       targetConfig.contactIds.length
         ? prisma.contact.findMany({
             where: {
@@ -613,6 +637,13 @@ export async function getCampaignDetailData(campaignId: string) {
         orderBy: [{ stagedAt: "desc" }, { createdAt: "desc" }],
         take: 500,
       }),
+      // Delivered mail keyed by stepOrder. Survives the sequenceId nulling that
+      // an older save path inflicted on historical events, so per-step Sent
+      // counts stay right for mail that went out before that was fixed.
+      prisma.sentMessage.findMany({
+        where: { campaignId },
+        select: { stepOrder: true, contactId: true, sentAt: true },
+      }),
     ]);
 
     const targetContactsById = new Map(
@@ -705,7 +736,7 @@ export async function getCampaignDetailData(campaignId: string) {
       });
     }
 
-    const stepBreakdown = buildStepBreakdown(campaign, stepEvents);
+    const stepBreakdown = buildStepBreakdown(campaign, stepEvents, sentMessages);
 
     // The campaign's real daily cap: the sum of its mailboxes' own limits.
     // Derived rather than read from campaign.dailyLimit, because mailboxes can

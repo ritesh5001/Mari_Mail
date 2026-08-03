@@ -225,6 +225,47 @@ t("a first launch enrols everyone, since nobody has been mailed", () =>
 t("even a non-relaunch path skips past recipients", () =>
   assert.equal(selectForRelaunch(liveRows, liveMailed, false).length, 10));
 
+console.log("launching starts sending now, not tomorrow morning");
+/** Mirrors slotFor(): on the launch day the opening hour is already passed. */
+function launchSlot(candidate: Date, launchAt: Date, w = WINDOW) {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  if (candidate >= launchAt && day(candidate) === day(launchAt)) {
+    const h = candidate.getUTCHours();
+    if (w.scheduleDays.includes(candidate.getUTCDay()) && h < w.hourEnd) return candidate;
+  }
+  return nextSendSlot(candidate, w);
+}
+
+t("THE BUG: launching before the window used to wait for the next opening", () => {
+  const early = at("2026-08-03T06:32:00Z");
+  assert.equal(hhmm(nextSendSlot(early, WINDOW)), "09:00", "the old behaviour");
+});
+t("launching at 06:32 now sends at 06:32", () => {
+  const early = at("2026-08-03T06:32:00Z");
+  assert.equal(hhmm(launchSlot(early, early)), "06:32");
+});
+t("the closing hour still applies on launch day", () => {
+  const launch = at("2026-08-03T06:32:00Z");
+  // A send that chains past 17:00 must still roll to the next window.
+  assert.equal(hhmm(launchSlot(at("2026-08-03T17:30:00Z"), launch)), "09:00");
+});
+t("the day after launch uses the window exactly as configured", () => {
+  const launch = at("2026-08-03T06:32:00Z");
+  assert.equal(hhmm(launchSlot(at("2026-08-04T06:40:00Z"), launch)), "09:00",
+    "only the launch day gets the early start");
+});
+t("launching inside the window changes nothing", () => {
+  const midday = at("2026-08-03T11:00:00Z");
+  assert.equal(hhmm(launchSlot(midday, midday)), "11:00");
+});
+t("a non-sending weekday is still respected on launch day", () => {
+  // 2026-08-08 is a Saturday; a weekdays-only campaign must not send.
+  const sat = at("2026-08-08T06:32:00Z");
+  const weekdays = { ...WINDOW, scheduleDays: [1, 2, 3, 4, 5] };
+  const out = launchSlot(sat, sat, weekdays);
+  assert.equal(out.toISOString().slice(0, 10), "2026-08-10");
+});
+
 console.log("two independent guards — neither has to be perfect alone");
 const CONTACTED = new Set([
   "SENT", "OPENED", "CLICKED", "REPLIED", "BOUNCED", "UNSUBSCRIBED", "FAILED",

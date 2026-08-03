@@ -810,28 +810,56 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
         },
       });
 
-      // Sequence replace-all: only when the caller sent a sequences array.
-      // Existing CampaignContact rows keep their sequenceId FKs (Prisma
-      // schema has onDelete: SetNull), so deleting old sequences is safe.
+      // Update steps in place, matched on stepOrder.
+      //
+      // This used to delete every sequence and recreate it. EmailEvent,
+      // SentMessage and CampaignContact all reference CampaignSequence with
+      // onDelete: SetNull, so each save silently nulled the step attribution
+      // of every mail the campaign had ever sent — 63 SENT events on the live
+      // campaign all had sequenceId null, which is why every recipient read
+      // "PENDING" on a step they had already been mailed. The delete was
+      // assumed safe because nothing errored; what it destroyed was history.
+      //
+      // Steps are identified by stepOrder, which is what the editor actually
+      // edits — reordering rewrites content rather than moving rows, so the
+      // id (and everything hanging off it) survives an edit.
       if (sequencesInput !== undefined) {
-        await tx.campaignSequence.deleteMany({ where: { campaignId: existing.id } });
-        if (sequencesInput.length) {
-          await tx.campaignSequence.createMany({
-            data: sequencesInput.map((sequence) => ({
-              campaignId: existing.id,
-              stepOrder: sequence.stepOrder,
-              subject: sequence.subject,
-              bodyHtml: sequence.bodyHtml,
-              bodyText: sequence.bodyText,
-              delayType: sequence.delayType,
-              delayValue: sequence.delayValue,
-              conditionType: sequence.conditionType,
-              abTestEnabled: sequence.abTestEnabled,
-              abSubjectB: sequence.abSubjectB,
-              abBodyHtmlB: sequence.abBodyHtmlB,
-              abSplit: sequence.abSplit,
-            })),
-          });
+        const current = await tx.campaignSequence.findMany({
+          where: { campaignId: existing.id },
+          select: { id: true, stepOrder: true },
+        });
+        const byOrder = new Map(current.map((row) => [row.stepOrder, row.id]));
+
+        for (const sequence of sequencesInput) {
+          const data = {
+            subject: sequence.subject,
+            bodyHtml: sequence.bodyHtml,
+            bodyText: sequence.bodyText,
+            delayType: sequence.delayType,
+            delayValue: sequence.delayValue,
+            conditionType: sequence.conditionType,
+            abTestEnabled: sequence.abTestEnabled,
+            abSubjectB: sequence.abSubjectB,
+            abBodyHtmlB: sequence.abBodyHtmlB,
+            abSplit: sequence.abSplit,
+          };
+          const existingId = byOrder.get(sequence.stepOrder);
+          if (existingId) {
+            await tx.campaignSequence.update({ where: { id: existingId }, data });
+            byOrder.delete(sequence.stepOrder);
+          } else {
+            await tx.campaignSequence.create({
+              data: { campaignId: existing.id, stepOrder: sequence.stepOrder, ...data },
+            });
+          }
+        }
+
+        // Steps the user actually removed. Deleting these still nulls their
+        // history, but that is the user deleting a step, not a save doing it
+        // behind their back.
+        const removed = [...byOrder.values()];
+        if (removed.length) {
+          await tx.campaignSequence.deleteMany({ where: { id: { in: removed } } });
         }
       }
 

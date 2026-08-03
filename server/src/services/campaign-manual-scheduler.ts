@@ -42,6 +42,10 @@ async function ensureConnection() {
 
 const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
+function tzHourAndDayFor(date: Date, timeZone: string): { hour: number; day: number } {
+  return tzHourAndDay(date, timeZone);
+}
+
 function tzHourAndDay(date: Date, timeZone: string): { hour: number; day: number } {
   try {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone, hour12: false, weekday: "short", hour: "2-digit" }).formatToParts(date);
@@ -427,7 +431,12 @@ export function scheduleFieldsChanged(
 async function layoutAndQueue(
   campaign: NonNullable<ManualCampaign>,
   rows: { id: string; contactId: string }[],
-  opts: { startAfterMs?: number | null; startAtMs?: number | null } = {},
+  opts: {
+    startAfterMs?: number | null;
+    startAtMs?: number | null;
+    /** Launch day only: allow sends before the window opens (see below). */
+    startImmediately?: boolean;
+  } = {},
 ): Promise<{ contacts: number; jobs: number }> {
   if (!manualStepQueue || rows.length === 0 || campaign.sequences.length === 0) {
     return { contacts: 0, jobs: 0 };
@@ -457,10 +466,37 @@ async function layoutAndQueue(
   const now = opts.startAtMs ?? Date.now();
   // Queue delays are always measured from the real clock, whatever the anchor.
   const realNow = Date.now();
+  const startImmediately = opts.startImmediately === true;
 
   const jobs: Parameters<NonNullable<typeof manualStepQueue>["addBulk"]>[0] = [];
   const rowUpdates: { id: string; sequenceId?: string; nextSendAt?: Date }[] = [];
   let latestStep1: number | null = opts.startAfterMs ?? null;
+
+  /**
+   * Launching should start sending, not schedule for tomorrow.
+   *
+   * Pressing launch at 06:32 with a 09:00-21:00 window put the first mail at
+   * 09:30 the next morning, which is not what "launch" means to anyone. On the
+   * day of launch the window's opening hour is treated as already passed, so
+   * the run begins straight away; the closing hour still applies, and every
+   * following day uses the window exactly as configured.
+   */
+  const launchDate = startImmediately
+    ? new Intl.DateTimeFormat("en-CA", { timeZone: campaign.timezone }).format(new Date(now))
+    : null;
+  const slotFor = (candidate: Date): Date => {
+    if (launchDate && candidate.getTime() >= now) {
+      const sameDay =
+        new Intl.DateTimeFormat("en-CA", { timeZone: campaign.timezone }).format(candidate) ===
+        launchDate;
+      if (sameDay) {
+        const { hour, day } = tzHourAndDayFor(candidate, campaign.timezone);
+        // Still inside the sending days and before close — just early.
+        if (campaign.scheduleDays.includes(day) && hour < campaign.scheduleHourEnd) return candidate;
+      }
+    }
+    return nextSendSlot(candidate, windowOpts);
+  };
 
   for (const row of rows) {
     const gap =
@@ -472,7 +508,7 @@ async function layoutAndQueue(
     let soonest: { sequenceId: string; fireAt: Date } | null = null;
     for (const [index, sequence] of campaign.sequences.entries()) {
       cumulativeDays += sequence.delayValue;
-      const fireAt = nextSendSlot(new Date(step1Base + cumulativeDays * 86_400_000), windowOpts);
+      const fireAt = slotFor(new Date(step1Base + cumulativeDays * 86_400_000));
       // Step 1 is what the gap chains on — later steps ride its offset.
       if (index === 0) latestStep1 = fireAt.getTime();
       jobs.push({
@@ -694,6 +730,9 @@ export async function launchManualCampaign(
 
   const { contacts: laid, jobs } = await layoutAndQueue(campaign, needing, {
     startAfterMs: latest?._max.nextSendAt?.getTime() ?? null,
+    // Only a first launch starts early. On a relaunch the run is already in
+    // flight and its existing times were chosen inside the window.
+    startImmediately: !options?.onlyUnscheduled,
   });
 
   return { scheduled: jobs, contacts: laid };
