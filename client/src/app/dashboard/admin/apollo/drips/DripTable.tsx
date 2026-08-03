@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Pause, Play, Trash2, Zap } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
@@ -48,6 +48,25 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [watching, setWatching] = useState(false);
+
+  // A run happens in the background and checkpoints after every page, so the
+  // counters below move on their own. Poll while one is in flight rather than
+  // leaving the operator to guess whether anything is happening.
+  useEffect(() => {
+    if (!watching) return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      // A run is bounded by its reveal budget; stop watching well after the
+      // longest plausible one rather than polling this page forever.
+      if (Date.now() - started > 15 * 60 * 1000) {
+        setWatching(false);
+        return;
+      }
+      router.refresh();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [watching, router]);
 
   async function act(id: string, action: "pause" | "resume" | "delete" | "run") {
     if (action === "delete" && !confirm("Delete this drip? It stops adding people to the list.")) return;
@@ -89,8 +108,9 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
       }
       if (action === "run") {
         // The run is now started, not finished — it continues in the
-        // background and the row updates when it lands.
+        // background and the row updates as each page completes.
         setNote(payload.data?.message ?? "Started — contacts are being added in the background.");
+        if (payload.data?.started) setWatching(true);
       }
       router.refresh();
     } catch (err) {
@@ -112,8 +132,12 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
   return (
     <div className="space-y-3">
       {note ? (
-        <p className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200">
-          {note}
+        <p className="flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-200">
+          {watching ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : null}
+          <span>
+            {note}
+            {watching ? " Progress below updates every few seconds." : ""}
+          </span>
         </p>
       ) : null}
       {error ? (

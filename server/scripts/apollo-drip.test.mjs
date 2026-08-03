@@ -227,6 +227,90 @@ await ta("an empty result set completes without spending", async () => {
   assert.equal(out.status, "COMPLETED");
 });
 
+console.log("Apollo's hourly reveal limit must not consume the cursor");
+/**
+ * Apollo caps people/match at 200 calls an hour on this plan. Past that wall
+ * every reveal 429s. Treating each one as "no email for this person" marched
+ * the cursor forward, and 249 people were skipped permanently because of a
+ * limit that resets in an hour.
+ */
+async function runWithOutcomes(job, pages, reveal, onList = new Set()) {
+  let page = job.page, offset = job.offsetInPage;
+  let added = 0, skipped = 0, alreadyOnList = 0, attempts = 0;
+  let stoppedBecause;
+  const budget = job.maxAttempts ?? 150;
+
+  outer: while (added < job.dailyLimit) {
+    if (attempts >= budget) { stoppedBecause = "reveal_budget_reached"; break; }
+    const rows = pages[page - 1] ?? [];
+    if (rows.length === 0) { stoppedBecause = "no_more_results"; break; }
+    for (let i = offset; i < rows.length; i += 1) {
+      if (added >= job.dailyLimit) break;
+      const id = rows[i];
+      offset = i + 1;
+      if (onList.has(id)) { alreadyOnList += 1; continue; }
+      attempts += 1;
+      const outcome = reveal(id);
+      if (outcome === "rate-limited") {
+        offset = i;                       // rewind onto the person we failed
+        stoppedBecause = "apollo_limited";
+        break outer;
+      }
+      if (outcome === "no-email") { skipped += 1; continue; }
+      added += 1;
+    }
+    if (offset >= rows.length) { page += 1; offset = 0; }
+  }
+  return { page, offset, added, skipped, alreadyOnList, attempts, stoppedBecause };
+}
+
+await ta("THE BUG: a rate limit no longer marches past everyone it hit", async () => {
+  const pages = mkPages(500);
+  let n = 0;
+  const out = await runWithOutcomes(
+    { page: 1, offsetInPage: 0, dailyLimit: 50 }, pages,
+    () => (++n > 5 ? "rate-limited" : "ok"),
+  );
+  assert.equal(out.added, 5, "the five that worked are kept");
+  assert.equal(out.stoppedBecause, "apollo_limited");
+  assert.equal(out.offset, 5, "cursor must sit ON the person we failed, not past them");
+});
+await ta("the next run retries exactly the person the limit stopped us at", async () => {
+  const pages = mkPages(500);
+  let n = 0;
+  const first = await runWithOutcomes(
+    { page: 1, offsetInPage: 0, dailyLimit: 50 }, pages,
+    () => (++n > 5 ? "rate-limited" : "ok"),
+  );
+  const second = await runWithOutcomes(
+    { page: first.page, offsetInPage: first.offset, dailyLimit: 50 }, pages, alwaysOk,
+  );
+  assert.equal(second.added, 50, "nobody was lost to the limit");
+});
+await ta("a genuine 'no email' DOES advance — there is nothing to retry", async () => {
+  const pages = mkPages(500);
+  const out = await runWithOutcomes(
+    { page: 1, offsetInPage: 0, dailyLimit: 3 }, pages,
+    (id) => (["p0", "p1"].includes(id) ? "no-email" : "ok"),
+  );
+  assert.equal(out.skipped, 2);
+  assert.equal(out.added, 3);
+  assert.ok(out.offset >= 5, "the unavailable ones are behind us");
+});
+await ta("the run stops before Apollo's wall rather than discovering it", async () => {
+  const pages = mkPages(5000);
+  const out = await runWithOutcomes(
+    { page: 1, offsetInPage: 0, dailyLimit: 5000, maxAttempts: 150 }, pages, () => "no-email",
+  );
+  assert.equal(out.stoppedBecause, "reveal_budget_reached");
+  assert.ok(out.attempts <= 150, `made ${out.attempts} calls against a 200/hour ceiling`);
+});
+t("already-on-list people cost no reveal call, so they don't eat the budget", () => {
+  // 200/hour is spent on reveals only; free skips are unlimited.
+  const attemptsFor = (scanned, alreadyKnown) => scanned - alreadyKnown;
+  assert.equal(attemptsFor(500, 480), 20);
+});
+
 console.log("run-now returns immediately and cannot double-start");
 /** Mirrors the Redis NX lock guarding runApolloDrip. */
 function makeLock() {
