@@ -36,6 +36,7 @@ import { CommandPalette } from "./CommandPalette";
 import { Sidebar, SidebarBody, useSidebar } from "@/components/ui/sidebar";
 import { SidebarCustomizePanel } from "./SidebarCustomizePanel";
 import { ThemeToggle } from "./ThemeToggle";
+import { CreditBadge } from "@/components/dashboard/CreditBadge";
 import { TrialBanner } from "./TrialBanner";
 
 type NavItem = {
@@ -319,6 +320,11 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              {/* Leftmost of the header controls, the way Apollo places it —
+                  the number you're spending should be visible wherever you
+                  happen to be spending it. */}
+              <CreditBadge />
+
               <button
                 type="button"
                 aria-label="Announcements"
