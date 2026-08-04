@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Filter,
   Loader2,
+  Mail,
   MapPin,
   Pencil,
   Search,
@@ -46,6 +47,16 @@ export type RoleFilter = {
   employeeRanges: string[];
   /** Industry / market-segment terms. Apollo has no industry facet — see below. */
   keywords: string;
+  /**
+   * Apollo's contact_email_status values — see EMAIL_STATUS_OPTIONS.
+   *
+   * Server-side, and therefore not the same thing as ResultFilter.email: this
+   * asks Apollo to only return people whose email is in one of these states,
+   * so a page of 25 comes back full of usable rows. ResultFilter.email hides
+   * rows from a page already fetched, which cannot recover the slots the
+   * unusable ones took up.
+   */
+  emailStatus: string[];
 };
 
 /** Refinements over results already fetched. Applied client-side, instantly. */
@@ -69,7 +80,20 @@ export const EMPTY_ROLE_FILTER: RoleFilter = {
   companyLocations: [],
   employeeRanges: [],
   keywords: "",
+  emailStatus: [],
 };
+
+/**
+ * Apollo's contact_email_status vocabulary, verbatim — these exact strings are
+ * what the API matches on. An unrecognised value makes Apollo return zero rows
+ * rather than erroring, so both ends whitelist against this list.
+ */
+export const EMAIL_STATUS_OPTIONS: Array<{ value: string; label: string; hint: string }> = [
+  { value: "verified", label: "Verified", hint: "Apollo has confirmed this address" },
+  { value: "likely to engage", label: "Likely to engage", hint: "Deliverable, higher reply rate" },
+  { value: "unverified", label: "Unverified", hint: "On file, not confirmed" },
+  { value: "unavailable", label: "No email", hint: "Nothing on file — cannot be revealed" },
+];
 
 /**
  * Apollo's headcount bands, as it expects them: "min,max" strings.
@@ -162,7 +186,14 @@ async function apolloTypeahead(
 type FilterIcon = React.ComponentType<{ className?: string }>;
 
 /** The filter groups, as the modal's category rail lists them. */
-type CategoryKey = "titles" | "seniority" | "companies" | "location" | "size" | "keywords";
+type CategoryKey =
+  | "titles"
+  | "seniority"
+  | "companies"
+  | "email"
+  | "location"
+  | "size"
+  | "keywords";
 
 /**
  * Heading for a category pane: what the user just clicked, plus one line on
@@ -297,6 +328,7 @@ export function RoleFilterPanel({
     value.personLocations.length +
     value.companyLocations.length +
     value.employeeRanges.length +
+    value.emailStatus.length +
     (value.keywords.trim() ? 1 : 0);
 
   function patch(part: Partial<RoleFilter>) {
@@ -376,6 +408,13 @@ export function RoleFilterPanel({
       category: "companies" as const,
       onRemove: () => patch({ excludeCompanies: value.excludeCompanies.filter((v) => v !== c) }),
     })),
+    ...value.emailStatus.map((s) => ({
+      key: `em:${s}`,
+      label: `Email: ${EMAIL_STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s}`,
+      tone: "include" as const,
+      category: "email" as const,
+      onRemove: () => patch({ emailStatus: value.emailStatus.filter((v) => v !== s) }),
+    })),
     ...value.personLocations.map((l) => ({
       key: `pl:${l}`,
       label: l,
@@ -429,6 +468,9 @@ export function RoleFilterPanel({
       icon: Building2,
       count: value.includeCompanies.length + value.excludeCompanies.length,
     },
+    // Both scopes — the vessel-scoped endpoint forwards contact_email_status
+    // to Apollo too, so this is not an Apollo-wide-only facet.
+    { key: "email", label: "Email status", icon: Mail, count: value.emailStatus.length },
     ...(scope === "apollo"
       ? ([
           {
@@ -838,6 +880,64 @@ export function RoleFilterPanel({
                       </>
                     ) : null}
 
+                    {category === "email" ? (
+                      <>
+                        <PaneHeader
+                          icon={Mail}
+                          title="Email status"
+                          description="Asks Apollo to return only people whose email is in one of these states, so a page comes back full of contactable rows."
+                        />
+                        <div className="space-y-2">
+                          {EMAIL_STATUS_OPTIONS.map((option) => {
+                            const active = value.emailStatus.includes(option.value);
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                disabled={disabled}
+                                aria-pressed={active}
+                                onClick={() =>
+                                  patch({
+                                    emailStatus: active
+                                      ? value.emailStatus.filter((v) => v !== option.value)
+                                      : [...value.emailStatus, option.value],
+                                  })
+                                }
+                                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-all disabled:opacity-50 ${
+                                  active
+                                    ? "border-accent-500 bg-accent-500/[0.07] ring-1 ring-accent-500/20"
+                                    : "border-slate-200 bg-white hover:border-accent-300 hover:bg-accent-50/50 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-accent-400/40 dark:hover:bg-white/[0.07]"
+                                }`}
+                              >
+                                <span
+                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                                    active
+                                      ? "border-accent-500 bg-accent-500 text-white"
+                                      : "border-slate-300 dark:border-white/25"
+                                  }`}
+                                >
+                                  {active ? <Check className="h-2.5 w-2.5" /> : null}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[12.5px] font-semibold text-slate-800 dark:text-white/90">
+                                    {option.label}
+                                  </span>
+                                  <span className="block text-[11px] text-slate-500 dark:text-white/45">
+                                    {option.hint}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-4 text-slate-500 dark:bg-white/[0.03] dark:text-white/45">
+                          Picking none returns every status. This filters at the
+                          source — unlike <strong className="font-semibold">Refine</strong> in the
+                          toolbar, which only hides rows already fetched.
+                        </p>
+                      </>
+                    ) : null}
+
                     {category === "location" ? (
                       <>
                         <PaneHeader
@@ -1004,6 +1104,7 @@ function SavedFilterSets({
       value.personLocations.length +
       value.companyLocations.length +
       value.employeeRanges.length +
+      value.emailStatus.length +
       (value.keywords.trim() ? 1 : 0) >
     0;
 
@@ -1065,6 +1166,7 @@ function SavedFilterSets({
         companyLocations: value.companyLocations,
         employeeRanges: value.employeeRanges,
         keywords: value.keywords,
+        emailStatus: value.emailStatus,
       };
 
       if (naming.mode === "rename") {
@@ -1262,6 +1364,9 @@ function normalizeRoleFilter(raw: unknown): RoleFilter {
     companyLocations: arr(r.companyLocations),
     employeeRanges: arr(r.employeeRanges),
     keywords: typeof r.keywords === "string" ? r.keywords : "",
+    // Added after saved sets shipped — absent in older rows, so they normalise
+    // to empty rather than breaking the load.
+    emailStatus: arr(r.emailStatus),
   };
 }
 

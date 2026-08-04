@@ -809,6 +809,7 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
     //   ?includeTitle=broker&includeTitle=fleet+manager  → multi-title include
     //   ?excludeTitle=intern                             → titles to skip
     //   ?seniority=director&seniority=vp                 → Apollo seniority buckets
+    //   ?emailStatus=verified                            → Apollo email status
     const rawQ = req.query.q;
     const q = typeof rawQ === "string" ? rawQ.trim() : "";
     const readList = (raw: unknown): string[] =>
@@ -820,9 +821,18 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
     const includeTitles = readList(req.query.includeTitle);
     const excludeTitles = readList(req.query.excludeTitle);
     const seniorities = readList(req.query.seniority);
+    // Apollo's own contact_email_status values. Whitelisted rather than passed
+    // through: an unrecognised value makes Apollo return zero rows instead of
+    // erroring, which would read as "nobody matches" and be near-impossible to
+    // diagnose from the UI.
+    const APOLLO_EMAIL_STATUSES = ["verified", "unverified", "likely to engage", "unavailable"];
+    const emailStatuses = readList(req.query.emailStatus).filter((s) =>
+      APOLLO_EMAIL_STATUSES.includes(s),
+    );
     const personTitles = includeTitles.length > 0 ? includeTitles : q ? [q] : undefined;
     const personNotTitles = excludeTitles.length > 0 ? excludeTitles : undefined;
     const personSeniorities = seniorities.length > 0 ? seniorities : undefined;
+    const contactEmailStatus = emailStatuses.length > 0 ? emailStatuses : undefined;
 
     const warnings: string[] = [];
     let apolloRows: ReturnType<typeof apolloPersonToContactRow>[] = [];
@@ -868,6 +878,10 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
                     includeTitles,
                     excludeTitles,
                     seniorities,
+                    // Part of the key: two searches differing only by email
+                    // status are different result sets, and omitting this
+                    // would serve the unfiltered one from cache.
+                    emailStatuses,
                   }),
                 )
                 .digest("hex")}`;
@@ -881,6 +895,7 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
                     person_titles: personTitles,
                     person_not_titles: personNotTitles,
                     person_seniorities: personSeniorities,
+                    contact_email_status: contactEmailStatus,
                     per_page: 100,
                     page: requestedPage,
                   });

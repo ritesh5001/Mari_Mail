@@ -938,6 +938,7 @@ export function apolloFilterBody(filter: RoleFilter): Record<string, unknown> {
     companyLocations: filter.companyLocations,
     employeeRanges: filter.employeeRanges,
     keywords: filter.keywords.trim() || undefined,
+    emailStatus: filter.emailStatus.length > 0 ? filter.emailStatus : undefined,
   };
 }
 
@@ -949,6 +950,9 @@ function buildRoleBody(filter: RoleFilter, vesselIds?: string[]): Record<string,
     includeCompany: filter.includeCompanies,
     excludeCompany: filter.excludeCompanies,
     seniority: filter.seniorities,
+    // Forwarded to Apollo as contact_email_status by the by-list route, so the
+    // email filter narrows the search itself rather than the fetched page.
+    emailStatus: filter.emailStatus,
     // Scopes the Apollo search (and the title suggestions built from it) to
     // just these vessels' companies. Omitted = every vessel on the list.
     vesselId: vesselIds ?? [],
@@ -999,6 +1003,10 @@ function summarizeFilter(filter: RoleFilter): string {
   if (filter.includeCompanies.length) parts.push(`at: ${filter.includeCompanies.join(", ")}`);
   if (filter.excludeCompanies.length) parts.push(`not at: ${filter.excludeCompanies.join(", ")}`);
   if (filter.seniorities.length) parts.push(`seniority: ${filter.seniorities.join(", ")}`);
+  // Also the identity used by loadMore() to detect that the filter changed
+  // under it — omitting a facet here would let two different searches merge
+  // their pages into one result set.
+  if (filter.emailStatus.length) parts.push(`email: ${filter.emailStatus.join(", ")}`);
   return parts.join(" · ") || "any role";
 }
 
