@@ -641,3 +641,34 @@ html.dark .marimail-phone .PhoneInputCountrySelectArrow {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* Thin, unobtrusive scrollbar for bounded panels (RoleFilterPanel rail, chip
+   wells, suggestion popovers). Overlay-style so it costs no layout width and
+   the track stays invisible until there is something to scroll. */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 116, 139, 0.3);
+  border-radius: 9999px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.5);
+}
+html.dark .scrollbar-thin {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+html.dark .scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.18);
+}
+html.dark .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.32);
+}

@@ -367,9 +367,21 @@ export function RoleFilterPanel({
   ];
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
-      {/* Panel header — brand pill, count, clear-all */}
-      <div className="flex items-center gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50/70 via-white to-white px-3.5 py-3 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
+    /*
+      Bounded flex column, not a free-growing block.
+
+      The rail is `position: sticky` in the parent. A sticky box TALLER than the
+      viewport has its overflow permanently unreachable — sticky creates no
+      internal scroll, and page scroll moves the box in lockstep — so once a few
+      filters were chosen the Search button sat below the fold with no way to
+      reach it. Capping the height and scrolling the middle fixes that, and
+      pinning the CTA as a footer means Search is now always one click away
+      instead of "always reachable if you scroll".
+    */
+    <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] lg:max-h-[calc(100vh-2rem)] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
+      {/* Panel header — brand pill, count, clear-all. shrink-0 so it stays put
+          while the body scrolls under it. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50/70 via-white to-white px-3.5 py-3 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
         <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/12 text-accent-600 dark:text-accent-300">
           <Filter className="h-3.5 w-3.5" />
         </span>
@@ -396,14 +408,24 @@ export function RoleFilterPanel({
       {/* Saved sets bar — pinned above the sections so users can load a preset
           before touching anything. Save is only offered when there's something
           to save (any active filter). */}
-      <div className="border-b border-slate-100 bg-slate-50/40 px-3.5 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.015]">
+      <div className="shrink-0 border-b border-slate-100 bg-slate-50/40 px-3.5 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.015]">
         <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
       </div>
 
+      {/* Scrollable body. `data-filter-scroll` marks it as the scroll parent a
+          focused ChipInput scrolls itself within, so its suggestion popover
+          isn't clipped by this container's bottom edge. min-h-0 is required —
+          without it a flex child refuses to shrink below its content height and
+          the overflow never engages. */}
+      <div
+        data-filter-scroll
+        className="scrollbar-thin min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-contain"
+      >
       {/* Applied filters as removable chips, grouped by tone (include vs. exclude)
-          so what's active is scannable without opening every section. */}
+          so what's active is scannable without opening every section. Capped —
+          a 30-chip filter would otherwise push every section off-screen. */}
       {activeChips.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-3.5 py-2.5 dark:border-white/[0.06]">
+        <div className="scrollbar-thin flex max-h-[88px] flex-wrap gap-1.5 overflow-y-auto border-b border-slate-100 px-3.5 py-2.5 dark:border-white/[0.06]">
           {activeChips.map((chip) => {
             const toneClass =
               chip.tone === "include"
@@ -627,30 +649,11 @@ export function RoleFilterPanel({
         ) : null}
       </div>
 
-      {/* Search CTA — always enabled; empty include-title is a real Apollo
-          query. Only the in-flight `disabled` prop can dim it. */}
-      <div className="border-t border-slate-100 bg-slate-50/40 p-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={disabled}
-          className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
-        >
-          {disabled ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-          )}
-          {disabled ? "Searching Apollo…" : "Search"}
-        </button>
-        <p className="mt-2 text-center text-[10px] leading-4 text-slate-500 dark:text-white/40">
-          Searching is <span className="font-semibold text-emerald-600 dark:text-emerald-300">free</span> — only revealing an email or phone spends a credit.
-        </p>
-      </div>
-
-      {/* Refine results — same rail, distinct block. Below the Search button
-          because these apply INSTANTLY and mixing them into the sections above
-          would make Search look broken the first time one applied without it. */}
+      {/* Refine results — moved ABOVE the CTA when the panel became a bounded
+          column, because the CTA is now a pinned footer and nothing may sit
+          below it. The distinction the old placement encoded (these apply
+          instantly, the sections above need Search) is carried by this block's
+          own emerald header instead, which states it outright. */}
       {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
         <div className="border-t border-slate-100 dark:border-white/[0.06]">
           <div className="flex items-center gap-2 border-b border-slate-100 bg-emerald-50/40 px-3.5 py-2 dark:border-white/[0.06] dark:bg-emerald-500/[0.04]">
@@ -728,6 +731,30 @@ export function RoleFilterPanel({
           ) : null}
         </div>
       ) : null}
+      </div>
+      {/* end scrollable body */}
+
+      {/* Search CTA — pinned footer, so it stays reachable no matter how many
+          filters are stacked above it. Always enabled; an empty include-title
+          list is a real Apollo query. Only the in-flight `disabled` prop dims it. */}
+      <div className="shrink-0 border-t border-slate-100 bg-slate-50/40 p-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={disabled}
+          className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
+        >
+          {disabled ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+          )}
+          {disabled ? "Searching Apollo…" : "Search"}
+        </button>
+        <p className="mt-2 text-center text-[10px] leading-4 text-slate-500 dark:text-white/40">
+          Searching is <span className="font-semibold text-emerald-600 dark:text-emerald-300">free</span> — only revealing an email or phone spends a credit.
+        </p>
+      </div>
     </section>
   );
 }
@@ -1119,6 +1146,29 @@ function ChipInput({
     return () => document.removeEventListener("mousedown", onDocPointerDown, true);
   }, [open]);
 
+  // Keep the popover clear of the filter rail's scroll boundary.
+  //
+  // The rail is a bounded scroll container now, so a field near its bottom
+  // would open a 288px popover into ~40px of visible space and the list would
+  // be clipped. Nudge the scroll container just enough to fit it — and only
+  // when it doesn't already fit, so focusing a field at the top never causes
+  // a gratuitous jump.
+  useEffect(() => {
+    if (!open) return;
+    const el = containerRef.current;
+    const scroller = el?.closest<HTMLElement>("[data-filter-scroll]");
+    if (!el || !scroller) return;
+    const POPOVER_MAX_PX = 288; // matches max-h-72 on the popover
+    const elBox = el.getBoundingClientRect();
+    const scrollerBox = scroller.getBoundingClientRect();
+    const spaceBelow = scrollerBox.bottom - elBox.bottom;
+    if (spaceBelow >= POPOVER_MAX_PX) return;
+    // Never scroll the field itself out of the top of the container.
+    const headroom = elBox.top - scrollerBox.top - 8;
+    const delta = Math.min(POPOVER_MAX_PX - spaceBelow, headroom);
+    if (delta > 0) scroller.scrollBy({ top: delta, behavior: "smooth" });
+  }, [open]);
+
   // Debounced live-suggestions fetch. Fires 200ms after the user stops typing.
   //
   // Deliberately does NOT wipe the previous results up front — render decides
@@ -1334,7 +1384,10 @@ function ChipInput({
           inputRef.current?.focus();
           setOpen(true);
         }}
-        className={`flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
+        /* max-h + scroll: one field with 40 selected titles used to be ~700px
+           of solid chips, which is what pushed every other section (and the
+           Search button) off-screen. The well now scrolls on its own. */
+        className={`scrollbar-thin flex max-h-[104px] min-h-[36px] flex-wrap items-center gap-1.5 overflow-y-auto rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
           open
             ? isInclude
               ? "border-accent-400 ring-2 ring-accent-500/15"
