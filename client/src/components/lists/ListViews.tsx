@@ -359,44 +359,52 @@ export function ContactListDetail({
             import and search panels. */}
         <ListAutomationCard automations={automations} isSuperAdmin={isSuperAdmin} />
 
-        {/* Same reasoning as the Apollo panel below: importing contacts is
-            about contacts, not about whether the list also tracks vessels. */}
+        {/* Stays on both list kinds, unlike the Apollo-wide search below: a CSV
+            carries whatever attribution the uploader already has, so importing
+            one into an ETA list is a normal thing to want. */}
         {isSuperAdmin ? <ImportContactsCsvSection listId={list.id} /> : null}
 
         {/*
-          Apollo people search — available on EVERY list, whatever it holds.
+          Apollo-wide people search — COLD CONTACT LISTS ONLY.
 
-          It was gated to contact-only lists, which tied "can I find people
-          this way" to "does this list happen to have vessels in it". Those are
-          unrelated: a list with vessels can still be the audience for cold
-          outreach, and a list without them can still want people from a
-          shipowner. An ETA list keeps its vessel-scoped picker as well — the
-          two answer different questions, so having both is the point.
+          A cold list has no vessels to derive company domains from, so an
+          unscoped search of Apollo's whole database is the only way to put
+          anyone in it. An ETA list is the opposite case: it exists because of
+          its vessels, and the people worth adding are the ones at those
+          vessels' managers. It already gets exactly that picker inside the
+          Vessels / New Vessels tabs below, scoped to the list's own domains.
+
+          Offering the unscoped search there too was noise at best and a
+          footgun at worst — it invites adding contacts with no vessel
+          attribution to a list whose whole purpose is vessel attribution,
+          and those rows then sit unmatched in the campaign review queue.
         */}
-        <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
-          <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
-            <Search className="h-4 w-4 shrink-0 text-accent-500" />
-            <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
-                Find people with Apollo
-              </h3>
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
-                Search anyone by title, seniority, location, company size and keywords —
-                no vessel needed — then add them straight to this list. Searching is free;
-                only revealing an email spends a credit.
-              </p>
+        {!isEta ? (
+          <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4">
+              <Search className="h-4 w-4 shrink-0 text-accent-500" />
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+                  Find people with Apollo
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
+                  Search anyone by title, seniority, location, company size and keywords —
+                  no vessel needed — then add them straight to this list. Searching is free;
+                  only revealing an email spends a credit.
+                </p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
+            </summary>
+            <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
+              <CampaignByRolePanel
+                listId={list.id}
+                listName={list.name}
+                scope="apollo"
+                isSuperAdmin={isSuperAdmin}
+              />
             </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
-          </summary>
-          <div className="border-t border-slate-100 p-5 dark:border-white/[0.06]">
-            <CampaignByRolePanel
-              listId={list.id}
-              listName={list.name}
-              scope="apollo"
-              isSuperAdmin={isSuperAdmin}
-            />
-          </div>
-        </details>
+          </details>
+        ) : null}
 
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div className="flex border-b border-slate-100 dark:border-white/[0.06]">
