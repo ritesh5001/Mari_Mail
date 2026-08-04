@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Bookmark,
   BookmarkPlus,
@@ -8,12 +9,13 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ChevronRight,
   Filter,
-  Globe2,
   Loader2,
   MapPin,
   Pencil,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Tag,
   Trash2,
@@ -159,68 +161,89 @@ async function apolloTypeahead(
 
 type FilterIcon = React.ComponentType<{ className?: string }>;
 
+/** The filter groups, as the modal's category rail lists them. */
+type CategoryKey = "titles" | "seniority" | "companies" | "location" | "size" | "keywords";
+
 /**
- * One collapsible filter group. Denser than a card — Apollo's own People
- * search sits at this altitude and the eye lands on section headers first.
+ * Heading for a category pane: what the user just clicked, plus one line on
+ * what the field actually does.
+ *
+ * The old accordion had no room for this, so real behaviour — "keywords is
+ * free text, not a true industry facet" — sat in 10px helper text under the
+ * input where nobody read it.
  */
-function FilterSection({
-  title,
-  count,
-  hint,
+function PaneHeader({
   icon: Icon,
-  defaultOpen = false,
-  children,
+  title,
+  description,
 }: {
-  title: string;
-  count?: number;
-  /** Shown next to the title when collapsed — a summary of the current value. */
-  hint?: string;
   icon: FilterIcon;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
+  title: string;
+  description: string;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-slate-100 last:border-b-0 dark:border-white/[0.06]">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="group flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[0.03]"
-      >
-        <span
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors ${
-            (count ?? 0) > 0
-              ? "border-accent-500/30 bg-accent-500/10 text-accent-600 dark:text-accent-300"
-              : "border-slate-200 bg-white text-slate-500 group-hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/50"
-          }`}
-        >
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-        <span className="text-[13px] font-semibold text-slate-800 dark:text-white/90">{title}</span>
-        {count ? (
-          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
-            {count}
-          </span>
-        ) : null}
-        {!open && hint ? (
-          <span className="ml-auto max-w-[130px] truncate text-[11px] text-slate-400 dark:text-white/35">
-            {hint}
-          </span>
-        ) : null}
-        <ChevronDown
-          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/40 ${
-            open ? "rotate-180" : ""
-          } ${!open && hint ? "ml-1" : "ml-auto"}`}
-        />
-      </button>
-      {open ? (
-        <div className="px-3.5 pb-3.5 pt-1">{children}</div>
-      ) : null}
+    <div className="mb-5 flex items-start gap-3">
+      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-500/10 text-accent-600 dark:text-accent-300">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <h3 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
+          {title}
+        </h3>
+        <p className="mt-0.5 text-[11.5px] leading-4 text-slate-500 dark:text-white/50">
+          {description}
+        </p>
+      </div>
     </div>
   );
 }
 
+/** Shared toggle pill — Seniority and Company size are the same control. */
+function TogglePill({
+  active,
+  disabled,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all disabled:opacity-50 ${
+        active
+          ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
+          : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-accent-400/40 dark:hover:bg-white/[0.08]"
+      }`}
+    >
+      {active ? <Check className="h-3 w-3" /> : null}
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Apollo-style filter builder, as a toolbar + modal rather than a sidebar.
+ *
+ * WHY IT MOVED. As a 300px sticky rail this permanently spent a third of the
+ * page's width on controls that are edited in bursts and then left alone —
+ * while the results table, which is read continuously, was squeezed hard
+ * enough to truncate the title and company columns it exists to show. A modal
+ * inverts that trade: the full width goes to results, and the filter gets far
+ * more room than the rail ever had at the moment it is actually being used.
+ *
+ * The search behaviour is deliberately unchanged. Edits are live (each control
+ * calls `onChange` immediately, exactly as the rail did) and nothing queries
+ * Apollo until Search is pressed, so a half-built filter never fires a request.
+ * Closing the modal is therefore not a "cancel" — the chips stay in the
+ * toolbar, which is where the active filter is now legible at a glance.
+ */
 export function RoleFilterPanel({
   value,
   onChange,
@@ -262,6 +285,9 @@ export function RoleFilterPanel({
    */
   scope?: "vessels" | "apollo";
 }) {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState<CategoryKey>("titles");
+
   const totalActive =
     value.includeTitles.length +
     value.excludeTitles.length +
@@ -283,7 +309,7 @@ export function RoleFilterPanel({
 
   // Apollo-scope defaults every chip input to Apollo's own typeahead so cold
   // searches get real live suggestions, not just the 17 curated titles that
-  // used to be the only autocomplete on this panel. Vessel-scope keeps the
+  // used to be the only autocomplete here. Vessel-scope keeps the
   // parent-supplied loaders (title histogram from the list) as-is.
   const apolloTitleFetcher = useMemo<SuggestFn>(
     () => (draft) => apolloTypeahead("title", draft),
@@ -302,386 +328,263 @@ export function RoleFilterPanel({
     [],
   );
 
-  const titleFetcher = fetchTitleSuggestions ?? (scope === "apollo" ? apolloTitleFetcher : undefined);
-  const companyFetcher = fetchCompanySuggestions ?? (scope === "apollo" ? apolloCompanyFetcher : undefined);
+  const titleFetcher =
+    fetchTitleSuggestions ?? (scope === "apollo" ? apolloTitleFetcher : undefined);
+  const companyFetcher =
+    fetchCompanySuggestions ?? (scope === "apollo" ? apolloCompanyFetcher : undefined);
 
-  const activeChips: Array<{ key: string; label: string; onRemove: () => void; tone: "include" | "exclude" }> = [
+  const activeChips: Array<{
+    key: string;
+    label: string;
+    onRemove: () => void;
+    tone: "include" | "exclude";
+    /** Which pane to open when the chip's group is clicked through. */
+    category: CategoryKey;
+  }> = [
     ...value.includeTitles.map((t) => ({
       key: `it:${t}`,
       label: t,
       tone: "include" as const,
+      category: "titles" as const,
       onRemove: () => patch({ includeTitles: value.includeTitles.filter((v) => v !== t) }),
     })),
     ...value.excludeTitles.map((t) => ({
       key: `xt:${t}`,
       label: `not ${t}`,
       tone: "exclude" as const,
+      category: "titles" as const,
       onRemove: () => patch({ excludeTitles: value.excludeTitles.filter((v) => v !== t) }),
+    })),
+    ...value.seniorities.map((sv) => ({
+      key: `s:${sv}`,
+      label: SENIORITY_OPTIONS.find((o) => o.value === sv)?.label ?? sv,
+      tone: "include" as const,
+      category: "seniority" as const,
+      onRemove: () => patch({ seniorities: value.seniorities.filter((v) => v !== sv) }),
     })),
     ...value.includeCompanies.map((c) => ({
       key: `ic:${c}`,
       label: `@ ${c}`,
       tone: "include" as const,
+      category: "companies" as const,
       onRemove: () => patch({ includeCompanies: value.includeCompanies.filter((v) => v !== c) }),
     })),
     ...value.excludeCompanies.map((c) => ({
       key: `xc:${c}`,
       label: `not @ ${c}`,
       tone: "exclude" as const,
+      category: "companies" as const,
       onRemove: () => patch({ excludeCompanies: value.excludeCompanies.filter((v) => v !== c) }),
-    })),
-    ...value.seniorities.map((sv) => ({
-      key: `s:${sv}`,
-      label: SENIORITY_OPTIONS.find((o) => o.value === sv)?.label ?? sv,
-      tone: "include" as const,
-      onRemove: () => patch({ seniorities: value.seniorities.filter((v) => v !== sv) }),
     })),
     ...value.personLocations.map((l) => ({
       key: `pl:${l}`,
       label: l,
       tone: "include" as const,
+      category: "location" as const,
       onRemove: () => patch({ personLocations: value.personLocations.filter((v) => v !== l) }),
     })),
     ...value.companyLocations.map((l) => ({
       key: `cl:${l}`,
       label: `HQ ${l}`,
       tone: "include" as const,
+      category: "location" as const,
       onRemove: () => patch({ companyLocations: value.companyLocations.filter((v) => v !== l) }),
     })),
     ...value.employeeRanges.map((band) => ({
       key: `er:${band}`,
       label: `${EMPLOYEE_BANDS.find((b) => b.value === band)?.label ?? band} employees`,
       tone: "include" as const,
+      category: "size" as const,
       onRemove: () => patch({ employeeRanges: value.employeeRanges.filter((v) => v !== band) }),
     })),
     ...(value.keywords.trim()
       ? [
           {
-            key: `kw`,
+            key: "kw",
             label: `“${value.keywords.trim()}”`,
             tone: "include" as const,
+            category: "keywords" as const,
             onRemove: () => patch({ keywords: "" }),
           },
         ]
       : []),
   ];
 
-  return (
-    /*
-      Bounded flex column, not a free-growing block.
+  const categories: Array<{
+    key: CategoryKey;
+    label: string;
+    icon: FilterIcon;
+    count: number;
+  }> = [
+    {
+      key: "titles",
+      label: "Job titles",
+      icon: Briefcase,
+      count: value.includeTitles.length + value.excludeTitles.length,
+    },
+    { key: "seniority", label: "Seniority", icon: Sparkles, count: value.seniorities.length },
+    {
+      key: "companies",
+      label: "Companies",
+      icon: Building2,
+      count: value.includeCompanies.length + value.excludeCompanies.length,
+    },
+    ...(scope === "apollo"
+      ? ([
+          {
+            key: "location" as const,
+            label: "Location",
+            icon: MapPin,
+            count: value.personLocations.length + value.companyLocations.length,
+          },
+          {
+            key: "size" as const,
+            label: "Company size",
+            icon: Users2,
+            count: value.employeeRanges.length,
+          },
+          {
+            key: "keywords" as const,
+            label: "Industry & keywords",
+            icon: Tag,
+            count: value.keywords.trim() ? 1 : 0,
+          },
+        ])
+      : []),
+  ];
 
-      The rail is `position: sticky` in the parent. A sticky box TALLER than the
-      viewport has its overflow permanently unreachable — sticky creates no
-      internal scroll, and page scroll moves the box in lockstep — so once a few
-      filters were chosen the Search button sat below the fold with no way to
-      reach it. Capping the height and scrolling the middle fixes that, and
-      pinning the CTA as a footer means Search is now always one click away
-      instead of "always reachable if you scroll".
-    */
-    <section className="flex flex-col overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] lg:max-h-[calc(100vh-2rem)] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
-      {/* Panel header — brand pill, count, clear-all. shrink-0 so it stays put
-          while the body scrolls under it. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50/70 via-white to-white px-3.5 py-3 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
-        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/12 text-accent-600 dark:text-accent-300">
-          <Filter className="h-3.5 w-3.5" />
-        </span>
-        <p className="text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">
-          Filters
-        </p>
-        {totalActive > 0 ? (
-          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
-            {totalActive}
-          </span>
-        ) : null}
-        {totalActive > 0 ? (
+  // Esc closes, and the page behind the modal must not scroll under it.
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      // Let a chip input's own Esc (which closes its popover) win first — it
+      // stops propagation, so anything reaching here means no popover is open.
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  function openAt(next: CategoryKey) {
+    setCategory(next);
+    setOpen(true);
+  }
+
+  const searchLabel = disabled ? "Searching…" : "Search";
+
+  return (
+    <>
+      {/* ── Toolbar ────────────────────────────────────────────────────────
+          Sits above the results at full width. Everything the user needs
+          between searches — what's filtered, load a preset, run it — without
+          opening anything. */}
+      <div className="rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
+        <div className="flex flex-wrap items-center gap-2 p-2">
           <button
             type="button"
-            onClick={clearAll}
+            onClick={() => setOpen(true)}
             disabled={disabled}
-            className="ml-auto rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 shadow-sm transition-all hover:border-accent-400 hover:text-accent-600 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-accent-400/60"
           >
-            Clear all
+            <SlidersHorizontal className="h-3.5 w-3.5 text-accent-500" />
+            Filters
+            {totalActive > 0 ? (
+              <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+                {totalActive}
+              </span>
+            ) : null}
           </button>
-        ) : null}
-      </div>
 
-      {/* Saved sets bar — pinned above the sections so users can load a preset
-          before touching anything. Save is only offered when there's something
-          to save (any active filter). */}
-      <div className="shrink-0 border-b border-slate-100 bg-slate-50/40 px-3.5 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.015]">
-        <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
-      </div>
+          <span className="hidden h-6 w-px shrink-0 bg-slate-200 sm:block dark:bg-white/10" />
 
-      {/* Scrollable body. `data-filter-scroll` marks it as the scroll parent a
-          focused ChipInput scrolls itself within, so its suggestion popover
-          isn't clipped by this container's bottom edge. min-h-0 is required —
-          without it a flex child refuses to shrink below its content height and
-          the overflow never engages. */}
-      <div
-        data-filter-scroll
-        className="scrollbar-thin min-h-0 flex-1 lg:overflow-y-auto lg:overscroll-contain"
-      >
-      {/* Applied filters as removable chips, grouped by tone (include vs. exclude)
-          so what's active is scannable without opening every section. Capped —
-          a 30-chip filter would otherwise push every section off-screen. */}
-      {activeChips.length > 0 ? (
-        <div className="scrollbar-thin flex max-h-[88px] flex-wrap gap-1.5 overflow-y-auto border-b border-slate-100 px-3.5 py-2.5 dark:border-white/[0.06]">
-          {activeChips.map((chip) => {
-            const toneClass =
-              chip.tone === "include"
-                ? "border-accent-500/25 bg-accent-500/10 text-accent-700 hover:bg-accent-500/15 dark:text-accent-200"
-                : "border-red-300/40 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200";
-            return (
-              <button
-                key={chip.key}
-                type="button"
-                onClick={chip.onRemove}
-                disabled={disabled}
-                className={`group inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${toneClass}`}
-              >
-                <span className="truncate">{chip.label}</span>
-                <X className="h-2.5 w-2.5 shrink-0 opacity-60 group-hover:opacity-100" />
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-
-      <div>
-        <FilterSection
-          title="Job titles"
-          icon={Briefcase}
-          count={value.includeTitles.length + value.excludeTitles.length}
-          defaultOpen
-        >
-          <div className="space-y-3">
-            <ChipInput
-              label="Include"
-              placeholder="Fleet Manager, Chartering…"
-              values={value.includeTitles}
-              onChange={(next) => patch({ includeTitles: next })}
-              suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-              onFetchSuggestions={titleFetcher}
-              onFetchAllForSelectAll={fetchAllTitles}
-              tone="include"
-              disabled={disabled}
-            />
-            <ChipInput
-              label="Exclude"
-              placeholder="Intern, Assistant…"
-              values={value.excludeTitles}
-              onChange={(next) => patch({ excludeTitles: next })}
-              suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-              onFetchSuggestions={titleFetcher}
-              tone="exclude"
-              disabled={disabled}
-            />
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          title="Seniority"
-          icon={Sparkles}
-          count={value.seniorities.length}
-          hint={value.seniorities.length === 0 ? "Any" : `${value.seniorities.length} selected`}
-        >
-          <div className="flex flex-wrap gap-1.5">
-            {SENIORITY_OPTIONS.map((option) => {
-              const active = value.seniorities.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={disabled}
-                  aria-pressed={active}
-                  onClick={() =>
-                    patch({
-                      seniorities: active
-                        ? value.seniorities.filter((v) => v !== option.value)
-                        : [...value.seniorities, option.value],
-                    })
-                  }
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all disabled:opacity-50 ${
-                    active
-                      ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-accent-400/40 dark:hover:bg-white/[0.08]"
-                  }`}
-                >
-                  {active ? <Check className="h-2.5 w-2.5" /> : null}
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          title="Companies"
-          icon={Building2}
-          count={value.includeCompanies.length + value.excludeCompanies.length}
-        >
-          <div className="space-y-3">
-            <ChipInput
-              label="Include"
-              placeholder="V.Group, Anglo-Eastern…"
-              values={value.includeCompanies}
-              onChange={(next) => patch({ includeCompanies: next })}
-              suggestions={companySuggestionsFromResults ?? []}
-              onFetchSuggestions={companyFetcher}
-              onFetchAllForSelectAll={fetchAllCompanies}
-              tone="include"
-              disabled={disabled}
-              emptyHint="Start typing to see Apollo companies matching your term."
-            />
-            <ChipInput
-              label="Exclude"
-              placeholder="Third-party surveyors…"
-              values={value.excludeCompanies}
-              onChange={(next) => patch({ excludeCompanies: next })}
-              suggestions={companySuggestionsFromResults ?? []}
-              onFetchSuggestions={companyFetcher}
-              tone="exclude"
-              disabled={disabled}
-              emptyHint="Type a company name to hide its rows."
-            />
-          </div>
-        </FilterSection>
-
-        {scope === "apollo" ? (
-          <>
-            <FilterSection
-              title="Location"
-              icon={MapPin}
-              count={value.personLocations.length + value.companyLocations.length}
-              hint={
-                value.personLocations.length + value.companyLocations.length === 0
-                  ? "Anywhere"
-                  : undefined
-              }
-            >
-              <div className="space-y-3">
-                <ChipInput
-                  label="Person is in"
-                  placeholder="London, Singapore, India…"
-                  values={value.personLocations}
-                  onChange={(next) => patch({ personLocations: next })}
-                  suggestions={[]}
-                  onFetchSuggestions={apolloPersonLocationFetcher}
-                  tone="include"
-                  disabled={disabled}
-                  emptyHint="Type a city, state or country — Apollo resolves the name."
-                />
-                <ChipInput
-                  label="Company HQ is in"
-                  placeholder="United Kingdom, UAE…"
-                  values={value.companyLocations}
-                  onChange={(next) => patch({ companyLocations: next })}
-                  suggestions={[]}
-                  onFetchSuggestions={apolloCompanyLocationFetcher}
-                  tone="include"
-                  disabled={disabled}
-                  emptyHint="Where the business is based, not the person."
-                />
-              </div>
-            </FilterSection>
-
-            <FilterSection
-              title="Company size"
-              icon={Users2}
-              count={value.employeeRanges.length}
-              hint={value.employeeRanges.length === 0 ? "Any size" : undefined}
-            >
-              <div className="flex flex-wrap gap-1.5">
-                {EMPLOYEE_BANDS.map((band) => {
-                  const active = value.employeeRanges.includes(band.value);
-                  return (
+          {/* Active filter chips. Clicking a chip's body opens the pane it
+              came from; the × removes just that value. Horizontal scroll, so
+              a 40-chip filter never wraps the toolbar into a wall. */}
+          <div className="scrollbar-thin flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+            {activeChips.length === 0 ? (
+              <span className="truncate text-[12px] text-slate-400 dark:text-white/35">
+                No filters yet — add some to narrow the search.
+              </span>
+            ) : (
+              activeChips.map((chip) => {
+                const toneClass =
+                  chip.tone === "include"
+                    ? "border-accent-500/25 bg-accent-500/10 text-accent-700 dark:text-accent-200"
+                    : "border-red-300/40 bg-red-50 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200";
+                return (
+                  <span
+                    key={chip.key}
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-full border py-0.5 pl-2 pr-1 text-[11px] font-medium ${toneClass}`}
+                  >
                     <button
-                      key={band.value}
                       type="button"
+                      onClick={() => openAt(chip.category)}
                       disabled={disabled}
-                      aria-pressed={active}
-                      onClick={() =>
-                        patch({
-                          employeeRanges: active
-                            ? value.employeeRanges.filter((v) => v !== band.value)
-                            : [...value.employeeRanges, band.value],
-                        })
-                      }
-                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all disabled:opacity-50 ${
-                        active
-                          ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-accent-400/40 dark:hover:bg-white/[0.08]"
-                      }`}
+                      className="max-w-[160px] truncate hover:underline disabled:opacity-50"
+                      title="Edit this filter"
                     >
-                      {band.label}
+                      {chip.label}
                     </button>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/35">
-                Apollo matches these exact bands — employees, not revenue.
-              </p>
-            </FilterSection>
-
-            <FilterSection
-              title="Industry & keywords"
-              icon={Tag}
-              count={value.keywords.trim() ? 1 : 0}
-              hint={value.keywords.trim() || undefined}
-            >
-              <input
-                value={value.keywords}
-                onChange={(e) => patch({ keywords: e.target.value })}
-                disabled={disabled}
-                placeholder="Shipping, Chemicals, Bunkering…"
-                className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 dark:placeholder:text-white/30"
-              />
-              {/* Deliberately labelled keywords, not "Industry". Apollo's public
-                  search API has no industry facet — its UI picker maps to
-                  undocumented internal tag ids — so industry and market-segment
-                  terms are matched as free text. */}
-              <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/35">
-                Free-text match across the company profile. Industry and market
-                segment go here — Apollo exposes no exact industry filter.
-              </p>
-            </FilterSection>
-          </>
-        ) : null}
-      </div>
-
-      {/* Refine results — moved ABOVE the CTA when the panel became a bounded
-          column, because the CTA is now a pinned footer and nothing may sit
-          below it. The distinction the old placement encoded (these apply
-          instantly, the sections above need Search) is carried by this block's
-          own emerald header instead, which states it outright. */}
-      {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
-        <div className="border-t border-slate-100 dark:border-white/[0.06]">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-emerald-50/40 px-3.5 py-2 dark:border-white/[0.06] dark:bg-emerald-500/[0.04]">
-            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-              <Sparkles className="h-3 w-3" />
-            </span>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-200">
-              Refine results
-            </p>
-            <span className="ml-auto text-[10px] text-emerald-600/70 dark:text-emerald-200/60">
-              Applies instantly
-            </span>
+                    <button
+                      type="button"
+                      onClick={chip.onRemove}
+                      disabled={disabled}
+                      aria-label={`Remove ${chip.label}`}
+                      className="rounded-full p-0.5 opacity-60 transition hover:bg-black/10 hover:opacity-100 disabled:opacity-40 dark:hover:bg-white/15"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                );
+              })
+            )}
           </div>
 
-          <FilterSection
-            title="Email status"
-            icon={Sparkles}
-            count={resultFilter.email === "all" ? 0 : 1}
-            hint={
-              resultFilter.email === "all"
-                ? "Any"
-                : resultFilter.email === "available"
-                  ? "Has email"
-                  : "No email"
-            }
-            defaultOpen
+          {totalActive > 0 ? (
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={disabled}
+              className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            >
+              Clear
+            </button>
+          ) : null}
+
+          <div className="shrink-0">
+            <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
+          </div>
+
+          <button
+            type="button"
+            onClick={onApply}
+            disabled={disabled}
+            className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
           >
-            <div className="flex gap-1.5">
+            {disabled ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+            )}
+            {searchLabel}
+          </button>
+        </div>
+
+        {/* Refine row — instant-apply controls, so they live beside the
+            results rather than behind the modal's Search button. Only shown
+            once there is something to refine. */}
+        {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-2 py-1.5 dark:border-white/[0.06]">
+            <span className="inline-flex items-center gap-1.5 pl-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              <Sparkles className="h-3 w-3" />
+              Refine
+            </span>
+            <div className="inline-flex overflow-hidden rounded-md border border-slate-200 dark:border-white/10">
               {(
                 [
                   ["all", "Any"],
@@ -693,32 +596,22 @@ export function RoleFilterPanel({
                   key={v}
                   type="button"
                   onClick={() => onResultFilterChange({ ...resultFilter, email: v })}
-                  className={`flex-1 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all ${
+                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                     resultFilter.email === v
-                      ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                      ? "bg-accent-500 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
                   }`}
                 >
                   {label}
                 </button>
               ))}
             </div>
-          </FilterSection>
-
-          {countryOptions.length > 0 ? (
-            <FilterSection
-              title="Country"
-              icon={Globe2}
-              count={resultFilter.country === "all" ? 0 : 1}
-              hint={resultFilter.country === "all" ? "Any" : resultFilter.country}
-            >
+            {countryOptions.length > 0 ? (
               <select
                 value={resultFilter.country}
-                onChange={(e) =>
-                  onResultFilterChange({ ...resultFilter, country: e.target.value })
-                }
-                className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75"
+                onChange={(e) => onResultFilterChange({ ...resultFilter, country: e.target.value })}
                 aria-label="Filter by country"
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75"
               >
                 <option value="all">Any country</option>
                 {countryOptions.map((c) => (
@@ -727,35 +620,348 @@ export function RoleFilterPanel({
                   </option>
                 ))}
               </select>
-            </FilterSection>
-          ) : null}
-        </div>
-      ) : null}
+            ) : null}
+            <span className="ml-auto pr-1 text-[10px] text-slate-400 dark:text-white/35">
+              Applies instantly to the {resultCount} loaded rows
+            </span>
+          </div>
+        ) : null}
       </div>
-      {/* end scrollable body */}
 
-      {/* Search CTA — pinned footer, so it stays reachable no matter how many
-          filters are stacked above it. Always enabled; an empty include-title
-          list is a real Apollo query. Only the in-flight `disabled` prop dims it. */}
-      <div className="shrink-0 border-t border-slate-100 bg-slate-50/40 p-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={disabled}
-          className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
-        >
-          {disabled ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-          )}
-          {disabled ? "Searching Apollo…" : "Search"}
-        </button>
-        <p className="mt-2 text-center text-[10px] leading-4 text-slate-500 dark:text-white/40">
-          Searching is <span className="font-semibold text-emerald-600 dark:text-emerald-300">free</span> — only revealing an email or phone spends a credit.
-        </p>
-      </div>
-    </section>
+      {/* ── Modal ──────────────────────────────────────────────────────────
+          Portalled to <body> on purpose. This panel also renders inside
+          ApolloVesselSearchModal, whose backdrop uses backdrop-blur — and a
+          backdrop-filter establishes a containing block for fixed-position
+          descendants, so an in-tree `fixed inset-0` would anchor to that
+          scrolling backdrop instead of the viewport. */}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="animate-in-fade fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+              onMouseDown={(event) => {
+                // mousedown, not click: a click that STARTED inside the dialog
+                // and ended on the backdrop (dragging to select text) must not
+                // close it.
+                if (event.target === event.currentTarget) setOpen(false);
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Search filters"
+            >
+              <div className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0C0C0F]">
+                {/* Header */}
+                <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-white px-5 py-3.5 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500/12 text-accent-600 dark:text-accent-300">
+                    <Filter className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">
+                      Filters
+                    </h2>
+                    <p className="text-[11px] text-slate-500 dark:text-white/45">
+                      {scope === "apollo"
+                        ? "Searching all of Apollo"
+                        : "Searching this list’s vessel companies"}
+                    </p>
+                  </div>
+                  {totalActive > 0 ? (
+                    <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-500 px-1.5 text-[10px] font-bold text-white">
+                      {totalActive}
+                    </span>
+                  ) : null}
+                  {totalActive > 0 ? (
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      className="ml-auto rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                    >
+                      Clear all
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    aria-label="Close filters"
+                    className={`rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:text-white/45 dark:hover:bg-white/[0.06] dark:hover:text-white ${
+                      totalActive > 0 ? "" : "ml-auto"
+                    }`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Body: category rail + active pane */}
+                <div className="flex min-h-0 flex-1">
+                  <nav className="scrollbar-thin w-[188px] shrink-0 space-y-0.5 overflow-y-auto border-r border-slate-100 bg-slate-50/50 p-2 dark:border-white/[0.06] dark:bg-white/[0.015]">
+                    {categories.map((cat) => {
+                      const active = category === cat.key;
+                      const Icon = cat.icon;
+                      return (
+                        <button
+                          key={cat.key}
+                          type="button"
+                          onClick={() => setCategory(cat.key)}
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] font-medium transition-all ${
+                            active
+                              ? "bg-white text-accent-700 shadow-sm ring-1 ring-accent-500/20 dark:bg-white/[0.07] dark:text-accent-200 dark:ring-accent-400/25"
+                              : "text-slate-600 hover:bg-white/70 hover:text-slate-900 dark:text-white/60 dark:hover:bg-white/[0.04] dark:hover:text-white"
+                          }`}
+                        >
+                          <Icon
+                            className={`h-3.5 w-3.5 shrink-0 ${
+                              active ? "text-accent-500" : "text-slate-400 dark:text-white/40"
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{cat.label}</span>
+                          {cat.count > 0 ? (
+                            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+                              {cat.count}
+                            </span>
+                          ) : (
+                            <ChevronRight
+                              className={`h-3 w-3 shrink-0 transition-opacity ${
+                                active ? "opacity-100 text-accent-400" : "opacity-0"
+                              }`}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </nav>
+
+                  {/* `data-filter-scroll` is what a focused ChipInput scrolls
+                      within so its suggestion popover clears this pane's
+                      bottom edge — see the effect in ChipInput. */}
+                  <div
+                    data-filter-scroll
+                    className="scrollbar-thin min-w-0 flex-1 overflow-y-auto overscroll-contain p-5"
+                  >
+                    {category === "titles" ? (
+                      <>
+                        <PaneHeader
+                          icon={Briefcase}
+                          title="Job titles"
+                          description="Apollo matches titles loosely, so “Fleet Manager” also finds “Senior Fleet Manager”. Exclusions win over inclusions."
+                        />
+                        <div className="space-y-4">
+                          <ChipInput
+                            label="Include"
+                            placeholder="Fleet Manager, Chartering…"
+                            values={value.includeTitles}
+                            onChange={(next) => patch({ includeTitles: next })}
+                            suggestions={mergeSuggestions(
+                              DEFAULT_TITLE_SUGGESTIONS,
+                              suggestionsFromResults ?? [],
+                            )}
+                            onFetchSuggestions={titleFetcher}
+                            onFetchAllForSelectAll={fetchAllTitles}
+                            tone="include"
+                            disabled={disabled}
+                          />
+                          <ChipInput
+                            label="Exclude"
+                            placeholder="Intern, Assistant…"
+                            values={value.excludeTitles}
+                            onChange={(next) => patch({ excludeTitles: next })}
+                            suggestions={mergeSuggestions(
+                              DEFAULT_TITLE_SUGGESTIONS,
+                              suggestionsFromResults ?? [],
+                            )}
+                            onFetchSuggestions={titleFetcher}
+                            tone="exclude"
+                            disabled={disabled}
+                          />
+                        </div>
+                      </>
+                    ) : null}
+
+                    {category === "seniority" ? (
+                      <>
+                        <PaneHeader
+                          icon={Sparkles}
+                          title="Seniority"
+                          description="Apollo's own seniority buckets. Picking none means any level."
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          {SENIORITY_OPTIONS.map((option) => (
+                            <TogglePill
+                              key={option.value}
+                              active={value.seniorities.includes(option.value)}
+                              disabled={disabled}
+                              onClick={() =>
+                                patch({
+                                  seniorities: value.seniorities.includes(option.value)
+                                    ? value.seniorities.filter((v) => v !== option.value)
+                                    : [...value.seniorities, option.value],
+                                })
+                              }
+                            >
+                              {option.label}
+                            </TogglePill>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    {category === "companies" ? (
+                      <>
+                        <PaneHeader
+                          icon={Building2}
+                          title="Companies"
+                          description="Narrow to specific employers, or drop ones you never want to see."
+                        />
+                        <div className="space-y-4">
+                          <ChipInput
+                            label="Include"
+                            placeholder="V.Group, Anglo-Eastern…"
+                            values={value.includeCompanies}
+                            onChange={(next) => patch({ includeCompanies: next })}
+                            suggestions={companySuggestionsFromResults ?? []}
+                            onFetchSuggestions={companyFetcher}
+                            onFetchAllForSelectAll={fetchAllCompanies}
+                            tone="include"
+                            disabled={disabled}
+                            emptyHint="Start typing to see Apollo companies matching your term."
+                          />
+                          <ChipInput
+                            label="Exclude"
+                            placeholder="Third-party surveyors…"
+                            values={value.excludeCompanies}
+                            onChange={(next) => patch({ excludeCompanies: next })}
+                            suggestions={companySuggestionsFromResults ?? []}
+                            onFetchSuggestions={companyFetcher}
+                            tone="exclude"
+                            disabled={disabled}
+                            emptyHint="Type a company name to hide its rows."
+                          />
+                        </div>
+                      </>
+                    ) : null}
+
+                    {category === "location" ? (
+                      <>
+                        <PaneHeader
+                          icon={MapPin}
+                          title="Location"
+                          description="Where the person sits, or where their employer is headquartered — these are different filters."
+                        />
+                        <div className="space-y-4">
+                          <ChipInput
+                            label="Person is in"
+                            placeholder="London, Singapore, India…"
+                            values={value.personLocations}
+                            onChange={(next) => patch({ personLocations: next })}
+                            suggestions={[]}
+                            onFetchSuggestions={apolloPersonLocationFetcher}
+                            tone="include"
+                            disabled={disabled}
+                            emptyHint="Type a city, state or country — Apollo resolves the name."
+                          />
+                          <ChipInput
+                            label="Company HQ is in"
+                            placeholder="United Kingdom, UAE…"
+                            values={value.companyLocations}
+                            onChange={(next) => patch({ companyLocations: next })}
+                            suggestions={[]}
+                            onFetchSuggestions={apolloCompanyLocationFetcher}
+                            tone="include"
+                            disabled={disabled}
+                            emptyHint="Where the business is based, not the person."
+                          />
+                        </div>
+                      </>
+                    ) : null}
+
+                    {category === "size" ? (
+                      <>
+                        <PaneHeader
+                          icon={Users2}
+                          title="Company size"
+                          description="Headcount, not revenue. Apollo matches these exact bands, so a custom range would return nothing."
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          {EMPLOYEE_BANDS.map((band) => (
+                            <TogglePill
+                              key={band.value}
+                              active={value.employeeRanges.includes(band.value)}
+                              disabled={disabled}
+                              onClick={() =>
+                                patch({
+                                  employeeRanges: value.employeeRanges.includes(band.value)
+                                    ? value.employeeRanges.filter((v) => v !== band.value)
+                                    : [...value.employeeRanges, band.value],
+                                })
+                              }
+                            >
+                              {band.label}
+                            </TogglePill>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    {category === "keywords" ? (
+                      <>
+                        {/* Deliberately "keywords", not "Industry". Apollo's
+                            public search API has no industry facet — its UI
+                            picker maps to undocumented internal tag ids — so
+                            these terms are matched as free text. Calling it an
+                            industry filter would promise exact matching we
+                            cannot deliver. */}
+                        <PaneHeader
+                          icon={Tag}
+                          title="Industry & keywords"
+                          description="Free-text match across the company profile. Apollo exposes no exact industry filter, so industry and market-segment terms go here."
+                        />
+                        <input
+                          value={value.keywords}
+                          onChange={(e) => patch({ keywords: e.target.value })}
+                          disabled={disabled}
+                          placeholder="Shipping, Chemicals, Bunkering…"
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 dark:placeholder:text-white/30"
+                        />
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
+                  <p className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-white/45">
+                    {totalActive === 0
+                      ? "No filters — Apollo will return everyone in scope."
+                      : `${totalActive} filter${totalActive === 1 ? "" : "s"} active · searching is free`}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08]"
+                  >
+                    Done
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onApply();
+                    }}
+                    disabled={disabled}
+                    className="group inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[12.5px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
+                  >
+                    {disabled ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+                    )}
+                    Apply &amp; search
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
@@ -905,7 +1111,10 @@ function SavedFilterSets({
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        className="inline-flex flex-1 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-accent-400 hover:text-accent-600 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:border-accent-400/60"
+        /* Fixed width, not flex-1: this now sits in a shrink-0 toolbar slot,
+           where "grow to fill" has no width to resolve against and a long set
+           name would stretch the whole toolbar. */
+        className="inline-flex w-[124px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-accent-400 hover:text-accent-600 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:border-accent-400/60"
       >
         <Bookmark className="h-3.5 w-3.5 shrink-0 text-accent-500" />
         <span className="min-w-0 flex-1 truncate text-left">
@@ -925,7 +1134,7 @@ function SavedFilterSets({
         }}
         disabled={disabled || !hasFilter}
         title={hasFilter ? "Save this filter as a set" : "Add some filters first"}
-        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent-500/25 bg-accent-500/10 px-2 py-1.5 text-[12px] font-semibold text-accent-600 shadow-sm transition hover:bg-accent-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-500/10 disabled:hover:text-accent-600 dark:text-accent-200 dark:disabled:hover:text-accent-200"
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-500/25 bg-accent-500/10 px-2.5 py-2 text-[12px] font-semibold text-accent-600 shadow-sm transition hover:bg-accent-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-500/10 disabled:hover:text-accent-600 dark:text-accent-200 dark:disabled:hover:text-accent-200"
       >
         <BookmarkPlus className="h-3.5 w-3.5" />
         Save
@@ -933,7 +1142,9 @@ function SavedFilterSets({
 
       {/* Naming popover — used for both "create" and "rename" flows */}
       {naming ? (
-        <div className="absolute left-0 right-0 top-full z-[70] mt-1 rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
+        /* Anchored right and given its own width — the toolbar slot it hangs
+           off is ~200px, far too narrow for a name field plus two buttons. */
+        <div className="absolute right-0 top-full z-[70] mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
             {naming.mode === "rename" ? "Rename set" : "Name this filter set"}
           </label>
@@ -977,7 +1188,7 @@ function SavedFilterSets({
       ) : null}
 
       {open ? (
-        <div className="absolute left-0 right-0 top-full z-[60] mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
+        <div className="absolute right-0 top-full z-[60] mt-1 w-[280px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
           {sets.length === 0 ? (
             <p className="px-3 py-3 text-[11px] text-slate-500 dark:text-white/50">
               No saved sets yet. Configure filters and hit <span className="font-semibold text-accent-600 dark:text-accent-300">Save</span>.
@@ -1384,10 +1595,11 @@ function ChipInput({
           inputRef.current?.focus();
           setOpen(true);
         }}
-        /* max-h + scroll: one field with 40 selected titles used to be ~700px
-           of solid chips, which is what pushed every other section (and the
-           Search button) off-screen. The well now scrolls on its own. */
-        className={`scrollbar-thin flex max-h-[104px] min-h-[36px] flex-wrap items-center gap-1.5 overflow-y-auto rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
+        /* max-h + scroll: one field with 40 selected titles is ~700px of solid
+           chips, which would push the second field and the footer out of the
+           pane. The well scrolls on its own instead. Roomier than the old
+           sidebar allowed, now that the modal isn't fighting for 300px. */
+        className={`scrollbar-thin flex max-h-[148px] min-h-[38px] flex-wrap items-center gap-1.5 overflow-y-auto rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
           open
             ? isInclude
               ? "border-accent-400 ring-2 ring-accent-500/15"

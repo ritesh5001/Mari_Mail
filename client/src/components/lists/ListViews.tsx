@@ -1662,13 +1662,18 @@ export function CampaignByRolePanel({
         </div>
       ) : null}
 
-      {/* Filters left, results right — the Apollo People-search shape. The
-          panel used to span the full width above the table, which pushed the
-          results themselves below the fold and gave the eye no grouping to
-          land on. The rail sticks so filters stay reachable while scrolling a
-          long result set. */}
-      <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:items-start">
-        <div className="lg:sticky lg:top-4">
+      {/* Filter toolbar on top, results beneath it at FULL width.
+
+          This was a 300px sticky rail beside the table. The rail was
+          permanently spending a third of the page on controls that get edited
+          in bursts and then left alone, while squeezing the results — the one
+          thing read continuously — hard enough to truncate the title and
+          company columns the table exists to show. The filter now lives in a
+          modal behind the toolbar's Filters button, so it gets more room than
+          the rail ever had at the moment it's actually in use, and none the
+          rest of the time. */}
+      <div className="space-y-4">
+        <div>
           <RoleFilterPanel
             value={filter}
             onChange={setFilter}
