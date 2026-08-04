@@ -1271,11 +1271,12 @@ contactRouter.post("/apollo/typeahead", requireAuth, async (req, res, next) => {
                 );
                 break;
               case "company_location": {
-                // Apollo returns the org's HQ location on the person's org
-                // record; not always populated so we fall back to the
-                // person's own country as a last resort.
-                const orgLoc = person.organization?.name ? person.country : null;
-                push(orgLoc ?? person.country);
+                // The org's own HQ when Apollo gives it to us, else the
+                // person's country — every row already matched the requested
+                // organization_locations, so the country is a safe proxy.
+                const org = person.organization;
+                const orgLoc = [org?.city, org?.state, org?.country].filter(Boolean).join(", ");
+                push(orgLoc || person.country);
                 break;
               }
             }

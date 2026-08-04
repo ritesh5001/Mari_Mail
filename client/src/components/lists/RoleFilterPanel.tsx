@@ -798,7 +798,10 @@ function SavedFilterSets({
     void load();
   }, [load]);
 
-  // Close the dropdown on outside click.
+  // Close the dropdown on outside click. Capture phase for the same reason as
+  // ChipInput: deleting a set unmounts its row synchronously, and a bubble-phase
+  // listener would then test a detached node, read it as an outside click, and
+  // close the dropdown out from under the user mid-manage.
   useEffect(() => {
     if (!open && !naming) return;
     function onDoc(e: MouseEvent) {
@@ -807,8 +810,8 @@ function SavedFilterSets({
         setNaming(null);
       }
     }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("mousedown", onDoc, true);
+    return () => document.removeEventListener("mousedown", onDoc, true);
   }, [open, naming]);
 
   async function save() {
@@ -1036,6 +1039,31 @@ function mergeSuggestions(base: string[], extra: string[]): string[] {
   return merged;
 }
 
+/**
+ * Multi-select chip field with live Apollo typeahead.
+ *
+ * Three behaviours here are load-bearing and easy to regress, so they are
+ * spelled out:
+ *
+ *  1. The outside-click listener runs in the CAPTURE phase. In the bubble
+ *     phase it was broken: clicking a suggestion re-rendered the list
+ *     synchronously (mousedown is a discrete event, so React flushes before
+ *     the native bubble listener runs), the clicked row was unmounted, and
+ *     `container.contains(detachedNode)` returned false — so every pick was
+ *     misread as a click outside and closed the popover. Capture fires before
+ *     React's handler, while the node is still in the tree.
+ *
+ *  2. Picking a suggestion does NOT clear the draft and does NOT remove the
+ *     row. Chosen entries stay in the list with a ticked checkbox so several
+ *     can be picked from one result set, and picking again un-picks. Clearing
+ *     the draft used to wipe the live results, which on the company fields
+ *     (no static fallback list) left the popover completely empty.
+ *
+ *  3. A refetch never blanks the list. While the new query is in flight the
+ *     previous results stay visible, narrowed locally, as long as the old
+ *     query is a prefix of the new one — refining "fleet" → "fleet m" filters
+ *     instantly and the server result just replaces it when it lands.
+ */
 function ChipInput({
   label,
   placeholder,
@@ -1061,8 +1089,10 @@ function ChipInput({
   onFetchAllForSelectAll?: () => Promise<string[]>;
 }) {
   const [draft, setDraft] = useState("");
-  const [focused, setFocused] = useState(false);
+  const [open, setOpen] = useState(false);
   const [selectAllLoading, setSelectAllLoading] = useState(false);
+  /** Keyboard cursor. -1 = nothing highlighted, so Enter commits free text. */
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [liveSuggestions, setLiveSuggestions] = useState<{ query: string; items: string[] }>({
     query: "",
     items: [],
@@ -1070,24 +1100,30 @@ function ChipInput({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Close the suggestions dropdown when focus leaves the whole chip cell.
+  // Close the popover when the pointer goes down anywhere outside this field.
+  //
+  // CAPTURE PHASE — see the note at the top of this component. This must run
+  // before React's own mousedown handlers, otherwise a pick that re-renders
+  // the list makes `contains()` test a detached node and the popover closes
+  // itself after every selection.
   useEffect(() => {
-    if (!focused) return;
-    function onDocClick(event: MouseEvent) {
+    if (!open) return;
+    function onDocPointerDown(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setFocused(false);
+        setOpen(false);
       }
     }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [focused]);
+    document.addEventListener("mousedown", onDocPointerDown, true);
+    return () => document.removeEventListener("mousedown", onDocPointerDown, true);
+  }, [open]);
 
-  // Debounced live-suggestions fetch. Fires 220ms after the user stops
-  // typing; empty draft returns to the curated/static list only. Every time
-  // the query changes we clear stale results immediately so the popover
-  // doesn't flash the previous search's items while the new fetch is in
-  // flight.
+  // Debounced live-suggestions fetch. Fires 200ms after the user stops typing.
+  //
+  // Deliberately does NOT wipe the previous results up front — render decides
+  // whether they are still relevant (see `staleItems`). Wiping here is what
+  // made the list flash empty on every keystroke.
   useEffect(() => {
     if (!onFetchSuggestions) return;
     const q = draft.trim();
@@ -1096,7 +1132,8 @@ function ChipInput({
       setLoadingSuggestions(false);
       return;
     }
-    setLiveSuggestions((prev) => (prev.query === q ? prev : { query: "", items: [] }));
+    // Already have the exact results for this query (e.g. the user deleted a
+    // character and typed it back) — nothing to do.
     let cancelled = false;
     setLoadingSuggestions(true);
     const timer = setTimeout(async () => {
@@ -1108,39 +1145,103 @@ function ChipInput({
       } finally {
         if (!cancelled) setLoadingSuggestions(false);
       }
-    }, 220);
+    }, 200);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
   }, [draft, onFetchSuggestions]);
 
-  function commit(raw: string) {
+  const draftTrimmed = draft.trim();
+  const chosen = new Set(values.map((v) => v.toLowerCase()));
+
+  /** Server results that correspond exactly to what is typed right now. */
+  const liveMatches =
+    draftTrimmed && liveSuggestions.query === draftTrimmed ? liveSuggestions.items : null;
+
+  /**
+   * Previous server results, still usable because the user is refining the
+   * same term ("fleet" → "fleet m"). Narrowed locally so the list reacts
+   * instantly instead of blanking while the new request is in flight.
+   */
+  const staleItems =
+    !liveMatches &&
+    liveSuggestions.query.length > 0 &&
+    liveSuggestions.items.length > 0 &&
+    draftTrimmed.toLowerCase().startsWith(liveSuggestions.query.toLowerCase())
+      ? liveSuggestions.items.filter((s) => s.toLowerCase().includes(draftTrimmed.toLowerCase()))
+      : null;
+
+  const serverSource = liveMatches ?? staleItems;
+  const source = serverSource ?? suggestions;
+  // Chosen entries are NOT removed — they render with a ticked checkbox so the
+  // list holds still while several are picked, and picking again un-picks.
+  const options = (() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of source) {
+      const s = raw.trim();
+      if (!s) continue;
+      const key = s.toLowerCase();
+      if (seen.has(key)) continue;
+      // Server results are already matched for this query; only the static
+      // fallback list needs local filtering.
+      if (!serverSource && draftTrimmed && !key.includes(draftTrimmed.toLowerCase())) continue;
+      seen.add(key);
+      out.push(s);
+      if (out.length >= 25) break;
+    }
+    return out;
+  })();
+
+  // Reset the keyboard cursor whenever the query changes, and clamp it if the
+  // option list shrank under it.
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [draftTrimmed]);
+  const safeActiveIndex = activeIndex >= options.length ? -1 : activeIndex;
+
+  // Keep the highlighted option in view during arrow-key navigation.
+  useEffect(() => {
+    if (safeActiveIndex < 0 || !listRef.current) return;
+    const node = listRef.current.querySelector<HTMLElement>(`[data-option-index="${safeActiveIndex}"]`);
+    node?.scrollIntoView({ block: "nearest" });
+  }, [safeActiveIndex]);
+
+  /** Commit free text (Enter / comma / "Add …"). Clears the draft. */
+  function commitFreeText(raw: string) {
     const value = raw.trim();
     if (!value) return;
-    const seen = new Set(values.map((v) => v.toLowerCase()));
-    if (seen.has(value.toLowerCase())) return;
-    onChange([...values, value]);
+    if (!chosen.has(value.toLowerCase())) onChange([...values, value]);
     setDraft("");
+    setActiveIndex(-1);
+  }
+
+  /**
+   * Toggle a suggestion in or out. Keeps the draft, the popover and the option
+   * list exactly as they are — this is what makes multi-select from a single
+   * result set work.
+   */
+  function toggleSuggestion(suggestion: string) {
+    const key = suggestion.trim().toLowerCase();
+    if (!key) return;
+    if (chosen.has(key)) {
+      onChange(values.filter((v) => v.toLowerCase() !== key));
+    } else {
+      onChange([...values, suggestion.trim()]);
+    }
+    // The row may be re-rendered out from under the pointer; make sure focus
+    // (and therefore the popover) stays on this field.
+    inputRef.current?.focus();
+    setOpen(true);
   }
 
   function removeAt(idx: number) {
     onChange(values.filter((_, i) => i !== idx));
   }
 
-  const draftTrimmed = draft.trim();
-  const chosen = new Set(values.map((v) => v.toLowerCase()));
-  const liveMatches =
-    draftTrimmed && liveSuggestions.query === draftTrimmed ? liveSuggestions.items : null;
-  const source = liveMatches ?? suggestions;
-  const filteredSuggestions = source
-    .filter((s) => !chosen.has(s.toLowerCase()))
-    .filter((s) => {
-      if (liveMatches) return true;
-      if (!draftTrimmed) return true;
-      return s.toLowerCase().includes(draftTrimmed.toLowerCase());
-    });
-
+  // Pool Select-all operates over — every distinct suggestion this input knows
+  // about, regardless of the current draft filter.
   const selectAllPool = (() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -1208,16 +1309,33 @@ function ChipInput({
     : "text-red-600 dark:text-red-300";
   const labelDot = isInclude ? "bg-emerald-500" : "bg-red-500";
 
+  // "Add xyz" only makes sense when the typed term isn't already an option or
+  // an existing chip.
+  const canAddFreeText =
+    draftTrimmed.length > 0 &&
+    !chosen.has(draftTrimmed.toLowerCase()) &&
+    !options.some((o) => o.toLowerCase() === draftTrimmed.toLowerCase());
+
   return (
     <div ref={containerRef} className="relative">
-      <label className={`mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${labelTone}`}>
+      <label
+        className={`mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${labelTone}`}
+      >
         <span className={`h-1.5 w-1.5 rounded-full ${labelDot}`} />
         {label}
+        {values.length > 0 ? (
+          <span className="ml-auto rounded-full bg-slate-100 px-1.5 text-[10px] font-bold normal-case tracking-normal text-slate-500 dark:bg-white/10 dark:text-white/50">
+            {values.length}
+          </span>
+        ) : null}
       </label>
       <div
-        onClick={() => inputRef.current?.focus()}
+        onClick={() => {
+          inputRef.current?.focus();
+          setOpen(true);
+        }}
         className={`flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
-          focused
+          open
             ? isInclude
               ? "border-accent-400 ring-2 ring-accent-500/15"
               : "border-red-400 ring-2 ring-red-500/15"
@@ -1247,29 +1365,48 @@ function ChipInput({
           ref={inputRef}
           type="text"
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onFocus={() => setFocused(true)}
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === ",") {
+            if (event.key === "ArrowDown") {
               event.preventDefault();
-              commit(draft);
+              setOpen(true);
+              setActiveIndex((i) => (options.length === 0 ? -1 : Math.min(i + 1, options.length - 1)));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveIndex((i) => (i <= 0 ? -1 : i - 1));
+            } else if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              // A highlighted option wins; otherwise the typed text is taken
+              // verbatim. Picking via Enter keeps the popover open, exactly
+              // like picking with the mouse.
+              const highlighted = safeActiveIndex >= 0 ? options[safeActiveIndex] : undefined;
+              if (highlighted) toggleSuggestion(highlighted);
+              else commitFreeText(draft);
             } else if (event.key === "Backspace" && draft === "" && values.length > 0) {
               event.preventDefault();
               removeAt(values.length - 1);
             } else if (event.key === "Escape") {
-              setFocused(false);
-              (event.target as HTMLInputElement).blur();
+              event.preventDefault();
+              setOpen(false);
+              setActiveIndex(-1);
             }
           }}
           disabled={disabled}
-          placeholder={values.length === 0 ? placeholder : ""}
+          placeholder={values.length === 0 ? placeholder : "Add another…"}
           className="min-w-[100px] flex-1 border-none bg-transparent text-[13px] text-slate-950 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/35"
         />
         {loadingSuggestions && draftTrimmed ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400 dark:text-white/40" />
         ) : null}
       </div>
-      {focused ? (
+      {open ? (
         <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
           {selectAllPool.length > 0 || onFetchAllForSelectAll ? (
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
@@ -1295,7 +1432,7 @@ function ChipInput({
                 )}
                 <span className="font-semibold uppercase tracking-wide">
                   {selectAllLoading
-                    ? "Fetching every title…"
+                    ? "Fetching everything…"
                     : allSelected
                       ? "Deselect all"
                       : "Select all"}
@@ -1308,19 +1445,28 @@ function ChipInput({
               ) : null}
             </div>
           ) : null}
-          <div className="flex-1 overflow-y-auto">
-            {loadingSuggestions ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-500 dark:text-white/60">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Searching Apollo…
-              </div>
-            ) : filteredSuggestions.length === 0 ? (
-              draftTrimmed ? (
+
+          {/* Thin progress bar while a refetch is in flight, so the list can
+              keep showing the previous (narrowed) results instead of blanking. */}
+          {loadingSuggestions && options.length > 0 ? (
+            <div className="h-0.5 w-full overflow-hidden bg-accent-500/10">
+              <div className="h-full w-1/3 animate-[shimmer_1.1s_ease-in-out_infinite] bg-accent-500/60" />
+            </div>
+          ) : null}
+
+          <div ref={listRef} className="flex-1 overflow-y-auto">
+            {options.length === 0 ? (
+              loadingSuggestions ? (
+                <div className="flex items-center gap-2 px-3 py-2.5 text-[12px] text-slate-500 dark:text-white/60">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Searching Apollo…
+                </div>
+              ) : canAddFreeText ? (
                 <button
                   type="button"
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    commit(draftTrimmed);
+                    commitFreeText(draftTrimmed);
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50 dark:text-white/85 dark:hover:bg-white/[0.04]"
                 >
@@ -1335,58 +1481,91 @@ function ChipInput({
                 </p>
               )
             ) : (
-              filteredSuggestions.slice(0, 20).map((suggestion) => {
-                const checked = values.some((v) => v.toLowerCase() === suggestion.toLowerCase());
-                // Highlight the matching substring so users can see WHY each
-                // suggestion made the cut — a small touch that makes the
-                // popover feel like a first-class typeahead.
-                const parts = draftTrimmed
-                  ? splitByMatch(suggestion, draftTrimmed)
-                  : [{ text: suggestion, match: false }];
-                return (
-                  <div
-                    key={suggestion}
+              <>
+                {options.map((suggestion, index) => {
+                  const checked = chosen.has(suggestion.toLowerCase());
+                  const active = index === safeActiveIndex;
+                  const parts = draftTrimmed
+                    ? splitByMatch(suggestion, draftTrimmed)
+                    : [{ text: suggestion, match: false }];
+                  return (
+                    <div
+                      key={suggestion}
+                      data-option-index={index}
+                      role="option"
+                      aria-selected={checked}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onMouseDown={(event) => {
+                        // preventDefault keeps DOM focus on the input so the
+                        // popover survives the pick.
+                        event.preventDefault();
+                        toggleSuggestion(suggestion);
+                      }}
+                      className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] transition ${
+                        active
+                          ? "bg-accent-500/[0.14] text-slate-950 dark:text-white"
+                          : checked
+                            ? "bg-accent-500/[0.07] text-slate-950 dark:text-white"
+                            : "text-slate-700 dark:text-white/85"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        readOnly
+                        tabIndex={-1}
+                        className="pointer-events-none h-3.5 w-3.5 rounded border-slate-300 text-accent-500"
+                        aria-label={`${checked ? "Remove" : "Add"} ${suggestion}`}
+                      />
+                      <span className="flex-1 truncate">
+                        {parts.map((part, i) =>
+                          part.match ? (
+                            <mark
+                              key={i}
+                              className="rounded bg-accent-500/20 px-0.5 text-accent-700 dark:text-accent-200"
+                            >
+                              {part.text}
+                            </mark>
+                          ) : (
+                            <span key={i}>{part.text}</span>
+                          ),
+                        )}
+                      </span>
+                      {checked ? (
+                        <Check className="h-3 w-3 shrink-0 text-accent-500" />
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {/* Free text that matches nothing in the list is still a valid
+                    Apollo term — offer it under the results rather than making
+                    the user clear the list to reach it. */}
+                {canAddFreeText ? (
+                  <button
+                    type="button"
                     onMouseDown={(event) => {
                       event.preventDefault();
-                      if (checked) {
-                        onChange(values.filter((v) => v.toLowerCase() !== suggestion.toLowerCase()));
-                      } else {
-                        commit(suggestion);
-                      }
+                      commitFreeText(draftTrimmed);
                     }}
-                    className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] transition ${
-                      checked
-                        ? "bg-accent-500/10 text-slate-950 dark:text-white"
-                        : "text-slate-700 hover:bg-slate-50 dark:text-white/85 dark:hover:bg-white/[0.04]"
-                    }`}
+                    className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-left text-[12px] text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-white/70 dark:hover:bg-white/[0.04]"
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      readOnly
-                      tabIndex={-1}
-                      className="pointer-events-none h-3.5 w-3.5 rounded border-slate-300 text-accent-500"
-                      aria-label={`${checked ? "Remove" : "Add"} ${suggestion}`}
-                    />
-                    <span className="flex-1 truncate">
-                      {parts.map((part, i) =>
-                        part.match ? (
-                          <mark
-                            key={i}
-                            className="rounded bg-accent-500/20 px-0.5 text-accent-700 dark:text-accent-200"
-                          >
-                            {part.text}
-                          </mark>
-                        ) : (
-                          <span key={i}>{part.text}</span>
-                        ),
-                      )}
+                    <span className="rounded-full bg-accent-500/15 px-1.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
+                      +
                     </span>
-                  </div>
-                );
-              })
+                    Use &ldquo;{draftTrimmed}&rdquo; exactly
+                  </button>
+                ) : null}
+              </>
             )}
           </div>
+
+          {/* Footer hint — makes multi-select discoverable. */}
+          {options.length > 0 ? (
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[10px] text-slate-400 dark:border-white/10 dark:bg-white/[0.03] dark:text-white/35">
+              <span>Click to add or remove — pick as many as you like</span>
+              <span className="shrink-0">↑↓ · Enter</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

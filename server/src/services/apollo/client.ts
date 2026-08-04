@@ -10,6 +10,12 @@ export type ApolloOrganization = {
   website_url?: string | null;
   primary_domain?: string | null;
   linkedin_url?: string | null;
+  // HQ location. Apollo populates these inconsistently, so every reader must
+  // treat them as optional — the company-location typeahead falls back to the
+  // person's own country when they're absent.
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
 };
 
 export type ApolloPerson = {

@@ -1530,6 +1530,47 @@ export function CampaignByRolePanel({
     [listId, vesselKey],
   );
 
+  // Live company lookups for the Companies chip inputs in VESSEL scope.
+  //
+  // These had no live loader at all, so the popover only ever offered
+  // companies already present in the last result set — which is empty before
+  // the first search, leaving the field with nothing to suggest. Scoped to the
+  // list's own vessels deliberately: suggesting arbitrary Apollo companies
+  // here would produce filters that match nothing, because a vessel-scoped
+  // search only ever covers these domains.
+  const fetchCompanySuggestions = useCallback(
+    async (draft: string): Promise<string[]> => {
+      const query = draft.trim();
+      if (!query) return [];
+      try {
+        const res = await apiFetch(`/api/contacts/external-by-list/${listId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page: 1, vesselId: vesselIds ?? [] }),
+        });
+        if (!res.ok) return [];
+        const payload = (await res.json()) as ApolloListResponse;
+        const rows = payload.data?.rows ?? [];
+        const needle = query.toLowerCase();
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const row of rows) {
+          const name = (row.companyName ?? "").trim();
+          if (!name) continue;
+          const lower = name.toLowerCase();
+          if (!lower.includes(needle) || seen.has(lower)) continue;
+          seen.add(lower);
+          out.push(name);
+          if (out.length >= 15) break;
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    },
+    [listId, vesselKey],
+  );
+
   // Select-all loaders. Both hit the same list-scoped Apollo search endpoint
   // with no query, then return every distinct title / company Apollo knows
   // about at these vessels' companies. The result is used to bulk-populate
@@ -1639,6 +1680,7 @@ export function CampaignByRolePanel({
                   // wiring them here would fire a request that always comes
                   // back empty and leave a Select-all pill that does nothing.
                   fetchTitleSuggestions,
+                  fetchCompanySuggestions,
                   fetchAllTitles,
                   fetchAllCompanies,
                 })}

@@ -633,3 +633,11 @@ html.dark .marimail-phone .PhoneInputCountrySelectArrow {
 .animate-in-fade {
   animation: vessel-filter-fade-in 180ms ease-out both;
 }
+
+/* Indeterminate progress sliver shown inside the RoleFilterPanel typeahead
+   while a refetch is in flight — lets the popover keep the previous results
+   on screen instead of blanking to a spinner on every keystroke. */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
