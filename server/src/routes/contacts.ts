@@ -1183,6 +1183,120 @@ contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * Live typeahead over Apollo — used by the RoleFilterPanel chip inputs so
+ * users see real Apollo strings while they type instead of guessing.
+ *
+ * All four fields share one Apollo people-search round trip and pluck the
+ * unique values from the returned rows:
+ *   - `title`            → distinct person titles matching the query
+ *   - `company`          → distinct organization names matching the query
+ *   - `person_location`  → distinct person cities/countries matching the query
+ *   - `company_location` → distinct organization HQ locations matching the query
+ *
+ * Searching costs no Apollo credits — this is the same call the main search
+ * uses, just with a tiny page size — but we still cache to keep repeated
+ * keystrokes cheap.
+ */
+const apolloTypeaheadSchema = z.object({
+  field: z.enum(["title", "company", "person_location", "company_location"]),
+  query: z.string().trim().min(1).max(80),
+  limit: z.number().int().min(1).max(25).optional(),
+});
+
+contactRouter.post("/apollo/typeahead", requireAuth, async (req, res, next) => {
+  try {
+    const input = apolloTypeaheadSchema.safeParse(req.body ?? {});
+    if (!input.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
+    }
+    const { workspaceId: searchWorkspaceId } = (req as AuthedRequest).auth;
+    const creds = await resolveApolloCredentials(searchWorkspaceId);
+    if (!creds) return sendData(res, { suggestions: [] });
+    const settings = await getOrCreateApolloSettings();
+    const apolloConfig = { baseUrl: creds.apiBaseUrl.replace(/\/$/, ""), apiKey: creds.apiKey };
+
+    const { field, query } = input.data;
+    const limit = input.data.limit ?? 12;
+    const cacheKey = `apollo:typeahead:${field}:${createHash("sha1")
+      .update(`${query.toLowerCase()}|${creds.accountId ?? "platform"}`)
+      .digest("hex")}`;
+
+    let cacheHit = true;
+    try {
+      const suggestions = await cacheJson<string[]>(
+        cacheKey,
+        Math.max(60, Math.min(settings.cacheTtlSeconds, 900)),
+        async () => {
+          cacheHit = false;
+          await recordApolloQuery();
+          const searchParams: Parameters<typeof apolloSearchPersons>[0] =
+            field === "title"
+              ? { person_titles: [query], page: 1, per_page: 50 }
+              : field === "company"
+                ? { q_keywords: query, page: 1, per_page: 50 }
+                : field === "person_location"
+                  ? { person_locations: [query], page: 1, per_page: 50 }
+                  : { organization_locations: [query], page: 1, per_page: 50 };
+          const result = await apolloSearchPersons(searchParams, apolloConfig);
+          const seen = new Set<string>();
+          const out: string[] = [];
+          const lower = query.toLowerCase();
+          const push = (raw: string | null | undefined) => {
+            const trimmed = (raw ?? "").trim();
+            if (!trimmed) return;
+            const key = trimmed.toLowerCase();
+            if (seen.has(key)) return;
+            // Suggestions must contain what the user typed; Apollo's fuzzy
+            // matcher will happily return "Chartering Broker" for "manager"
+            // otherwise and the popover looks broken.
+            if (!key.includes(lower)) return;
+            seen.add(key);
+            out.push(trimmed);
+          };
+          for (const person of result.rows) {
+            if (out.length >= limit) break;
+            switch (field) {
+              case "title":
+                push(person.title);
+                break;
+              case "company":
+                push(person.organization?.name);
+                break;
+              case "person_location":
+                push(
+                  [person.city, person.state, person.country].filter(Boolean).join(", ") ||
+                    person.country ||
+                    person.city,
+                );
+                break;
+              case "company_location": {
+                // Apollo returns the org's HQ location on the person's org
+                // record; not always populated so we fall back to the
+                // person's own country as a last resort.
+                const orgLoc = person.organization?.name ? person.country : null;
+                push(orgLoc ?? person.country);
+                break;
+              }
+            }
+          }
+          return out;
+        },
+      );
+      if (cacheHit) await recordApolloCacheHit();
+      return sendData(res, { suggestions });
+    } catch (error) {
+      console.warn(
+        "[apollo] typeahead failed:",
+        error instanceof ApolloError ? error.message : error,
+      );
+      return sendData(res, { suggestions: [] });
+    }
+  } catch (error) {
+    return next(error);
+  }
+});
+
 contactRouter.get("/:id", requireAuth, async (req, res, next) => {
   try {
     const { workspaceId } = (req as AuthedRequest).auth;

@@ -1,7 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Bookmark, BookmarkPlus, ChevronRight, Filter, Loader2, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bookmark,
+  BookmarkPlus,
+  Briefcase,
+  Building2,
+  Check,
+  ChevronDown,
+  Filter,
+  Globe2,
+  Loader2,
+  MapPin,
+  Pencil,
+  Search,
+  Sparkles,
+  Tag,
+  Trash2,
+  Users2,
+  X,
+} from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 
 /**
@@ -71,10 +89,9 @@ export const EMPLOYEE_BANDS: Array<{ value: string; label: string }> = [
 ];
 
 /**
- * Curated maritime-role suggestions that show up in the include-title
- * dropdown before the user has typed anything specific. Kept as a fallback
- * / initial state; the live suggestion loader takes over once the user
- * starts typing.
+ * Curated maritime-role suggestions that surface before Apollo has any live
+ * hits to offer — the moment the user starts typing, Apollo's typeahead
+ * takes over and this list is only used to seed the empty state.
  */
 const DEFAULT_TITLE_SUGGESTIONS = [
   "Fleet Manager",
@@ -99,12 +116,6 @@ const DEFAULT_TITLE_SUGGESTIONS = [
 /**
  * Apollo's seniority buckets, as one row of toggles.
  *
- * These were dropped from the UI for being too crowded, which left the field
- * on RoleFilter and still being sent to the server while nothing could set it
- * — a filter we pay Apollo to support and no one could reach. Back as compact
- * toggles rather than the old chip input: it is a short fixed vocabulary, so
- * free-text entry with autocomplete was always the wrong control for it.
- *
  * Values are Apollo's own enum strings; the labels are ours.
  */
 const SENIORITY_OPTIONS: Array<{ value: string; label: string }> = [
@@ -120,18 +131,43 @@ const SENIORITY_OPTIONS: Array<{ value: string; label: string }> = [
 ];
 
 /**
- * One collapsible filter group, modelled on Apollo's People search sidebar:
- * a dense row you can scan, an active-count badge, and contents that only take
- * vertical space when you open them.
+ * Live Apollo typeahead shared by every chip input on the panel. Kept in this
+ * module so the callers never have to wire four near-identical debouncers.
  *
- * The previous panel laid every control out at once across the full page
- * width. That is fine with four fields and unreadable past that — the eye has
- * no grouping to land on, and the results table gets pushed below the fold.
+ * Fires POST /api/contacts/apollo/typeahead with { field, query }; server
+ * caches per query so repeated keystrokes are cheap. Returns [] on failure.
+ */
+async function apolloTypeahead(
+  field: "title" | "company" | "person_location" | "company_location",
+  query: string,
+): Promise<string[]> {
+  const q = query.trim();
+  if (!q) return [];
+  try {
+    const res = await apiFetch("/api/contacts/apollo/typeahead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ field, query: q }),
+    });
+    if (!res.ok) return [];
+    const payload = (await res.json()) as { data?: { suggestions?: string[] } };
+    return Array.isArray(payload.data?.suggestions) ? payload.data!.suggestions! : [];
+  } catch {
+    return [];
+  }
+}
+
+type FilterIcon = React.ComponentType<{ className?: string }>;
+
+/**
+ * One collapsible filter group. Denser than a card — Apollo's own People
+ * search sits at this altitude and the eye lands on section headers first.
  */
 function FilterSection({
   title,
   count,
   hint,
+  icon: Icon,
   defaultOpen = false,
   children,
 }: {
@@ -139,6 +175,7 @@ function FilterSection({
   count?: number;
   /** Shown next to the title when collapsed — a summary of the current value. */
   hint?: string;
+  icon: FilterIcon;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
@@ -149,26 +186,37 @@ function FilterSection({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+        className="group flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[0.03]"
       >
-        <ChevronRight
-          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/35 ${
-            open ? "rotate-90" : ""
+        <span
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors ${
+            (count ?? 0) > 0
+              ? "border-accent-500/30 bg-accent-500/10 text-accent-600 dark:text-accent-300"
+              : "border-slate-200 bg-white text-slate-500 group-hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/50"
           }`}
-        />
-        <span className="text-[13px] font-medium text-slate-800 dark:text-white/85">{title}</span>
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <span className="text-[13px] font-semibold text-slate-800 dark:text-white/90">{title}</span>
         {count ? (
-          <span className="rounded-full bg-accent-500/12 px-1.5 py-0.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
+          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
             {count}
           </span>
         ) : null}
         {!open && hint ? (
-          <span className="ml-auto truncate text-[11px] text-slate-400 dark:text-white/35">
+          <span className="ml-auto max-w-[130px] truncate text-[11px] text-slate-400 dark:text-white/35">
             {hint}
           </span>
         ) : null}
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/40 ${
+            open ? "rotate-180" : ""
+          } ${!open && hint ? "ml-1" : "ml-auto"}`}
+        />
       </button>
-      {open ? <div className="px-3 pb-3.5 pt-0.5">{children}</div> : null}
+      {open ? (
+        <div className="px-3.5 pb-3.5 pt-1">{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -193,31 +241,13 @@ export function RoleFilterPanel({
   value: RoleFilter;
   onChange: (next: RoleFilter) => void;
   onApply: () => void;
-  // Titles that showed up in the last set of results — merged into the
-  // dropdown so the user can pick a title they just saw instead of guessing.
   suggestionsFromResults?: string[];
-  // Same idea for companies — feed distinct company names from the latest
-  // Apollo rows so the exclude/include-company pickers show real matches.
   companySuggestionsFromResults?: string[];
-  // Live-suggestions loader for the include-title input. Called with the
-  // typed draft (debounced by the ChipInput) — return top-N matching titles.
   fetchTitleSuggestions?: SuggestFn;
-  // Live-suggestions loader for the company pickers. Optional — without it,
-  // suggestions fall back to `companySuggestionsFromResults` filtered locally.
   fetchCompanySuggestions?: SuggestFn;
-  // Select-all loaders. Fetch every title / every company Apollo has for
-  // these vessels' companies, in one shot. Powers the Select-all pill on
-  // the Include-titles / Include-companies chip inputs.
   fetchAllTitles?: () => Promise<string[]>;
   fetchAllCompanies?: () => Promise<string[]>;
   disabled?: boolean;
-  /**
-   * Refinements applied to results already on screen. These used to be loose
-   * `<select>`s floating in the results bar — the same job as everything else
-   * in this panel, in a different place, with different behaviour and no
-   * indication either way. They live here now, in their own group, because
-   * unlike the fields above they take effect immediately rather than on Search.
-   */
   resultFilter?: ResultFilter;
   onResultFilterChange?: (next: ResultFilter) => void;
   /** Countries present in the current results; empty hides the control. */
@@ -251,41 +281,103 @@ export function RoleFilterPanel({
     onChange(EMPTY_ROLE_FILTER);
   }
 
-  const activeChips: Array<{ key: string; label: string; onRemove: () => void }> = [
+  // Apollo-scope defaults every chip input to Apollo's own typeahead so cold
+  // searches get real live suggestions, not just the 17 curated titles that
+  // used to be the only autocomplete on this panel. Vessel-scope keeps the
+  // parent-supplied loaders (title histogram from the list) as-is.
+  const apolloTitleFetcher = useMemo<SuggestFn>(
+    () => (draft) => apolloTypeahead("title", draft),
+    [],
+  );
+  const apolloCompanyFetcher = useMemo<SuggestFn>(
+    () => (draft) => apolloTypeahead("company", draft),
+    [],
+  );
+  const apolloPersonLocationFetcher = useMemo<SuggestFn>(
+    () => (draft) => apolloTypeahead("person_location", draft),
+    [],
+  );
+  const apolloCompanyLocationFetcher = useMemo<SuggestFn>(
+    () => (draft) => apolloTypeahead("company_location", draft),
+    [],
+  );
+
+  const titleFetcher = fetchTitleSuggestions ?? (scope === "apollo" ? apolloTitleFetcher : undefined);
+  const companyFetcher = fetchCompanySuggestions ?? (scope === "apollo" ? apolloCompanyFetcher : undefined);
+
+  const activeChips: Array<{ key: string; label: string; onRemove: () => void; tone: "include" | "exclude" }> = [
     ...value.includeTitles.map((t) => ({
       key: `it:${t}`,
-      label: `Title: ${t}`,
+      label: t,
+      tone: "include" as const,
       onRemove: () => patch({ includeTitles: value.includeTitles.filter((v) => v !== t) }),
     })),
     ...value.excludeTitles.map((t) => ({
       key: `xt:${t}`,
-      label: `Not title: ${t}`,
+      label: `not ${t}`,
+      tone: "exclude" as const,
       onRemove: () => patch({ excludeTitles: value.excludeTitles.filter((v) => v !== t) }),
     })),
     ...value.includeCompanies.map((c) => ({
       key: `ic:${c}`,
-      label: `Company: ${c}`,
+      label: `@ ${c}`,
+      tone: "include" as const,
       onRemove: () => patch({ includeCompanies: value.includeCompanies.filter((v) => v !== c) }),
     })),
     ...value.excludeCompanies.map((c) => ({
       key: `xc:${c}`,
-      label: `Not company: ${c}`,
+      label: `not @ ${c}`,
+      tone: "exclude" as const,
       onRemove: () => patch({ excludeCompanies: value.excludeCompanies.filter((v) => v !== c) }),
     })),
     ...value.seniorities.map((sv) => ({
       key: `s:${sv}`,
       label: SENIORITY_OPTIONS.find((o) => o.value === sv)?.label ?? sv,
+      tone: "include" as const,
       onRemove: () => patch({ seniorities: value.seniorities.filter((v) => v !== sv) }),
     })),
+    ...value.personLocations.map((l) => ({
+      key: `pl:${l}`,
+      label: l,
+      tone: "include" as const,
+      onRemove: () => patch({ personLocations: value.personLocations.filter((v) => v !== l) }),
+    })),
+    ...value.companyLocations.map((l) => ({
+      key: `cl:${l}`,
+      label: `HQ ${l}`,
+      tone: "include" as const,
+      onRemove: () => patch({ companyLocations: value.companyLocations.filter((v) => v !== l) }),
+    })),
+    ...value.employeeRanges.map((band) => ({
+      key: `er:${band}`,
+      label: `${EMPLOYEE_BANDS.find((b) => b.value === band)?.label ?? band} employees`,
+      tone: "include" as const,
+      onRemove: () => patch({ employeeRanges: value.employeeRanges.filter((v) => v !== band) }),
+    })),
+    ...(value.keywords.trim()
+      ? [
+          {
+            key: `kw`,
+            label: `“${value.keywords.trim()}”`,
+            tone: "include" as const,
+            onRemove: () => patch({ keywords: "" }),
+          },
+        ]
+      : []),
   ];
 
   return (
-    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-white/[0.02]">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5 dark:border-white/[0.06]">
-        <Filter className="h-3.5 w-3.5 text-accent-500" />
-        <p className="text-[13px] font-semibold text-slate-900 dark:text-white">Filters</p>
+    <section className="overflow-hidden rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
+      {/* Panel header — brand pill, count, clear-all */}
+      <div className="flex items-center gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50/70 via-white to-white px-3.5 py-3 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent-500/12 text-accent-600 dark:text-accent-300">
+          <Filter className="h-3.5 w-3.5" />
+        </span>
+        <p className="text-[13px] font-semibold tracking-tight text-slate-900 dark:text-white">
+          Filters
+        </p>
         {totalActive > 0 ? (
-          <span className="rounded-full bg-accent-500/12 px-1.5 py-0.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
+          <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
             {totalActive}
           </span>
         ) : null}
@@ -294,61 +386,71 @@ export function RoleFilterPanel({
             type="button"
             onClick={clearAll}
             disabled={disabled}
-            className="ml-auto text-[11px] font-medium text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-white/50"
+            className="ml-auto rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
           >
             Clear all
           </button>
         ) : null}
       </div>
 
-      {/* Applied filters as removable chips, the way Apollo surfaces them —
-          so what's active is readable without opening every section. */}
-      {activeChips.length > 0 ? (
-        <div className="flex flex-wrap gap-1 border-b border-slate-100 px-3 py-2 dark:border-white/[0.06]">
-          {activeChips.map((chip) => (
-            <button
-              key={chip.key}
-              type="button"
-              onClick={chip.onRemove}
-              disabled={disabled}
-              className="group inline-flex max-w-full items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:bg-white/[0.08] dark:text-white/70 dark:hover:bg-white/[0.12]"
-            >
-              <span className="truncate">{chip.label}</span>
-              <X className="h-2.5 w-2.5 shrink-0 opacity-50 group-hover:opacity-100" />
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="px-3 py-2">
+      {/* Saved sets bar — pinned above the sections so users can load a preset
+          before touching anything. Save is only offered when there's something
+          to save (any active filter). */}
+      <div className="border-b border-slate-100 bg-slate-50/40 px-3.5 py-2.5 dark:border-white/[0.06] dark:bg-white/[0.015]">
         <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
       </div>
 
-      <div className="border-t border-slate-100 dark:border-white/[0.06]">
+      {/* Applied filters as removable chips, grouped by tone (include vs. exclude)
+          so what's active is scannable without opening every section. */}
+      {activeChips.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-3.5 py-2.5 dark:border-white/[0.06]">
+          {activeChips.map((chip) => {
+            const toneClass =
+              chip.tone === "include"
+                ? "border-accent-500/25 bg-accent-500/10 text-accent-700 hover:bg-accent-500/15 dark:text-accent-200"
+                : "border-red-300/40 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200";
+            return (
+              <button
+                key={chip.key}
+                type="button"
+                onClick={chip.onRemove}
+                disabled={disabled}
+                className={`group inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${toneClass}`}
+              >
+                <span className="truncate">{chip.label}</span>
+                <X className="h-2.5 w-2.5 shrink-0 opacity-60 group-hover:opacity-100" />
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div>
         <FilterSection
           title="Job titles"
+          icon={Briefcase}
           count={value.includeTitles.length + value.excludeTitles.length}
           defaultOpen
         >
           <div className="space-y-3">
             <ChipInput
-              label="Is any of"
-              placeholder="e.g. Fleet Manager"
+              label="Include"
+              placeholder="Fleet Manager, Chartering…"
               values={value.includeTitles}
               onChange={(next) => patch({ includeTitles: next })}
               suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-              onFetchSuggestions={fetchTitleSuggestions}
+              onFetchSuggestions={titleFetcher}
               onFetchAllForSelectAll={fetchAllTitles}
               tone="include"
               disabled={disabled}
             />
             <ChipInput
-              label="Is not"
-              placeholder="e.g. Intern"
+              label="Exclude"
+              placeholder="Intern, Assistant…"
               values={value.excludeTitles}
               onChange={(next) => patch({ excludeTitles: next })}
               suggestions={mergeSuggestions(DEFAULT_TITLE_SUGGESTIONS, suggestionsFromResults ?? [])}
-              onFetchSuggestions={fetchTitleSuggestions}
+              onFetchSuggestions={titleFetcher}
               tone="exclude"
               disabled={disabled}
             />
@@ -356,40 +458,10 @@ export function RoleFilterPanel({
         </FilterSection>
 
         <FilterSection
-          title="Companies"
-          count={value.includeCompanies.length + value.excludeCompanies.length}
-        >
-          <div className="space-y-3">
-            <ChipInput
-              label="Is any of"
-              placeholder="e.g. V.Group"
-              values={value.includeCompanies}
-              onChange={(next) => patch({ includeCompanies: next })}
-              suggestions={companySuggestionsFromResults ?? []}
-              onFetchSuggestions={fetchCompanySuggestions}
-              onFetchAllForSelectAll={fetchAllCompanies}
-              tone="include"
-              disabled={disabled}
-              emptyHint="Type a company name to filter results."
-            />
-            <ChipInput
-              label="Is not"
-              placeholder="e.g. Third-party surveyors"
-              values={value.excludeCompanies}
-              onChange={(next) => patch({ excludeCompanies: next })}
-              suggestions={companySuggestionsFromResults ?? []}
-              onFetchSuggestions={fetchCompanySuggestions}
-              tone="exclude"
-              disabled={disabled}
-              emptyHint="Type a company name to hide its rows."
-            />
-          </div>
-        </FilterSection>
-
-        <FilterSection
-          title="Management level"
+          title="Seniority"
+          icon={Sparkles}
           count={value.seniorities.length}
-          hint={value.seniorities.length === 0 ? "Any" : undefined}
+          hint={value.seniorities.length === 0 ? "Any" : `${value.seniorities.length} selected`}
         >
           <div className="flex flex-wrap gap-1.5">
             {SENIORITY_OPTIONS.map((option) => {
@@ -407,12 +479,13 @@ export function RoleFilterPanel({
                         : [...value.seniorities, option.value],
                     })
                   }
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all disabled:opacity-50 ${
                     active
-                      ? "border-accent-500 bg-accent-500 text-[#ffffff]"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                      ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-accent-400/40 dark:hover:bg-white/[0.08]"
                   }`}
                 >
+                  {active ? <Check className="h-2.5 w-2.5" /> : null}
                   {option.label}
                 </button>
               );
@@ -420,29 +493,69 @@ export function RoleFilterPanel({
           </div>
         </FilterSection>
 
+        <FilterSection
+          title="Companies"
+          icon={Building2}
+          count={value.includeCompanies.length + value.excludeCompanies.length}
+        >
+          <div className="space-y-3">
+            <ChipInput
+              label="Include"
+              placeholder="V.Group, Anglo-Eastern…"
+              values={value.includeCompanies}
+              onChange={(next) => patch({ includeCompanies: next })}
+              suggestions={companySuggestionsFromResults ?? []}
+              onFetchSuggestions={companyFetcher}
+              onFetchAllForSelectAll={fetchAllCompanies}
+              tone="include"
+              disabled={disabled}
+              emptyHint="Start typing to see Apollo companies matching your term."
+            />
+            <ChipInput
+              label="Exclude"
+              placeholder="Third-party surveyors…"
+              values={value.excludeCompanies}
+              onChange={(next) => patch({ excludeCompanies: next })}
+              suggestions={companySuggestionsFromResults ?? []}
+              onFetchSuggestions={companyFetcher}
+              tone="exclude"
+              disabled={disabled}
+              emptyHint="Type a company name to hide its rows."
+            />
+          </div>
+        </FilterSection>
+
         {scope === "apollo" ? (
           <>
             <FilterSection
               title="Location"
+              icon={MapPin}
               count={value.personLocations.length + value.companyLocations.length}
+              hint={
+                value.personLocations.length + value.companyLocations.length === 0
+                  ? "Anywhere"
+                  : undefined
+              }
             >
               <div className="space-y-3">
                 <ChipInput
                   label="Person is in"
-                  placeholder="e.g. London, Singapore"
+                  placeholder="London, Singapore, India…"
                   values={value.personLocations}
                   onChange={(next) => patch({ personLocations: next })}
                   suggestions={[]}
+                  onFetchSuggestions={apolloPersonLocationFetcher}
                   tone="include"
                   disabled={disabled}
-                  emptyHint="City, state or country — Apollo resolves the name."
+                  emptyHint="Type a city, state or country — Apollo resolves the name."
                 />
                 <ChipInput
                   label="Company HQ is in"
-                  placeholder="e.g. United Kingdom"
+                  placeholder="United Kingdom, UAE…"
                   values={value.companyLocations}
                   onChange={(next) => patch({ companyLocations: next })}
                   suggestions={[]}
+                  onFetchSuggestions={apolloCompanyLocationFetcher}
                   tone="include"
                   disabled={disabled}
                   emptyHint="Where the business is based, not the person."
@@ -452,8 +565,9 @@ export function RoleFilterPanel({
 
             <FilterSection
               title="Company size"
+              icon={Users2}
               count={value.employeeRanges.length}
-              hint={value.employeeRanges.length === 0 ? "Any" : undefined}
+              hint={value.employeeRanges.length === 0 ? "Any size" : undefined}
             >
               <div className="flex flex-wrap gap-1.5">
                 {EMPLOYEE_BANDS.map((band) => {
@@ -471,10 +585,10 @@ export function RoleFilterPanel({
                             : [...value.employeeRanges, band.value],
                         })
                       }
-                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-all disabled:opacity-50 ${
                         active
-                          ? "border-accent-500 bg-accent-500 text-[#ffffff]"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                          ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:border-accent-400/40 dark:hover:bg-white/[0.08]"
                       }`}
                     >
                       {band.label}
@@ -482,13 +596,14 @@ export function RoleFilterPanel({
                   );
                 })}
               </div>
-              <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
+              <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/35">
                 Apollo matches these exact bands — employees, not revenue.
               </p>
             </FilterSection>
 
             <FilterSection
               title="Industry & keywords"
+              icon={Tag}
               count={value.keywords.trim() ? 1 : 0}
               hint={value.keywords.trim() || undefined}
             >
@@ -496,119 +611,123 @@ export function RoleFilterPanel({
                 value={value.keywords}
                 onChange={(e) => patch({ keywords: e.target.value })}
                 disabled={disabled}
-                placeholder="e.g. Computer Software, E-commerce, SaaS"
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 outline-none focus:border-accent-400 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+                placeholder="Shipping, Chemicals, Bunkering…"
+                className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 dark:placeholder:text-white/30"
               />
               {/* Deliberately labelled keywords, not "Industry". Apollo's public
                   search API has no industry facet — its UI picker maps to
                   undocumented internal tag ids — so industry and market-segment
-                  terms are matched as free text. Calling this an industry filter
-                  would promise exact matching we can't deliver. */}
-              <p className="mt-1.5 text-[10px] leading-4 text-slate-400 dark:text-white/30">
+                  terms are matched as free text. */}
+              <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/35">
                 Free-text match across the company profile. Industry and market
                 segment go here — Apollo exposes no exact industry filter.
               </p>
             </FilterSection>
           </>
         ) : null}
-
-        {/* Result refinements. Kept in the same rail so there is one place to
-            look, but below the Search button and labelled, because they take
-            effect immediately — presenting them identically to the sections
-            above would make Search look broken the first time one applied
-            without it. */}
-        {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
-          <>
-            <FilterSection
-              title="Email status"
-              count={resultFilter.email === "all" ? 0 : 1}
-              hint={
-                resultFilter.email === "all"
-                  ? "Any"
-                  : resultFilter.email === "available"
-                    ? "Has an email"
-                    : "No email"
-              }
-            >
-              <div className="space-y-1">
-                {(
-                  [
-                    ["all", "Any"],
-                    ["available", "Has an email"],
-                    ["unavailable", "No email"],
-                  ] as const
-                ).map(([v, label]) => (
-                  <label
-                    key={v}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-0.5 text-[12px] text-slate-700 hover:bg-slate-50 dark:text-white/70 dark:hover:bg-white/[0.05]"
-                  >
-                    <input
-                      type="radio"
-                      name="email-status"
-                      checked={resultFilter.email === v}
-                      onChange={() => onResultFilterChange({ ...resultFilter, email: v })}
-                      className="h-3.5 w-3.5 border-slate-300 text-accent-500 focus:ring-accent-400"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
-                Applies instantly to the results below.
-              </p>
-            </FilterSection>
-
-            {countryOptions.length > 0 ? (
-              <FilterSection
-                title="Country"
-                count={resultFilter.country === "all" ? 0 : 1}
-                hint={resultFilter.country === "all" ? "Any" : resultFilter.country}
-              >
-                <select
-                  value={resultFilter.country}
-                  onChange={(e) =>
-                    onResultFilterChange({ ...resultFilter, country: e.target.value })
-                  }
-                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
-                  aria-label="Filter by country"
-                >
-                  <option value="all">Any country</option>
-                  {countryOptions.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-[10px] text-slate-400 dark:text-white/30">
-                  Applies instantly to the results below.
-                </p>
-              </FilterSection>
-            ) : null}
-          </>
-        ) : null}
       </div>
 
-      {/* Search is always enabled — an empty include-title list is the "all
-          titles at these companies" Apollo default, a real search on its own.
-          Only the in-flight `disabled` prop can dim it. */}
-      <div className="border-t border-slate-100 p-3 dark:border-white/[0.06]">
+      {/* Search CTA — always enabled; empty include-title is a real Apollo
+          query. Only the in-flight `disabled` prop can dim it. */}
+      <div className="border-t border-slate-100 bg-slate-50/40 p-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
         <button
           type="button"
           onClick={onApply}
           disabled={disabled}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-accent-500 px-4 py-2 text-xs font-semibold text-[#ffffff] transition-colors hover:bg-accent-600 disabled:opacity-60"
+          className="group inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
         >
           {disabled ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
-            <Search className="h-3.5 w-3.5" />
+            <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
           )}
-          {disabled ? "Searching…" : "Search"}
+          {disabled ? "Searching Apollo…" : "Search"}
         </button>
-        <p className="mt-2 text-[10px] leading-4 text-slate-400 dark:text-white/30">
-          Searching is free — only revealing an email or phone spends a credit.
+        <p className="mt-2 text-center text-[10px] leading-4 text-slate-500 dark:text-white/40">
+          Searching is <span className="font-semibold text-emerald-600 dark:text-emerald-300">free</span> — only revealing an email or phone spends a credit.
         </p>
       </div>
+
+      {/* Refine results — same rail, distinct block. Below the Search button
+          because these apply INSTANTLY and mixing them into the sections above
+          would make Search look broken the first time one applied without it. */}
+      {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
+        <div className="border-t border-slate-100 dark:border-white/[0.06]">
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-emerald-50/40 px-3.5 py-2 dark:border-white/[0.06] dark:bg-emerald-500/[0.04]">
+            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+              <Sparkles className="h-3 w-3" />
+            </span>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-200">
+              Refine results
+            </p>
+            <span className="ml-auto text-[10px] text-emerald-600/70 dark:text-emerald-200/60">
+              Applies instantly
+            </span>
+          </div>
+
+          <FilterSection
+            title="Email status"
+            icon={Sparkles}
+            count={resultFilter.email === "all" ? 0 : 1}
+            hint={
+              resultFilter.email === "all"
+                ? "Any"
+                : resultFilter.email === "available"
+                  ? "Has email"
+                  : "No email"
+            }
+            defaultOpen
+          >
+            <div className="flex gap-1.5">
+              {(
+                [
+                  ["all", "Any"],
+                  ["available", "Has email"],
+                  ["unavailable", "No email"],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => onResultFilterChange({ ...resultFilter, email: v })}
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all ${
+                    resultFilter.email === v
+                      ? "border-accent-500 bg-accent-500 text-white shadow-sm shadow-accent-500/25"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+
+          {countryOptions.length > 0 ? (
+            <FilterSection
+              title="Country"
+              icon={Globe2}
+              count={resultFilter.country === "all" ? 0 : 1}
+              hint={resultFilter.country === "all" ? "Any" : resultFilter.country}
+            >
+              <select
+                value={resultFilter.country}
+                onChange={(e) =>
+                  onResultFilterChange({ ...resultFilter, country: e.target.value })
+                }
+                className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-700 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75"
+                aria-label="Filter by country"
+              >
+                <option value="all">Any country</option>
+                {countryOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </FilterSection>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -618,9 +737,13 @@ export function RoleFilterPanel({
 type SavedSet = { id: string; name: string; filterConfig: RoleFilter };
 
 /**
- * Save the current Role filter (include/exclude titles + companies) as a named
- * preset, and reload any saved preset with one click. Backed by the generic
- * SavedFilter table (entityType CONTACT) via /api/saved-filters.
+ * Save the current filter as a named preset, and reload any saved preset
+ * with one click. Backed by /api/saved-filters (entityType CONTACT).
+ *
+ * Redesigned from the tiny two-button row to a first-class picker: sets show
+ * up in a dropdown that also names the currently-loaded preset, and the save
+ * flow supports rename + overwrite so users can iterate on a set instead of
+ * being forced to make a new one each time.
  */
 function SavedFilterSets({
   value,
@@ -634,22 +757,30 @@ function SavedFilterSets({
   const [sets, setSets] = useState<SavedSet[]>([]);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [naming, setNaming] = useState(false);
+  const [naming, setNaming] = useState<null | { mode: "create" } | { mode: "rename"; id: string }>(null);
   const [name, setName] = useState("");
+  const [loadedId, setLoadedId] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   const hasFilter =
     value.includeTitles.length +
       value.excludeTitles.length +
       value.includeCompanies.length +
-      value.excludeCompanies.length >
+      value.excludeCompanies.length +
+      value.seniorities.length +
+      value.personLocations.length +
+      value.companyLocations.length +
+      value.employeeRanges.length +
+      (value.keywords.trim() ? 1 : 0) >
     0;
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       const res = await apiFetch("/api/saved-filters?entityType=CONTACT");
       if (!res.ok) return;
-      const body = (await res.json()) as { data?: { filters?: Array<{ id: string; name: string; filterConfig: unknown }> } };
+      const body = (await res.json()) as {
+        data?: { filters?: Array<{ id: string; name: string; filterConfig: unknown }> };
+      };
       const rows = body.data?.filters ?? [];
       setSets(
         rows.map((r) => ({
@@ -661,45 +792,65 @@ function SavedFilterSets({
     } catch {
       /* ignore */
     }
-  }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   // Close the dropdown on outside click.
   useEffect(() => {
-    if (!open) return;
+    if (!open && !naming) return;
     function onDoc(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setNaming(null);
+      }
     }
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  }, [open, naming]);
 
   async function save() {
     const trimmed = name.trim();
-    if (trimmed.length < 2) return;
+    if (trimmed.length < 2 || !naming) return;
     setSaving(true);
     try {
+      // Redesigned save: persists EVERY filter field, not just titles/companies.
+      // The old save dropped locations, employee ranges and keywords, so a
+      // loaded preset silently un-checked those fields.
+      const filterConfig = {
+        includeTitles: value.includeTitles,
+        excludeTitles: value.excludeTitles,
+        includeCompanies: value.includeCompanies,
+        excludeCompanies: value.excludeCompanies,
+        seniorities: value.seniorities,
+        personLocations: value.personLocations,
+        companyLocations: value.companyLocations,
+        employeeRanges: value.employeeRanges,
+        keywords: value.keywords,
+      };
+
+      if (naming.mode === "rename") {
+        // Overwrite = delete + re-create with the same name (or new one). The
+        // saved-filters route has no PATCH, and add-then-remove is a single
+        // click for the user so it stays fine.
+        await apiFetch(`/api/saved-filters/${naming.id}`, { method: "DELETE" });
+      }
       const res = await apiFetch("/api/saved-filters", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: trimmed,
           entityType: "CONTACT",
-          filterConfig: {
-            includeTitles: value.includeTitles,
-            excludeTitles: value.excludeTitles,
-            includeCompanies: value.includeCompanies,
-            excludeCompanies: value.excludeCompanies,
-            seniorities: value.seniorities,
-          },
+          filterConfig,
         }),
       });
       if (res.ok) {
+        const payload = (await res.json()) as { data?: { id?: string } };
         setName("");
-        setNaming(false);
+        setNaming(null);
+        if (payload.data?.id) setLoadedId(payload.data.id);
         await load();
       }
     } finally {
@@ -709,106 +860,148 @@ function SavedFilterSets({
 
   async function remove(id: string) {
     const res = await apiFetch(`/api/saved-filters/${id}`, { method: "DELETE" });
-    if (res.ok) setSets((prev) => prev.filter((s) => s.id !== id));
+    if (res.ok) {
+      setSets((prev) => prev.filter((s) => s.id !== id));
+      if (loadedId === id) setLoadedId(null);
+    }
   }
 
+  const loadedName = loadedId ? sets.find((s) => s.id === loadedId)?.name ?? null : null;
+
   return (
-    <div ref={boxRef} className="relative mt-2 flex flex-wrap items-center gap-2">
-      {/* Saved sets dropdown */}
+    <div ref={boxRef} className="relative flex items-center gap-2">
+      {/* Saved sets picker — shows the loaded set's name when there is one. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-ocean hover:text-ocean disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70"
+        className="inline-flex flex-1 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-accent-400 hover:text-accent-600 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:border-accent-400/60"
       >
-        <Bookmark className="h-3.5 w-3.5" />
-        Saved sets{sets.length ? ` (${sets.length})` : ""}
+        <Bookmark className="h-3.5 w-3.5 shrink-0 text-accent-500" />
+        <span className="min-w-0 flex-1 truncate text-left">
+          {loadedName ? loadedName : `Saved sets${sets.length ? ` (${sets.length})` : ""}`}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/40 ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {/* Save current filter */}
-      {naming ? (
-        <span className="inline-flex items-center gap-1">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") save();
-              if (e.key === "Escape") {
-                setNaming(false);
-                setName("");
-              }
-            }}
-            placeholder="Set name…"
-            className="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-accent-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
-          />
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || name.trim().length < 2}
-            className="rounded-md bg-[#4F6DFF] px-2 py-1 text-xs font-semibold text-white hover:bg-[#3B4FE6] disabled:opacity-50"
-          >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setNaming(false);
-              setName("");
-            }}
-            className="text-xs text-slate-400 hover:text-slate-600"
-          >
-            Cancel
-          </button>
-        </span>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setNaming(true)}
-          disabled={disabled || !hasFilter}
-          title={hasFilter ? "Save the current filters as a reusable set" : "Add some filters first"}
-          className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:border-ocean hover:text-ocean disabled:opacity-40 dark:border-white/15 dark:text-white/60"
-        >
-          <BookmarkPlus className="h-3.5 w-3.5" />
-          Save set
-        </button>
-      )}
+      {/* Save current filter — disabled until the user has picked at least
+          one facet; keeps empty presets out of the dropdown. */}
+      <button
+        type="button"
+        onClick={() => {
+          setNaming({ mode: "create" });
+          setName(loadedName ?? "");
+          setOpen(false);
+        }}
+        disabled={disabled || !hasFilter}
+        title={hasFilter ? "Save this filter as a set" : "Add some filters first"}
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent-500/25 bg-accent-500/10 px-2 py-1.5 text-[12px] font-semibold text-accent-600 shadow-sm transition hover:bg-accent-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-500/10 disabled:hover:text-accent-600 dark:text-accent-200 dark:disabled:hover:text-accent-200"
+      >
+        <BookmarkPlus className="h-3.5 w-3.5" />
+        Save
+      </button>
 
-      {open && (
-        <div className="absolute left-0 top-full z-[60] mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
+      {/* Naming popover — used for both "create" and "rename" flows */}
+      {naming ? (
+        <div className="absolute left-0 right-0 top-full z-[70] mt-1 rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
+          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+            {naming.mode === "rename" ? "Rename set" : "Name this filter set"}
+          </label>
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void save();
+                if (e.key === "Escape") {
+                  setNaming(null);
+                  setName("");
+                }
+              }}
+              placeholder="e.g. Fleet Managers · India"
+              className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-800 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
+            />
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={saving || name.trim().length < 2}
+              className="inline-flex items-center gap-1 rounded-md bg-accent-500 px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-600 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNaming(null);
+                setName("");
+              }}
+              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/[0.05]"
+              aria-label="Cancel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-[60] mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
           {sets.length === 0 ? (
-            <p className="px-3 py-3 text-xs text-slate-400 dark:text-white/40">
-              No saved sets yet. Build a filter and click &ldquo;Save set&rdquo;.
+            <p className="px-3 py-3 text-[11px] text-slate-500 dark:text-white/50">
+              No saved sets yet. Configure filters and hit <span className="font-semibold text-accent-600 dark:text-accent-300">Save</span>.
             </p>
           ) : (
-            <ul className="max-h-64 overflow-y-auto py-1">
-              {sets.map((s) => (
-                <li key={s.id} className="flex items-center justify-between gap-2 px-2 py-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onLoad(normalizeRoleFilter(s.filterConfig));
-                      setOpen(false);
-                    }}
-                    className="flex-1 truncate rounded px-2 py-1.5 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 hover:text-ocean dark:text-white/75 dark:hover:bg-white/[0.05]"
-                    title="Load this set"
-                  >
-                    {s.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(s.id)}
-                    aria-label={`Delete ${s.name}`}
-                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
+            <ul className="max-h-72 overflow-y-auto py-1">
+              {sets.map((s) => {
+                const isLoaded = loadedId === s.id;
+                return (
+                  <li key={s.id} className={`group flex items-center gap-1 px-1.5 py-0.5 ${isLoaded ? "bg-accent-500/[0.06]" : ""}`}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onLoad(normalizeRoleFilter(s.filterConfig));
+                        setLoadedId(s.id);
+                        setOpen(false);
+                      }}
+                      className="flex flex-1 items-center gap-2 truncate rounded px-2 py-1.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:text-accent-600 dark:text-white/80 dark:hover:bg-white/[0.05] dark:hover:text-accent-200"
+                      title="Load this set"
+                    >
+                      {isLoaded ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-accent-500" />
+                      ) : (
+                        <Bookmark className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-white/40" />
+                      )}
+                      <span className="truncate">{s.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNaming({ mode: "rename", id: s.id });
+                        setName(s.name);
+                        setOpen(false);
+                      }}
+                      aria-label={`Rename ${s.name}`}
+                      className="rounded p-1.5 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-slate-100 hover:text-accent-600 dark:hover:bg-white/[0.05]"
+                    >
+                      <Pencil className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void remove(s.id)}
+                      aria-label={`Delete ${s.name}`}
+                      className="rounded p-1.5 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -816,15 +1009,14 @@ function SavedFilterSets({
 /** Coerce arbitrary saved JSON back into a full RoleFilter (missing arrays → []). */
 function normalizeRoleFilter(raw: unknown): RoleFilter {
   const r = (raw ?? {}) as Partial<RoleFilter>;
-  const arr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const arr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
   return {
     includeTitles: arr(r.includeTitles),
     excludeTitles: arr(r.excludeTitles),
     includeCompanies: arr(r.includeCompanies),
     excludeCompanies: arr(r.excludeCompanies),
     seniorities: arr(r.seniorities),
-    // Added after the first saved sets shipped — absent in older rows, so
-    // they normalise to empty rather than breaking the load.
     personLocations: arr(r.personLocations),
     companyLocations: arr(r.companyLocations),
     employeeRanges: arr(r.employeeRanges),
@@ -866,28 +1058,11 @@ function ChipInput({
   disabled?: boolean;
   /** Text shown in the empty-state slot (draft empty, no suggestions yet). */
   emptyHint?: string;
-  /**
-   * Optional loader invoked when the user clicks Select-all. Should return
-   * every distinct entry the field's data source knows about (e.g. every
-   * title Apollo has at these vessels' companies). When present, Select-all
-   * awaits this fetch and merges the returned pool into `values` — the pill
-   * populates the field with the full universe, not just the 17 curated
-   * fallbacks. Without this callback Select-all falls back to whatever is
-   * already in the local pool (curated defaults + live-typed results).
-   */
   onFetchAllForSelectAll?: () => Promise<string[]>;
 }) {
   const [draft, setDraft] = useState("");
   const [focused, setFocused] = useState(false);
-  // Set while Select-all is fetching the full pool via onFetchAllForSelectAll,
-  // so we can show a spinner on the pill and prevent double-clicks racing.
   const [selectAllLoading, setSelectAllLoading] = useState(false);
-  // Tracks WHICH query produced the current live suggestions. Without the
-  // `query` marker the previous search's results linger and get shown
-  // (unfiltered) whenever the user starts typing a new query — that's the
-  // "second search shows old results until I leave and come back" bug.
-  // Now we treat live suggestions as authoritative only when
-  // `liveSuggestions.query === draft.trim()`.
   const [liveSuggestions, setLiveSuggestions] = useState<{ query: string; items: string[] }>({
     query: "",
     items: [],
@@ -908,7 +1083,7 @@ function ChipInput({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [focused]);
 
-  // Debounced live-suggestions fetch. Fires 250ms after the user stops
+  // Debounced live-suggestions fetch. Fires 220ms after the user stops
   // typing; empty draft returns to the curated/static list only. Every time
   // the query changes we clear stale results immediately so the popover
   // doesn't flash the previous search's items while the new fetch is in
@@ -921,8 +1096,6 @@ function ChipInput({
       setLoadingSuggestions(false);
       return;
     }
-    // Invalidate stale suggestions the moment the query changes — the "still
-    // showing 'Technical Fleet Manager' hits while I type 'fleet'" bug.
     setLiveSuggestions((prev) => (prev.query === q ? prev : { query: "", items: [] }));
     let cancelled = false;
     setLoadingSuggestions(true);
@@ -935,7 +1108,7 @@ function ChipInput({
       } finally {
         if (!cancelled) setLoadingSuggestions(false);
       }
-    }, 250);
+    }, 220);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -955,10 +1128,6 @@ function ChipInput({
     onChange(values.filter((_, i) => i !== idx));
   }
 
-  // Live suggestions take precedence once the user has typed something AND
-  // the fetched results correspond to the current draft. Anything else falls
-  // through to the curated / suggestions-from-results list, filtered locally
-  // by the draft.
   const draftTrimmed = draft.trim();
   const chosen = new Set(values.map((v) => v.toLowerCase()));
   const liveMatches =
@@ -967,21 +1136,11 @@ function ChipInput({
   const filteredSuggestions = source
     .filter((s) => !chosen.has(s.toLowerCase()))
     .filter((s) => {
-      // Live results are already server-filtered for the exact draft; only
-      // local-filter the static fallback list.
       if (liveMatches) return true;
       if (!draftTrimmed) return true;
       return s.toLowerCase().includes(draftTrimmed.toLowerCase());
     });
 
-  // The pool Select-all operates over — every distinct suggestion this input
-  // already knows about (curated + live-typed + parent-provided), regardless
-  // of the current draft filter. When `onFetchAllForSelectAll` is provided,
-  // that pool is a MINIMUM: the click also fetches the full universe from
-  // Apollo and merges it in, so a fresh page load (where the pool is just
-  // the 17 fallback titles) still fills the field with everything Apollo has
-  // at these companies. Dedup case-insensitively so "Fleet Manager" (static)
-  // and "fleet manager" (live) don't both count.
   const selectAllPool = (() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -1000,17 +1159,11 @@ function ChipInput({
 
   async function toggleSelectAll() {
     if (allSelected) {
-      // Deselect: remove every pool entry from the committed values. No fetch
-      // needed — we're only touching what's already in view.
       const poolKeys = new Set(selectAllPool.map((s) => s.toLowerCase()));
       onChange(values.filter((v) => !poolKeys.has(v.toLowerCase())));
       return;
     }
 
-    // Select: start from the local pool, then (if the caller supplied a
-    // fetcher) enrich with the full Apollo universe before committing. The
-    // fetch is awaited so the user sees the chip field fill up in one
-    // atomic write — not "17 static, then 50 more a moment later".
     let fullPool = selectAllPool;
     if (onFetchAllForSelectAll) {
       setSelectAllLoading(true);
@@ -1026,8 +1179,7 @@ function ChipInput({
           fullPool = [...fullPool, trimmed];
         }
       } catch {
-        // Fetch failure falls back to whatever's in the local pool — better
-        // to add SOMETHING than to swallow the click silently.
+        /* fall back to the local pool */
       } finally {
         setSelectAllLoading(false);
       }
@@ -1044,23 +1196,32 @@ function ChipInput({
     if (toAdd.length > 0) onChange([...values, ...toAdd]);
   }
 
-  const chipClass =
-    tone === "include"
-      ? "border-ocean/40 bg-ocean/10 text-ocean"
-      : "border-red-300 bg-red-50 text-red-700";
-  const chipCloseClass = tone === "include" ? "hover:text-white hover:bg-ocean" : "hover:text-white hover:bg-red-500";
+  const isInclude = tone === "include";
+  const chipClass = isInclude
+    ? "border-accent-500/30 bg-accent-500/10 text-accent-700 dark:text-accent-200"
+    : "border-red-300/40 bg-red-50 text-red-700 dark:border-red-400/25 dark:bg-red-500/10 dark:text-red-200";
+  const chipCloseClass = isInclude
+    ? "hover:bg-accent-500 hover:text-white"
+    : "hover:bg-red-500 hover:text-white";
+  const labelTone = isInclude
+    ? "text-emerald-700 dark:text-emerald-300"
+    : "text-red-600 dark:text-red-300";
+  const labelDot = isInclude ? "bg-emerald-500" : "bg-red-500";
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
+      <label className={`mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${labelTone}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${labelDot}`} />
         {label}
       </label>
       <div
         onClick={() => inputRef.current?.focus()}
-        className={`mt-1 flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-md border bg-white px-2 py-1.5 text-sm dark:bg-white/[0.04] ${
+        className={`flex min-h-[36px] flex-wrap items-center gap-1.5 rounded-lg border bg-white px-2 py-1.5 text-sm shadow-sm transition-all dark:bg-white/[0.04] ${
           focused
-            ? "border-ocean ring-1 ring-ocean/30 dark:border-accent-400"
-            : "border-slate-200 dark:border-white/10"
+            ? isInclude
+              ? "border-accent-400 ring-2 ring-accent-500/15"
+              : "border-red-400 ring-2 ring-red-500/15"
+            : "border-slate-200 hover:border-slate-300 dark:border-white/10 dark:hover:border-white/20"
         }`}
       >
         {values.map((value, idx) => (
@@ -1078,7 +1239,7 @@ function ChipInput({
               className={`rounded-full p-0.5 transition ${chipCloseClass}`}
               aria-label={`Remove ${value}`}
             >
-              <X className="h-3 w-3" />
+              <X className="h-2.5 w-2.5" />
             </button>
           </span>
         ))}
@@ -1102,17 +1263,14 @@ function ChipInput({
           }}
           disabled={disabled}
           placeholder={values.length === 0 ? placeholder : ""}
-          className="min-w-[120px] flex-1 border-none bg-transparent text-sm text-slate-950 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/40"
+          className="min-w-[100px] flex-1 border-none bg-transparent text-[13px] text-slate-950 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-white/35"
         />
+        {loadingSuggestions && draftTrimmed ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-slate-400 dark:text-white/40" />
+        ) : null}
       </div>
       {focused ? (
-        <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#101013]">
-          {/* Select-all pill. Two flavours:
-                clear-any  → clears the include list so Apollo returns every
-                             title at these vessels' companies (checked = the
-                             list is currently empty).
-                select     → toggles the entire known pool (curated + live +
-                             parent-provided suggestions) into `values`. */}
+        <div className="absolute left-0 right-0 z-[60] mt-1 flex max-h-72 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
           {selectAllPool.length > 0 || onFetchAllForSelectAll ? (
             <div className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5 text-[11px] dark:border-white/10 dark:bg-white/[0.03]">
               <label
@@ -1122,7 +1280,7 @@ function ChipInput({
                 }`}
               >
                 {selectAllLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-ocean" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-500" />
                 ) : (
                   <input
                     type="checkbox"
@@ -1132,12 +1290,12 @@ function ChipInput({
                       if (!selectAllLoading) void toggleSelectAll();
                     }}
                     readOnly
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-ocean"
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-accent-500"
                   />
                 )}
                 <span className="font-semibold uppercase tracking-wide">
                   {selectAllLoading
-                    ? "Loading every title…"
+                    ? "Fetching every title…"
                     : allSelected
                       ? "Deselect all"
                       : "Select all"}
@@ -1152,9 +1310,9 @@ function ChipInput({
           ) : null}
           <div className="flex-1 overflow-y-auto">
             {loadingSuggestions ? (
-              <div className="flex items-center gap-2 px-3 py-2 text-xs text-slate-500 dark:text-white/60">
+              <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-slate-500 dark:text-white/60">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Looking up titles…
+                Searching Apollo…
               </div>
             ) : filteredSuggestions.length === 0 ? (
               draftTrimmed ? (
@@ -1164,29 +1322,30 @@ function ChipInput({
                     event.preventDefault();
                     commit(draftTrimmed);
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-50 dark:text-white/80 dark:hover:bg-white/[0.04]"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-slate-700 hover:bg-slate-50 dark:text-white/85 dark:hover:bg-white/[0.04]"
                 >
-                  <span className="rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold text-slate-500 dark:bg-white/[0.06] dark:text-white/60">
+                  <span className="rounded-full bg-accent-500/15 px-1.5 text-[10px] font-bold text-accent-600 dark:text-accent-300">
                     +
                   </span>
-                  Use &ldquo;{draftTrimmed}&rdquo; anyway
+                  Add &ldquo;{draftTrimmed}&rdquo;
                 </button>
               ) : (
-                <p className="px-3 py-2 text-xs text-slate-400 dark:text-white/40">
-                  {emptyHint ?? "Start typing to see live title suggestions."}
+                <p className="px-3 py-2.5 text-[11px] text-slate-400 dark:text-white/40">
+                  {emptyHint ?? "Start typing to see live Apollo suggestions."}
                 </p>
               )
             ) : (
               filteredSuggestions.slice(0, 20).map((suggestion) => {
-                // Checked reflects whether the title is ALREADY a chip — ticking
-                // adds it immediately, un-ticking removes it. No staging step.
                 const checked = values.some((v) => v.toLowerCase() === suggestion.toLowerCase());
+                // Highlight the matching substring so users can see WHY each
+                // suggestion made the cut — a small touch that makes the
+                // popover feel like a first-class typeahead.
+                const parts = draftTrimmed
+                  ? splitByMatch(suggestion, draftTrimmed)
+                  : [{ text: suggestion, match: false }];
                 return (
                   <div
                     key={suggestion}
-                    // Clicking the row toggles membership in the chip list right
-                    // away. mousedown (not click) so it fires before the input
-                    // blur that would close the popover.
                     onMouseDown={(event) => {
                       event.preventDefault();
                       if (checked) {
@@ -1195,10 +1354,10 @@ function ChipInput({
                         commit(suggestion);
                       }
                     }}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs cursor-pointer transition ${
+                    className={`flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[12px] transition ${
                       checked
-                        ? "bg-ocean/10 text-slate-950 dark:bg-ocean/20 dark:text-white"
-                        : "text-slate-700 hover:bg-slate-50 dark:text-white/80 dark:hover:bg-white/[0.04]"
+                        ? "bg-accent-500/10 text-slate-950 dark:text-white"
+                        : "text-slate-700 hover:bg-slate-50 dark:text-white/85 dark:hover:bg-white/[0.04]"
                     }`}
                   >
                     <input
@@ -1206,10 +1365,23 @@ function ChipInput({
                       checked={checked}
                       readOnly
                       tabIndex={-1}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-ocean pointer-events-none"
+                      className="pointer-events-none h-3.5 w-3.5 rounded border-slate-300 text-accent-500"
                       aria-label={`${checked ? "Remove" : "Add"} ${suggestion}`}
                     />
-                    <span className="flex-1 truncate">{suggestion}</span>
+                    <span className="flex-1 truncate">
+                      {parts.map((part, i) =>
+                        part.match ? (
+                          <mark
+                            key={i}
+                            className="rounded bg-accent-500/20 px-0.5 text-accent-700 dark:text-accent-200"
+                          >
+                            {part.text}
+                          </mark>
+                        ) : (
+                          <span key={i}>{part.text}</span>
+                        ),
+                      )}
+                    </span>
                   </div>
                 );
               })
@@ -1219,4 +1391,20 @@ function ChipInput({
       ) : null}
     </div>
   );
+}
+
+/** Split a string into runs of match / no-match for highlight rendering. */
+function splitByMatch(text: string, needle: string): Array<{ text: string; match: boolean }> {
+  const lowerText = text.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const idx = lowerText.indexOf(lowerNeedle);
+  if (idx === -1) return [{ text, match: false }];
+  const before = text.slice(0, idx);
+  const middle = text.slice(idx, idx + needle.length);
+  const after = text.slice(idx + needle.length);
+  const parts: Array<{ text: string; match: boolean }> = [];
+  if (before) parts.push({ text: before, match: false });
+  parts.push({ text: middle, match: true });
+  if (after) parts.push({ text: after, match: false });
+  return parts;
 }
