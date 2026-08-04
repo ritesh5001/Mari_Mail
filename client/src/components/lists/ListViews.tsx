@@ -1443,17 +1443,14 @@ export function CampaignByRolePanel({
       ).sort()
     : [];
 
-  // Apply the post-search result filters (email availability + country).
-  // A row has a usable email when it isn't explicitly flagged unavailable.
-  const rowHasEmail = (r: ApolloRow) => r.emailAvailable !== false;
+  // Post-search refinement — country only. Email availability moved to the
+  // RoleFilter, where Apollo applies it during the search instead of us
+  // discarding rows the page already spent its capacity fetching.
   const visibleRows = loaded
-    ? loaded.allRows.filter((r) => {
-        if (resultFilter.email === "available" && !rowHasEmail(r)) return false;
-        if (resultFilter.email === "unavailable" && rowHasEmail(r)) return false;
-        if (resultFilter.country !== "all" && (r.country ?? "").trim() !== resultFilter.country)
-          return false;
-        return true;
-      })
+    ? loaded.allRows.filter(
+        (r) =>
+          resultFilter.country === "all" || (r.country ?? "").trim() === resultFilter.country,
+      )
     : [];
 
   // Drop any selected rows that the active result filter now hides, so the

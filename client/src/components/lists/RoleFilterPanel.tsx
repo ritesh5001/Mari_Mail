@@ -50,22 +50,27 @@ export type RoleFilter = {
   /**
    * Apollo's contact_email_status values — see EMAIL_STATUS_OPTIONS.
    *
-   * Server-side, and therefore not the same thing as ResultFilter.email: this
-   * asks Apollo to only return people whose email is in one of these states,
-   * so a page of 25 comes back full of usable rows. ResultFilter.email hides
-   * rows from a page already fetched, which cannot recover the slots the
-   * unusable ones took up.
+   * Applied by Apollo during the search, not to the rows it returned: a page
+   * of 25 comes back full of contactable people rather than padded with rows
+   * the UI would then hide, which cannot recover the slots they took up.
    */
   emailStatus: string[];
 };
 
-/** Refinements over results already fetched. Applied client-side, instantly. */
+/**
+ * Refinements over results already fetched. Applied client-side, instantly.
+ *
+ * Country only. This used to carry an `email` field too, but email is now an
+ * Apollo-side facet on RoleFilter — filtering at the source instead of hiding
+ * rows a page already spent its capacity on. Keeping the local version would
+ * have left two controls that read as the same filter while one quietly did
+ * the worse job.
+ */
 export type ResultFilter = {
-  email: "all" | "available" | "unavailable";
   country: string;
 };
 
-export const EMPTY_RESULT_FILTER: ResultFilter = { email: "all", country: "all" };
+export const EMPTY_RESULT_FILTER: ResultFilter = { country: "all" };
 
 /** Debounced live-suggestions loader — see RoleFilterPanel.fetchTitleSuggestions. */
 type SuggestFn = (draft: string) => Promise<string[]>;
@@ -617,52 +622,36 @@ export function RoleFilterPanel({
           </button>
         </div>
 
-        {/* Refine row — instant-apply controls, so they live beside the
-            results rather than behind the modal's Search button. Only shown
-            once there is something to refine. */}
-        {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 ? (
+        {/* Refine row — country only.
+
+            The email segment that used to sit here is gone. Email status is
+            now an Apollo-side facet in the modal, which filters at the source
+            so a page comes back full of contactable rows; hiding no-email rows
+            from an already-fetched page cannot recover the slots they took up.
+            Two controls reading as the same filter while one silently wasted
+            page capacity was worse than having only the good one.
+
+            Country stays: it has no Apollo-side equivalent here, so hiding
+            rows locally is the only thing it could ever have been. */}
+        {onResultFilterChange && resultFilter && (resultCount ?? 0) > 0 && countryOptions.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-2 py-1.5 dark:border-white/[0.06]">
             <span className="inline-flex items-center gap-1.5 pl-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
               <Sparkles className="h-3 w-3" />
               Refine
             </span>
-            <div className="inline-flex overflow-hidden rounded-md border border-slate-200 dark:border-white/10">
-              {(
-                [
-                  ["all", "Any"],
-                  ["available", "Has email"],
-                  ["unavailable", "No email"],
-                ] as const
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => onResultFilterChange({ ...resultFilter, email: v })}
-                  className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                    resultFilter.email === v
-                      ? "bg-accent-500 text-white"
-                      : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-white/[0.04] dark:text-white/65 dark:hover:bg-white/[0.08]"
-                  }`}
-                >
-                  {label}
-                </button>
+            <select
+              value={resultFilter.country}
+              onChange={(e) => onResultFilterChange({ ...resultFilter, country: e.target.value })}
+              aria-label="Filter by country"
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75"
+            >
+              <option value="all">Any country</option>
+              {countryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
-            </div>
-            {countryOptions.length > 0 ? (
-              <select
-                value={resultFilter.country}
-                onChange={(e) => onResultFilterChange({ ...resultFilter, country: e.target.value })}
-                aria-label="Filter by country"
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75"
-              >
-                <option value="all">Any country</option>
-                {countryOptions.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            ) : null}
+            </select>
             <span className="ml-auto pr-1 text-[10px] text-slate-400 dark:text-white/35">
               Applies instantly to the {resultCount} loaded rows
             </span>
@@ -931,9 +920,9 @@ export function RoleFilterPanel({
                           })}
                         </div>
                         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-4 text-slate-500 dark:bg-white/[0.03] dark:text-white/45">
-                          Picking none returns every status. This filters at the
-                          source — unlike <strong className="font-semibold">Refine</strong> in the
-                          toolbar, which only hides rows already fetched.
+                          Picking none returns every status. Apollo applies this
+                          during the search, so a page comes back full of rows you
+                          can actually contact.
                         </p>
                       </>
                     ) : null}
