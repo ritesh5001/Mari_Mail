@@ -31,6 +31,11 @@ function stateTone(state: StepMailRow["state"]) {
   if (state === "SENT") return "bg-emerald-100 text-emerald-700";
   if (state === "FAILED") return "bg-red-100 text-red-700";
   if (state === "SCHEDULED") return "bg-amber-100 text-amber-700";
+  // Slate, not red: a missed step is not an error or a stuck job. Its
+  // days-before-ETA window simply closed before the campaign was built, and
+  // the scheduler declined it on purpose. Red here is what made a working
+  // campaign look broken.
+  if (state === "MISSED") return "bg-slate-100 text-slate-500";
   return "bg-slate-100 text-slate-600";
 }
 
@@ -251,15 +256,24 @@ export function CampaignStepBreakdown({
                         {step.mails.map((mail) => {
                           const when = formatDate(mail.at);
                           const openable = mail.state === "SENT";
-                          // A SCHEDULED row whose fire time is in the past is
-                          // stuck — the scheduler won't automatically pull it
-                          // forward, and the send window may have moved on.
-                          // Surface it visibly and let the user Send / Reschedule /
-                          // Mark expired directly from the row.
+                          // OVERDUE means genuinely stuck: a job WAS queued for a
+                          // time now past, so a worker should have drained it and
+                          // didn't. That is worth alarming about in red.
+                          //
+                          // MISSED is different and must not look the same. The
+                          // scheduler declines any step more than its catch-up
+                          // grace past due, so those jobs never existed — normal
+                          // for a campaign built close to a vessel's ETA, where
+                          // "30 days before" is already gone. Treating the two
+                          // alike is what turned a healthy campaign into a screen
+                          // of red rows.
                           const isOverdue =
                             mail.state === "SCHEDULED" &&
                             mail.at != null &&
                             new Date(mail.at).getTime() < Date.now();
+                          const isMissed = mail.state === "MISSED";
+                          // Both are actionable by hand — same three remedies.
+                          const needsAction = isOverdue || isMissed;
                           const key = rowKey(step.stepOrder, mail.contactId);
                           const isRowBusy = pending?.key === key;
                           const rowErrorMsg = rowError?.key === key ? rowError.message : null;
@@ -268,7 +282,7 @@ export function CampaignStepBreakdown({
                             <tr
                               key={mail.contactId}
                               onClick={
-                                openable && !isOverdue
+                                openable && !needsAction
                                   ? () =>
                                       setViewing({
                                         contactId: mail.contactId,
@@ -282,7 +296,7 @@ export function CampaignStepBreakdown({
                                 isOverdue
                                   ? "border-red-100 bg-red-50/50"
                                   : "border-slate-100"
-                              } ${openable && !isOverdue ? "cursor-pointer hover:bg-slate-50" : ""}`}
+                              } ${openable && !needsAction ? "cursor-pointer hover:bg-slate-50" : ""}`}
                             >
                               <td className="px-4 py-3">
                                 <p className="font-medium text-slate-950">{mail.name}</p>
@@ -296,7 +310,7 @@ export function CampaignStepBreakdown({
                                   <Mail className="h-3 w-3 shrink-0 text-slate-400" />
                                   <span className="truncate">{step.subject || "(no subject)"}</span>
                                 </p>
-                                {openable && !isOverdue ? (
+                                {openable && !needsAction ? (
                                   <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wide text-ocean">
                                     Click to open
                                   </p>
@@ -335,13 +349,21 @@ export function CampaignStepBreakdown({
                                       className={
                                         isOverdue
                                           ? "text-red-700 line-through"
-                                          : mail.state === "SENT"
-                                            ? "text-slate-600"
-                                            : "text-amber-700"
+                                          : isMissed
+                                            ? "text-slate-400 line-through"
+                                            : mail.state === "SENT"
+                                              ? "text-slate-600"
+                                              : "text-amber-700"
                                       }
                                     >
                                       {when}
                                     </span>
+                                    {isMissed ? (
+                                      <span className="mt-0.5 block text-[11px] text-slate-500">
+                                        Window closed before this campaign existed —
+                                        never queued.
+                                      </span>
+                                    ) : null}
                                     {mail.projected ? (
                                       <span
                                         className="block text-slate-400"
@@ -350,7 +372,7 @@ export function CampaignStepBreakdown({
                                         projected
                                       </span>
                                     ) : null}
-                                    {isOverdue ? (
+                                    {needsAction ? (
                                       <div
                                         className="mt-2 flex flex-col gap-1.5"
                                         onClick={(event) => event.stopPropagation()}

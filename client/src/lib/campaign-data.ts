@@ -159,8 +159,10 @@ export type StepMailRow = {
   email: string;
   companyName: string | null;
   /** SENT once a delivery event exists for this (step, contact); FAILED on a
-   *  bounce/failure; SCHEDULED when we know the send time; PENDING otherwise. */
-  state: "SENT" | "FAILED" | "SCHEDULED" | "PENDING";
+   *  bounce/failure; SCHEDULED when we know the send time; MISSED when the
+   *  step's window elapsed before the trigger existed, so the scheduler
+   *  deliberately never queued it; PENDING otherwise. */
+  state: "SENT" | "FAILED" | "SCHEDULED" | "MISSED" | "PENDING";
   /** When it went out (SENT) or is due (SCHEDULED/PENDING). Null if unknown. */
   at: string | null;
   /** True when `at` is derived from the step delay rather than a real queued
@@ -212,6 +214,16 @@ function parseStepFireTimes(value: unknown): Array<{ stepOrder: number; fireAt: 
  * step (later steps live in the job queue), so future steps are projected from
  * the step delay and flagged `projected` for the UI to label.
  */
+/**
+ * Must mirror CATCH_UP_GRACE_MS in server/src/services/campaign-scheduler.ts.
+ *
+ * That constant is the scheduler's rule for which past-due steps it will still
+ * fire; this file has to apply the same rule to report honestly whether a step
+ * was ever queued. If one moves, move both — a mismatch puts the UI back to
+ * claiming mail is scheduled that the scheduler already declined to send.
+ */
+const ETA_CATCH_UP_GRACE_MS = 24 * 60 * 60 * 1000;
+
 function buildStepBreakdown(
   campaign: {
     sequences: Array<{
@@ -306,11 +318,27 @@ function buildStepBreakdown(
       }
 
       // Exact time when the ETA trigger already computed this step's fire time.
+      //
+      // A computed fire time is NOT proof the step was queued. scheduleEtaTrigger
+      // refuses to enqueue any step more than CATCH_UP_GRACE_MS past due — when a
+      // campaign is built close to (or after) a vessel's ETA, its "30 days before
+      // ETA" moment is already gone and blasting it now would be wrong.
+      //
+      // Reporting those as SCHEDULED is what made the detail page show a screen
+      // of red OVERDUE rows that no worker was ever going to pick up: the times
+      // are real, the jobs never existed. They are MISSED — the window closed
+      // before the campaign did, and only Send now / Reschedule can move them.
       const fireAt = parseStepFireTimes(row.etaTrigger?.stepFireTimes).find(
         (time) => time.stepOrder === sequence.stepOrder,
       );
       if (fireAt) {
-        return { ...base, state: "SCHEDULED", at: fireAt.fireAt, projected: false };
+        const missed = Date.now() - new Date(fireAt.fireAt).getTime() > ETA_CATCH_UP_GRACE_MS;
+        return {
+          ...base,
+          state: missed ? "MISSED" : "SCHEDULED",
+          at: fireAt.fireAt,
+          projected: false,
+        };
       }
 
       // Exact time for the one step this contact is currently queued for.
