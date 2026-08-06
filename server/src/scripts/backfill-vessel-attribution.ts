@@ -25,6 +25,7 @@
 import { prisma } from "@marimail/db";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
 
+
 function listIdsFromTargetConfig(targetConfig: unknown): string[] {
   if (!targetConfig || typeof targetConfig !== "object" || Array.isArray(targetConfig)) return [];
   const raw = (targetConfig as Record<string, unknown>).contactListIds;
