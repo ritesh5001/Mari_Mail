@@ -21,19 +21,16 @@ function DesktopNavContent({ scrolled }: { scrolled: boolean }) {
         className="relative z-10 flex items-center gap-2"
         aria-label="MariMail home"
       >
-        {/* /logo.png is a STACKED lockup (graphic over wordmark over tagline).
-            Capped to a nav's height it renders the wordmark at ~7px and the
-            tagline at ~1.5px — visually noise. Mark + live text keeps the
-            brand legible and scales with the nav. */}
+        {/* Full lockup — it already carries the wordmark, so no text beside it.
+            Sized up from h-9/h-10: the lockup is stacked (graphic / wordmark /
+            tagline), so it needs more height than a bare mark to stay legible. */}
         <img
-          src="/logo-mark.png"
-          alt=""
-          aria-hidden
+          src="/logo.png"
+          alt="MariMail"
           className={`w-auto object-contain transition-all duration-500 ${
-            scrolled ? "h-8" : "h-9"
+            scrolled ? "h-11" : "h-14"
           }`}
         />
-        <span className="text-lg font-semibold tracking-tight text-white">MariMail</span>
       </Link>
 
       <nav

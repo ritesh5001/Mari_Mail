@@ -37,13 +37,8 @@ export function AuthShell({
           <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-transparent to-sky-100/80 dark:from-[#0A0A0C]/80 dark:to-[#2A38B8]/20" aria-hidden />
 
           <div className="relative z-10 flex h-full flex-col justify-between p-12">
-            {/* Panel is bg-white in light mode, so the lockup's near-white
-                "mari" and tagline would drop out. Mark + live text instead. */}
-            <Link href="/" className="flex items-center gap-3" aria-label="MariMail home">
-              <img src="/logo-mark.png" alt="" aria-hidden className="h-10 w-10 object-contain" />
-              <span className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
-                MariMail
-              </span>
+            <Link href="/" className="flex items-center" aria-label="MariMail home">
+              <img src="/logo.png" alt="MariMail" className="h-20 w-auto object-contain" />
             </Link>
 
             <div className="space-y-8">
@@ -85,15 +80,8 @@ export function AuthShell({
         {/* ── Right form panel ── */}
         <section className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-6 py-12 dark:bg-[#050507]">
           <div className="w-full max-w-md">
-            {/* Mark + live text, not the lockup. This panel is bg-slate-50 in
-                light mode, and the lockup's "mari" is rgb(202,205,218) with a
-                near-white tagline — both disappear on a light background. The
-                mark is dark navy, so it holds up on either theme. */}
-            <Link href="/" className="mb-8 flex items-center gap-2.5 lg:hidden" aria-label="MariMail home">
-              <img src="/logo-mark.png" alt="" aria-hidden className="h-8 w-8 object-contain" />
-              <span className="text-lg font-semibold tracking-tight text-slate-950 dark:text-white">
-                MariMail
-              </span>
+            <Link href="/" className="mb-8 flex items-center lg:hidden" aria-label="MariMail home">
+              <img src="/logo.png" alt="MariMail" className="h-14 w-auto object-contain" />
             </Link>
 
             <div
