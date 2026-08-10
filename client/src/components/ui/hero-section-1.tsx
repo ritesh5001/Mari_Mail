@@ -424,14 +424,17 @@ function HeroHeader() {
                 aria-label="MariMail home"
                 className="flex items-center gap-2"
               >
+                {/* Mark + text, not the stacked lockup — see MarketingNav. */}
                 <img
-                  src="/logo.png"
-                  alt="MariMail"
+                  src="/logo-mark.png"
+                  alt=""
+                  aria-hidden
                   className={cn(
                     "w-auto object-contain transition-all duration-500",
-                    isScrolled ? "h-8" : "h-10",
+                    isScrolled ? "h-8" : "h-9",
                   )}
                 />
+                <span className="text-lg font-semibold tracking-tight text-white">MariMail</span>
               </Link>
 
               <button

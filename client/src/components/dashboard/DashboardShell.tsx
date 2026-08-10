@@ -133,7 +133,12 @@ function SidebarLogo() {
       aria-label="MariMail home"
       className="flex h-10 items-center gap-2 px-[11px]"
     >
-      <img src="/logo.png" alt="MariMail" className="h-7 w-7 flex-shrink-0 object-contain" />
+      {/* Mark, not the full lockup: /logo.png is a 1364×988 lockup that already
+          contains the "marimail" wordmark and tagline. Constrained to 28×28 it
+          renders the ship at ~3px and prints the wordmark twice — once inside
+          the image, once in the span below. The mark alone is dark navy, so it
+          also stays legible on the light sidebar. */}
+      <img src="/logo-mark.png" alt="" aria-hidden className="h-7 w-7 flex-shrink-0 object-contain" />
       <motion.span
         animate={{
           display: animate ? (open ? "inline-block" : "none") : "inline-block",
@@ -436,7 +441,8 @@ function MobileNav({
             >
               <div className="flex items-center justify-between px-2">
                 <Link href="/dashboard" className="flex items-center gap-2" onClick={() => setOpen(false)}>
-                  <img src="/logo.png" alt="MariMail" className="h-7 w-7 object-contain" />
+                  {/* Same reasoning as SidebarLogo — mark only beside live text. */}
+                  <img src="/logo-mark.png" alt="" aria-hidden className="h-7 w-7 object-contain" />
                   <span className="text-base font-semibold text-slate-950 dark:text-white">MariMail</span>
                 </Link>
                 <button

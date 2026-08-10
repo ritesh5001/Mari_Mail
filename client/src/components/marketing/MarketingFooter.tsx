@@ -36,11 +36,12 @@ export function MarketingFooter() {
       <div className="mx-auto w-full max-w-7xl px-6 py-16">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
-            <Link href="/" className="inline-flex items-center gap-2.5">
-              <img src="/logo.png" alt="MariMail" className="h-9 w-auto object-contain" />
-              <span className="text-[17px] font-semibold tracking-tight text-slate-950 dark:text-white">
-                MariMail
-              </span>
+            {/* Footer is bg-black, so the full lockup reads correctly here and
+                the wordmark is part of the image — the text span next to it was
+                printing "MariMail" twice. Sized taller because the lockup now
+                carries the tagline as well. */}
+            <Link href="/" className="inline-flex items-center">
+              <img src="/logo.png" alt="MariMail" className="h-20 w-auto object-contain" />
             </Link>
             <p className="mt-4 max-w-sm text-sm leading-6 text-slate-600 dark:text-slate-400">
               Marine intelligence + ETA-triggered campaigns. Self-hosted, vessel-aware, built for the
