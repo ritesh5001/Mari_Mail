@@ -234,6 +234,9 @@ export async function countAssociatedContactsForVesselIds(
   const cached = unstable_cache(
     async (wsId: string, sortedIds: string[]): Promise<Record<string, number>> => {
       const vessels = await prisma.vessel.findMany({
+        // Three company relations = three extra round trips on a remote DB
+        // under the default strategy. Fetch them in one JOIN instead.
+        relationLoadStrategy: "join",
         where: { id: { in: sortedIds } },
         include: associationVesselInclude,
       });

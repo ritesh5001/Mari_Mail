@@ -356,6 +356,10 @@ function userSessionSelect(includeTargetPortCountry: boolean) {
  */
 async function loadUserWithSession(where: Prisma.UserWhereUniqueInput) {
   try {
+    // NOTE: do NOT add `relationLoadStrategy: "join"` here. It would save two
+    // round trips, but Prisma 5.22's join planner panics on this exact shape
+    // ("PANIC: called `Option::unwrap()` on a `None` value"), which would take
+    // down every authenticated request. Re-test before trying again.
     return await prisma.user.findUnique({ where, select: userSessionSelect(true) });
   } catch (error) {
     if (

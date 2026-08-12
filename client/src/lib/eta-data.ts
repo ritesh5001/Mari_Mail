@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { notFound } from "next/navigation";
 import { Prisma, prisma, ETAConfidence, VoyageStatus } from "@marimail/db";
 import { getServerSession } from "@/lib/api";
@@ -297,6 +298,12 @@ export async function listPortRadarFeed(
   try {
     const [etas, count] = await Promise.all([
       prisma.vesselETA.findMany({
+        // One SQL statement instead of one per relation. The default strategy
+        // issues a separate round trip for vessel, each of the three company
+        // relations, port, triggers and campaign — seven in total. Postgres
+        // answers each in under a millisecond, but the database is remote
+        // (~76ms RTT), so the page was paying ~1.1s in latency for ~5ms of work.
+        relationLoadStrategy: "join",
         where,
         orderBy: radarOrderBy(searchParams, { eta: "asc" }),
         skip: (page - 1) * pageSize,
@@ -465,6 +472,9 @@ export async function listLatestBatchEtas(
     };
     const [batch, count] = await Promise.all([
       prisma.vesselETA.findMany({
+        // Single JOIN rather than a round trip per relation — see the note in
+        // listPortRadarFeed.
+        relationLoadStrategy: "join",
         where: batchWhere,
         // Batch DETECTION above stays on createdAt; only the visible page's
         // display order honours the user's chosen sort (default createdAt desc).
@@ -545,11 +555,18 @@ export async function getPortRadarTabCounts(
         },
       }),
       (async () => {
+        // Batch detection is global (every user must agree on which upload is
+        // "current"), but the COUNT is country-scoped. That used to mean two
+        // serial round trips: scan for the boundary, then count the scoped
+        // subset. Pulling each candidate's port country down with the scan — one
+        // JOIN, one round trip — lets both the boundary and the scoped count be
+        // computed here in JS instead.
         const light = await prisma.vesselETA.findMany({
+          relationLoadStrategy: "join",
           where: { AND: [etaVisibilityWhere(workspaceId), { eta: { gte: now } }, vesselWhere] },
           orderBy: { createdAt: "desc" },
           take: 500,
-          select: { id: true, createdAt: true },
+          select: { createdAt: true, port: { select: { country: true } } },
         });
         if (light.length === 0) return 0;
         let boundary = light.length;
@@ -561,11 +578,16 @@ export async function getPortRadarTabCounts(
             boundary = i;
           }
         }
-        const batchIds = biggest >= 5 * 60 * 1000 ? light.slice(0, boundary).map((c) => c.id) : light.map((c) => c.id);
-        if (batchIds.length === 0) return 0;
-        return prisma.vesselETA.count({
-          where: { AND: [{ id: { in: batchIds } }, countryClause(effectiveCountry)] },
-        });
+        const batch = biggest >= 5 * 60 * 1000 ? light.slice(0, boundary) : light;
+        // Mirror countryClause: an array scope matches any listed country, a
+        // string scope matches exactly one, null/undefined means unrestricted.
+        const allowed = Array.isArray(effectiveCountry)
+          ? new Set(effectiveCountry)
+          : effectiveCountry
+            ? new Set([effectiveCountry])
+            : null;
+        if (!allowed) return batch.length;
+        return batch.filter((row) => row.port && allowed.has(row.port.country)).length;
       })(),
     ]);
     return { newly, upcoming };
@@ -647,6 +669,36 @@ export async function getPortRadarSummary(workspaceId: string, targetPortCountry
 
 export async function listPorts() {
   return prisma.port.findMany({ orderBy: { portName: "asc" } });
+}
+
+/**
+ * Ports that can be plotted on the Port Radar map, for a country scope.
+ *
+ * The port registry is reference data — coordinates change when a port is
+ * added, i.e. effectively never — but this ran on every single page load,
+ * spending a full round trip against a remote database to return the same
+ * few dozen rows. Cached for an hour and keyed by the scope, so a country's
+ * port list is fetched once and then reused across users and reloads.
+ */
+export async function listMapPorts(scope: CountryScope, includeAllCountries: boolean) {
+  const key = includeAllCountries ? "all" : (scopeToList(scope)?.join(",") ?? "unscoped");
+  const load = unstable_cache(
+    async () =>
+      prisma.port.findMany({
+        where: {
+          AND: [
+            includeAllCountries ? {} : portCountryWhere(scope),
+            { latitude: { not: null }, longitude: { not: null } },
+          ],
+        },
+        orderBy: { portName: "asc" },
+        take: 2000,
+        select: { portCode: true, portName: true, countryName: true, latitude: true, longitude: true },
+      }),
+    ["port-radar-map-ports", key],
+    { revalidate: 3600, tags: ["ports"] },
+  );
+  return load();
 }
 
 export async function listCampaignsForWorkspace(workspaceId: string) {

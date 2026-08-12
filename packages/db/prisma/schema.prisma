@@ -1,6 +1,11 @@
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
+  // `relationJoins` makes Prisma resolve `include`/nested `select` with a single
+  // SQL LATERAL JOIN instead of one round trip per relation. The DB is remote
+  // (~76ms RTT), so a 7-relation Port Radar feed page was paying 7 × RTT ≈ 1.1s
+  // for queries Postgres itself answers in under a millisecond.
+  previewFeatures = ["relationJoins"]
 }
 
 datasource db {

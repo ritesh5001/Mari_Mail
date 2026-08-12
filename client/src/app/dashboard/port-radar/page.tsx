@@ -1,9 +1,7 @@
-import { prisma } from "@marimail/db";
 import {
   getPortRadarTabCounts,
-  listLatestBatchEtas,
+  listMapPorts,
   listPortRadarFeed,
-  portCountryWhere,
   requireEtaWorkspaceId,
   scopeToList,
   PORT_RADAR_DEFAULT_PAGE_SIZE,
@@ -28,29 +26,6 @@ export default async function PortRadarPage({
   // stay scoped to the countries their plan grants (allowedCountries).
   const countryScope = isSuperAdmin ? null : workspaceCountryScope;
 
-  // Cheap tab-badge totals + the port list for the map — no full feed rows yet.
-  const [counts, ports] = await Promise.all([
-    getPortRadarTabCounts(searchParams, {
-      includeAllCountries: isSuperAdmin,
-    }),
-    // Ports for the map. Only ports WITH coordinates are usable — the sole
-    // consumer filters on exactly that — so the filter moves into the query.
-    // The old `take: 200` spent its budget alphabetically across the whole
-    // grant, and countries with large port registries (JP 1503, US 848, GB 504)
-    // exhausted it before a two-country user's second country appeared at all.
-    prisma.port.findMany({
-      where: {
-        AND: [
-          isSuperAdmin ? {} : portCountryWhere(countryScope),
-          { latitude: { not: null }, longitude: { not: null } },
-        ],
-      },
-      orderBy: { portName: "asc" },
-      take: 2000,
-      select: { portCode: true, portName: true, countryName: true, latitude: true, longitude: true },
-    }),
-  ]);
-
   // Always open on Upcoming arrivals.
   //
   // This used to default to "newly" whenever that tab had ANY rows, which made
@@ -60,15 +35,32 @@ export default async function PortRadarPage({
   // view is a "what just landed" check, not the headline — it keeps its tab and
   // its count badge, one click away.
   const initialTab: PortRadarTabKey = "upcoming";
-
-  // Load ONLY the opening tab's first page server-side for a fast first paint;
-  // the other tab fetches lazily when it's first opened.
   const pageSize = PORT_RADAR_DEFAULT_PAGE_SIZE;
-  const feed = await listPortRadarFeed(searchParams, {
-    includeAllCountries: isSuperAdmin,
-    page: 1,
-    pageSize,
-  });
+
+  // ONE wave, not two. The opening tab's first page used to be awaited only
+  // after the counts and port list had already resolved, which on a remote
+  // database (~76ms RTT) serialised two independent sets of queries and added
+  // a full round-trip wave to every page load. Nothing here depends on
+  // anything else here, so it all goes in together.
+  const [counts, ports, feed] = await Promise.all([
+    getPortRadarTabCounts(searchParams, {
+      includeAllCountries: isSuperAdmin,
+    }),
+    // Ports for the map. Only ports WITH coordinates are usable — the sole
+    // consumer filters on exactly that — so the filter moves into the query.
+    // The old `take: 200` spent its budget alphabetically across the whole
+    // grant, and countries with large port registries (JP 1503, US 848, GB 504)
+    // exhausted it before a two-country user's second country appeared at all.
+    listMapPorts(isSuperAdmin ? null : countryScope, isSuperAdmin),
+    // Load ONLY the opening tab's first page server-side for a fast first
+    // paint; the other tab fetches lazily when it's first opened.
+    listPortRadarFeed(searchParams, {
+      includeAllCountries: isSuperAdmin,
+      page: 1,
+      pageSize,
+    }),
+  ]);
+
   const initial: PagedFeed = {
     etas: feed.etas,
     count: feed.count,
