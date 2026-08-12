@@ -1,6 +1,5 @@
 import { listRevealedContacts } from "@/lib/contact-data";
 import { SavedContactsView } from "@/components/contacts/SavedContactsView";
-import { LaunchCampaignFromSaved } from "@/components/campaigns/LaunchCampaignButton";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +15,9 @@ export default async function SavedPage() {
             {contacts.length.toLocaleString("en")} revealed {contacts.length === 1 ? "contact" : "contacts"}
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/55">
-            Every contact your workspace has revealed, across all lists. Launch a campaign straight from here.
+            Every contact your workspace has revealed, across all lists.
           </p>
         </div>
-        {contacts.length > 0 && (
-          <LaunchCampaignFromSaved contactIds={contacts.map((c) => c.id)} count={contacts.length} />
-        )}
       </section>
 
       <SavedContactsView contacts={contacts} />

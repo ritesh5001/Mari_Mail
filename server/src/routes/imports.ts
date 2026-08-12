@@ -1061,15 +1061,27 @@ async function importVesselRows(
           errors.push({ row: r.rowNumber, message: "Destination must contain letters or numbers" });
           continue;
         }
-        // ETAs are keyed by (vessel, destinationPort): a re-import for the same
-        // voyage refines the time rather than stacking a second row, which is
-        // how ETAs actually behave. A different destination is a new voyage.
+        // ONE current voyage per vessel.
+        //
+        // This used to key on (vessel, destinationPort), on the theory that a
+        // new destination meant a new voyage worth its own row. In practice a
+        // ship's declared destination changes constantly while it's under way —
+        // re-routed, re-chartered, or simply corrected — and every upload that
+        // carried a different port left the previous row behind. The radar then
+        // listed the same ship two or three times, each with a stale ETA and no
+        // way to tell which was current.
+        //
+        // An upload is a snapshot of where each ship is heading NOW, so the
+        // vessel is the key: whatever we already hold for it gets overwritten,
+        // port included. Any campaign trigger stays attached to that row and
+        // therefore follows the voyage rather than pointing at an abandoned leg.
         const existingEta = await prisma.vesselETA.findFirst({
-          where: { vesselId, destinationPort: port.portCode },
-          orderBy: { createdAt: "desc" },
+          where: { vesselId },
+          orderBy: [{ eta: "desc" }, { createdAt: "desc" }],
           select: { id: true },
         });
         const etaFields = {
+          destinationPort: port.portCode,
           destinationPortName: port.portName,
           eta: etaDate,
           etaSource: "CSV_IMPORT" as const,
@@ -1079,9 +1091,7 @@ async function importVesselRows(
         if (existingEta) {
           await prisma.vesselETA.update({ where: { id: existingEta.id }, data: etaFields });
         } else {
-          await prisma.vesselETA.create({
-            data: { vesselId, destinationPort: port.portCode, ...etaFields },
-          });
+          await prisma.vesselETA.create({ data: { vesselId, ...etaFields } });
         }
       } catch (error) {
         errors.push({
@@ -1480,6 +1490,7 @@ const etaConfidences = new Set<ETAConfidence>(["CONFIRMED", "ESTIMATED", "TENTAT
 
 async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgress?: ProgressFn) {
   let created = 0;
+  let updated = 0;
   let cargoMatches = 0;
   let portMatches = 0;
   let suggestions = 0;
@@ -1529,21 +1540,30 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgre
         ? (confidenceRaw.toUpperCase() as ETAConfidence)
         : "ESTIMATED";
 
-      const eta = await prisma.vesselETA.create({
-        data: {
-          vesselId: vessel.id,
-          destinationPort: destinationPort.portCode,
-          destinationPortName: destinationPort.portName,
-          eta: etaDate,
-          etaSource: "CSV_IMPORT",
-          etaConfidence: confidence,
-          previousPort: read(row, ["Previous Port", "previousPort"])?.toUpperCase() ?? undefined,
-          previousCargo: previousCargo ?? undefined,
-          nextCargo: nextCargo ?? undefined,
-          workspaceId,
-        },
+      // One current voyage per vessel — see the note in importVesselRows. This
+      // importer used to create unconditionally, so re-uploading a schedule
+      // stacked a fresh row for every ship on every run.
+      const etaData = {
+        destinationPort: destinationPort.portCode,
+        destinationPortName: destinationPort.portName,
+        eta: etaDate,
+        etaSource: "CSV_IMPORT" as const,
+        etaConfidence: confidence,
+        previousPort: read(row, ["Previous Port", "previousPort"])?.toUpperCase() ?? undefined,
+        previousCargo: previousCargo ?? undefined,
+        nextCargo: nextCargo ?? undefined,
+        workspaceId,
+      };
+      const priorEta = await prisma.vesselETA.findFirst({
+        where: { vesselId: vessel.id },
+        orderBy: [{ eta: "desc" }, { createdAt: "desc" }],
+        select: { id: true },
       });
-      created += 1;
+      const eta = priorEta
+        ? await prisma.vesselETA.update({ where: { id: priorEta.id }, data: etaData })
+        : await prisma.vesselETA.create({ data: { vesselId: vessel.id, ...etaData } });
+      if (priorEta) updated += 1;
+      else created += 1;
       if (previousCargo && nextCargo && previousCargo !== nextCargo) cargoMatches += 1;
 
       const matches = await matchCampaignsToETA(eta.id);
@@ -1571,7 +1591,7 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgre
     }
   }
 
-  return { created, cargoMatches, portMatches, suggestions, errors };
+  return { created, updated, cargoMatches, portMatches, suggestions, errors };
 }
 
 /** Called once per row with its zero-based index. */
