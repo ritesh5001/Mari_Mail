@@ -19,7 +19,12 @@ import {
   retryCsvImport,
 } from "../services/csv-import-queue.js";
 import { ensureDestinationPort, isResolvableDestination } from "../services/port-resolution.js";
-import { readVesselCsvValue, VESSEL_CSV_HEADERS, vesselDataFromCsvRow } from "../services/vessel-data.js";
+import {
+  normalizeImoNumber,
+  readVesselCsvValue,
+  VESSEL_CSV_HEADERS,
+  vesselDataFromCsvRow,
+} from "../services/vessel-data.js";
 
 export const importRouter = Router();
 
@@ -283,8 +288,11 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
       // IMO is mandatory (unique key). Missing → skip; present-but-malformed → skip.
       if (!imo) {
         errors.push({ row: rowNumber, field: "IMO", message: "IMO is required" });
-      } else if (!/^\d{7}$/.test(imo)) {
-        errors.push({ row: rowNumber, field: "IMO", value: imo, message: "IMO must be exactly 7 digits" });
+      } else {
+        const check = normalizeImoNumber(imo);
+        if ("problem" in check) {
+          errors.push({ row: rowNumber, field: "IMO", value: imo, message: check.problem });
+        }
       }
       const eta = rowValue(row, "ETA (UTC)");
       if (eta) {
@@ -334,10 +342,11 @@ async function validateMappedRows(importType: ImportType, rows: CsvRow[], fields
     for (const [index, row] of rows.entries()) {
       const rowNumber = index + 2;
       const imo = rowValue(row, "IMO");
-      if (imo && !/^\d{7}$/.test(imo)) {
-        errors.push({ row: rowNumber, field: "IMO", value: imo, message: "IMO must be exactly 7 digits" });
-      } else if (imo && !existingImos.has(imo)) {
-        errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imo} is not in the database — import a vessels CSV first` });
+      const imoCheck = imo ? normalizeImoNumber(imo) : null;
+      if (imoCheck && "problem" in imoCheck) {
+        errors.push({ row: rowNumber, field: "IMO", value: imo, message: imoCheck.problem });
+      } else if (imoCheck && !existingImos.has(imoCheck.imo)) {
+        errors.push({ row: rowNumber, field: "IMO", value: imo, message: `Vessel ${imoCheck.imo} is not in the database — import a vessels CSV first` });
       }
       const eta = rowValue(row, "ETA (UTC)") ?? rowValue(row, "ETA");
       if (eta && Number.isNaN(new Date(eta).getTime())) {
@@ -800,11 +809,15 @@ async function importVesselRows(
     const rowNumber = index + 2;
     try {
       const data = vesselDataFromCsvRow(row);
-      const imoNumber = data.imoNumber;
-      if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
-        errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
+      const imoResult = normalizeImoNumber(data.imoNumber);
+      if ("problem" in imoResult) {
+        errors.push({ row: rowNumber, message: imoResult.problem });
         continue;
       }
+      const imoNumber = imoResult.imo;
+      // A spreadsheet-mangled value may have been repaired above; make sure the
+      // record written to the database carries the corrected number.
+      data.imoNumber = imoNumber;
       parsed.push({
         rowNumber,
         imoNumber,
@@ -1503,11 +1516,12 @@ async function importVesselEtaRows(rows: CsvRow[], workspaceId: string, onProgre
     // that cannot be imported is recorded and skipped instead.
     try {
       const rowNumber = index + 2;
-      const imoNumber = read(row, ["IMO Number", "IMO", "imoNumber"]);
-      if (!imoNumber || !/^\d{7}$/.test(imoNumber)) {
-        errors.push({ row: rowNumber, message: "IMO Number must be exactly 7 digits" });
+      const imoResult = normalizeImoNumber(read(row, ["IMO Number", "IMO", "imoNumber"]));
+      if ("problem" in imoResult) {
+        errors.push({ row: rowNumber, message: imoResult.problem });
         continue;
       }
+      const imoNumber = imoResult.imo;
       const vessel = await prisma.vessel.findFirst({ where: { imoNumber, workspaceId } });
       if (!vessel) {
         errors.push({ row: rowNumber, message: `Vessel ${imoNumber} not found in workspace` });

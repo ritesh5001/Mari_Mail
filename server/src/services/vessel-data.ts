@@ -168,6 +168,61 @@ export function textValue(value: string | undefined) {
   return trimmed ? trimmed : undefined;
 }
 
+/**
+ * Expands a number a spreadsheet wrote in scientific notation, but only when
+ * no digits were lost doing so.
+ *
+ * Excel and Google Sheets treat a 7-digit IMO as a number and will export it
+ * as "9.470123E+06". That round-trips perfectly — the mantissa still carries
+ * every digit — so it should import rather than be rejected. What must NOT be
+ * accepted is "9.47E+06": that is 9,470,000, and the four digits the real IMO
+ * ended in are simply gone. Silently taking it would attach a voyage to an
+ * invented vessel, so the caller is told to fix the export instead.
+ *
+ * @returns the expanded digits, or null when the notation is lossy/not numeric.
+ */
+export function expandScientificInteger(value: string): string | null {
+  const match = value.trim().match(/^(\d)(?:\.(\d+))?[eE]\+?(\d+)$/);
+  if (!match) return null;
+  const [, lead, decimals = "", exponentRaw] = match;
+  const exponent = Number(exponentRaw);
+  // Lossless only when the mantissa still spells out every digit: one leading
+  // digit plus `exponent` decimals. "9.470123E+06" qualifies (6 decimals, 10^6)
+  // and expands to 9470123. "9.47E+06" does not — expanding it would pad four
+  // zeros the source never had and yield 9470000, a number belonging to some
+  // other ship or to none at all. Anything short is refused rather than guessed.
+  if (decimals.length !== exponent) return null;
+  return lead + decimals;
+}
+
+/**
+ * Normalises whatever the CSV had in the IMO column into 7 digits.
+ *
+ * @returns `{ imo }` when usable, or `{ problem }` with a message that names
+ *   the actual cause — "must be exactly 7 digits" is true but useless when the
+ *   real story is that a spreadsheet reformatted the column.
+ */
+export function normalizeImoNumber(raw: string | undefined): { imo: string } | { problem: string } {
+  const value = textValue(raw);
+  if (!value) return { problem: "IMO Number is required" };
+  if (/^\d{7}$/.test(value)) return { imo: value };
+
+  if (/[eE]\+?\d+$/.test(value)) {
+    const expanded = expandScientificInteger(value);
+    if (expanded && /^\d{7}$/.test(expanded)) return { imo: expanded };
+    return {
+      problem:
+        `IMO "${value}" was converted to scientific notation by a spreadsheet, which rounded off ` +
+        `its last digits — the original number can't be recovered. Format the IMO column as Text ` +
+        `(or prefix values with an apostrophe) and export again.`,
+    };
+  }
+
+  const digitsOnly = value.replace(/\D/g, "");
+  if (/^\d{7}$/.test(digitsOnly)) return { imo: digitsOnly };
+  return { problem: `IMO Number must be exactly 7 digits (got "${value}")` };
+}
+
 export function intValue(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number(value.replace(/,/g, ""));
