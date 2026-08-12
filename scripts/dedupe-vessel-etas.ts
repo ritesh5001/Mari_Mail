@@ -27,10 +27,30 @@
  *
  * Dry-run by default: prints the plan and changes nothing.
  */
+import { readFileSync } from "node:fs";
 import { prisma } from "@marimail/db";
 
 const APPLY = process.argv.includes("--apply");
 const ALL = process.argv.includes("--all");
+
+/**
+ * `--updated-from=<snapshot.json>` overrides each row's `updatedAt` with the
+ * value recorded in a snapshot.
+ *
+ * Needed when something has rewritten ETA rows since the last upload — a port
+ * repair pass, say — because that resets `updatedAt` to "now" and destroys the
+ * only evidence of which upload last touched each row. Reading the timestamps
+ * from a snapshot taken beforehand restores the correct ordering.
+ */
+const snapshotPath = process.argv.find((a) => a.startsWith("--updated-from="))?.split("=")[1];
+const originalUpdatedAt = new Map<string, Date>();
+if (snapshotPath) {
+  const snap = JSON.parse(readFileSync(snapshotPath, "utf8")) as {
+    etas: Array<{ id: string; updatedAt: string }>;
+  };
+  for (const row of snap.etas) originalUpdatedAt.set(row.id, new Date(row.updatedAt));
+  console.log(`using pre-change updatedAt for ${originalUpdatedAt.size} rows from ${snapshotPath}`);
+}
 
 async function main() {
   const where = ALL ? {} : { eta: { gte: new Date() } };
@@ -48,6 +68,12 @@ async function main() {
       vessel: { select: { vesselName: true, imoNumber: true } },
     },
   });
+
+  // Prefer the snapshot's timestamp wherever one is available.
+  for (const eta of etas) {
+    const original = originalUpdatedAt.get(eta.id);
+    if (original) eta.updatedAt = original;
+  }
 
   const byVessel = new Map<string, typeof etas>();
   for (const eta of etas) {

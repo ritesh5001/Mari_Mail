@@ -155,11 +155,16 @@ async function main() {
     if (p.etas > 0) {
       // Keep destinationPortName in step with the port row it now points at,
       // so the table label and the country filter agree.
-      const res = await prisma.vesselETA.updateMany({
-        where: { destinationPort: p.from },
-        data: { destinationPort: p.to, destinationPortName: p.toName },
-      });
-      moved += res.count;
+      //
+      // Raw SQL, not updateMany, so `updatedAt` survives: it is the only record
+      // of which upload last touched a row, and the dedupe pass reads it to
+      // decide which of a vessel's ETAs is current. A Prisma update would stamp
+      // every remapped row with "now" and make an old row look like the newest.
+      const res = await prisma.$executeRaw`
+        UPDATE "VesselETA"
+        SET "destinationPort" = ${p.to}, "destinationPortName" = ${p.toName}
+        WHERE "destinationPort" = ${p.from}`;
+      moved += res;
     }
     // Deleting the emptied placeholder is opt-in: PortCampaignRule references
     // portCode with onDelete: NoAction, so a rule pointing at one would make
