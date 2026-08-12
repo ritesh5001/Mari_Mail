@@ -14,6 +14,7 @@ export type CsvImportJobData = {
   importType: CsvImportType;
   csv: string;
   mapping?: Record<string, string>;
+  country?: string;
   workspaceId: string;
   userId: string;
 };

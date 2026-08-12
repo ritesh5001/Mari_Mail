@@ -122,6 +122,8 @@ function detectImportType(csv: string): ImportType | null {
   return null;
 }
 
+type CountryOption = { country: string; countryName: string };
+
 export function CsvImportForm() {
   const [importType, setImportType] = useState<ImportType>("VESSELS");
   const [csv, setCsv] = useState("");
@@ -135,6 +137,23 @@ export function CsvImportForm() {
   const [error, setError] = useState<string | null>(null);
   const [schemaFieldSearch, setSchemaFieldSearch] = useState("");
   const [importJob, setImportJob] = useState<ImportJob | null>(null);
+  const [country, setCountry] = useState<string>("");
+  const [countries, setCountries] = useState<CountryOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/workspaces/port-countries`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload: { data?: CountryOption[] } | null) => {
+        if (!cancelled) setCountries(payload?.data ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const supportsCountry = importType === "VESSELS";
 
   const fieldOptions = preview?.schemaFields.map((field) => field.label) ?? [];
   const visibleFieldOptions = useMemo(() => {
@@ -189,7 +208,7 @@ export function CsvImportForm() {
       const response = await apiFetch(`/api/import/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ importType, csv, mapping: nextMapping }),
+        body: JSON.stringify({ importType, csv, mapping: nextMapping, country: supportsCountry ? country || undefined : undefined }),
       });
       const payload = await readJson<{ data?: ImportPreview; error?: { message?: string } }>(response);
       if (!response.ok || !payload.data) {
@@ -215,7 +234,7 @@ export function CsvImportForm() {
       const response = await apiFetch(`/api/import/csv/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ importType, csv, mapping }),
+        body: JSON.stringify({ importType, csv, mapping, country: supportsCountry ? country || undefined : undefined }),
       });
       const payload = await readJson<{
         data?: { mode: "queued"; jobId: string; status: string; rowCount: number } | { mode: "sync"; result: ImportResult };
@@ -257,6 +276,7 @@ export function CsvImportForm() {
     setMappingDirty(false);
     setSchemaFieldSearch("");
     setError(null);
+    if (value !== "VESSELS") setCountry("");
   }
 
   function setHeaderMapping(header: string, field: string) {
@@ -322,6 +342,27 @@ export function CsvImportForm() {
           <option value="VESSEL_ETAS">Vessel ETAs</option>
         </select>
       </label>
+
+      {supportsCountry ? (
+        <label className="block text-sm font-medium text-slate-700">
+          Country
+          <span className="ml-2 text-xs font-normal text-slate-500">
+            Tag this batch with a flag country. Rows without a Flag value will use this.
+          </span>
+          <select
+            value={country}
+            onChange={(event) => setCountry(event.target.value)}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+          >
+            <option value="">All / not specified</option>
+            {countries.map((option) => (
+              <option key={option.country} value={option.country}>
+                {option.countryName} ({option.country})
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       {importTypeMismatch && detectedImportType ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

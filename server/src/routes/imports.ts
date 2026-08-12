@@ -35,6 +35,12 @@ const importSchema = z.object({
   ]),
   csv: z.string().min(1),
   mapping: z.record(z.string()).optional(),
+  country: z
+    .string()
+    .trim()
+    .transform((value) => value.toUpperCase())
+    .refine((value) => value === "" || /^[A-Z]{2}$/.test(value), "Country must be an ISO 2-letter code")
+    .optional(),
 });
 
 type CsvRow = Record<string, string | undefined>;
@@ -763,7 +769,14 @@ async function backfillContactsForDomains(workspaceId: string, domains: Set<stri
   return updates.length;
 }
 
-async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?: ProgressFn) {
+async function importVesselRows(
+  rows: CsvRow[],
+  workspaceId: string,
+  onProgress?: ProgressFn,
+  defaultCountry?: string,
+) {
+  const applyDefaultCountry = <T extends { flag?: string | null }>(data: T) =>
+    defaultCountry && !data.flag ? { ...data, flag: defaultCountry } : data;
   let created = 0;
   let updated = 0;
   const errors: Array<{ row: number; message: string }> = [];
@@ -960,7 +973,7 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?
   if (toCreate.length > 0) {
     await prisma.vessel.createMany({
       data: toCreate.map((r) => ({
-        ...r.data,
+        ...applyDefaultCountry(r.data),
         imoNumber: r.imoNumber,
         vesselName: r.vesselName,
         ...companyLinks(r),
@@ -984,7 +997,7 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?
     try {
       await prisma.vessel.update({
         where: { imoNumber: r.imoNumber },
-        data: { ...r.data, ...companyLinks(r), source: "CSV_IMPORT" },
+        data: { ...applyDefaultCountry(r.data), ...companyLinks(r), source: "CSV_IMPORT" },
       });
       updated += 1;
     } catch (error) {
@@ -996,7 +1009,7 @@ async function importVesselRows(rows: CsvRow[], workspaceId: string, onProgress?
         const { mmsi: _dropped, ...withoutMmsi } = r.data;
         await prisma.vessel.update({
           where: { imoNumber: r.imoNumber },
-          data: { ...withoutMmsi, ...companyLinks(r), source: "CSV_IMPORT" },
+          data: { ...applyDefaultCountry(withoutMmsi), ...companyLinks(r), source: "CSV_IMPORT" },
         });
         updated += 1;
         errors.push({
@@ -1625,11 +1638,12 @@ function describeImportFailure(error: unknown): string {
 }
 
 export async function processCsvImport(
-  input: { importType: ImportType; csv: string; mapping?: Record<string, string> },
+  input: { importType: ImportType; csv: string; mapping?: Record<string, string>; country?: string },
   workspaceId: string,
   userId: string,
   onProgress?: (done: number, total: number) => void,
 ) {
+  const defaultCountry = input.country?.trim().toUpperCase() || undefined;
   const preview = await buildImportPreview(input, workspaceId);
 
   if (!preview.canImport) {
@@ -1653,7 +1667,7 @@ export async function processCsvImport(
   try {
     result =
       input.importType === "VESSELS"
-        ? await importVesselRows(rows, workspaceId, report)
+        ? await importVesselRows(rows, workspaceId, report, defaultCountry)
         : input.importType === "CONTACTS"
           ? await importContactRows(rows, workspaceId, userId, report)
           : input.importType === "VESSEL_ETAS"
