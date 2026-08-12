@@ -1034,7 +1034,10 @@ async function importVesselRows(
     const portCache = new Map<string, { portCode: string; portName: string } | null>();
     const resolvePort = async (destination: string) => {
       if (!portCache.has(destination)) {
-        portCache.set(destination, await ensureDestinationPort(destination));
+        // The batch country is passed so a destination missing from the registry
+        // is filed under that country rather than "Unknown" — otherwise the row
+        // imports fine and is then invisible to Port Radar's country filter.
+        portCache.set(destination, await ensureDestinationPort(destination, defaultCountry));
       }
       return portCache.get(destination) ?? null;
     };

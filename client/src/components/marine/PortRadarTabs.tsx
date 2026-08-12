@@ -80,7 +80,7 @@ export function PortRadarTabs({
   showCountryColumn: boolean;
   isSuperAdmin: boolean;
   portsWithCoordinates: string[];
-  counts: { newly: number; upcoming: number };
+  counts: { newly: number; upcoming: number; past: number };
   initialTab: PortRadarTabKey;
   initialRows: IndiaRadarEta[];
   initialCount: number;
@@ -96,6 +96,14 @@ export function PortRadarTabs({
   const [sort, setSort] = useState<SortState>(null);
   const sortRef = useRef<SortState>(null);
   sortRef.current = sort;
+
+  /** Widen the ETA window back 30 days so already-docked arrivals appear. */
+  const showPastArrivals = () => {
+    const params = new URLSearchParams(window.location.search);
+    const from = new Date(Date.now() - 30 * 86_400_000);
+    params.set("etaFrom", from.toISOString().slice(0, 10));
+    window.location.search = params.toString();
+  };
 
   // Prefetched next pages, keyed "tab:page". Promoted instantly on Next.
   const prefetch = useRef<Map<string, FeedResponse>>(new Map());
@@ -294,6 +302,9 @@ export function PortRadarTabs({
   // only, never on tab switches, and it reads the active tab from a ref.
   const urlSearch = useSearchParams();
   const searchKey = urlSearch?.toString() ?? "";
+  // `etaFrom` is what widens the feed back past "now", so its presence is
+  // exactly what "the user has chosen to see past arrivals" means.
+  const showingPast = Boolean(urlSearch?.get("etaFrom"));
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const lastSearchKey = useRef<string | null>(null);
@@ -459,6 +470,26 @@ export function PortRadarTabs({
                 Import ETAs
               </Link>
             ) : null}
+          </div>
+        ) : null}
+
+        {/* An upload of yesterday's schedule is entirely in the past, and this
+            tab only ever shows future ETAs. Without saying so, the page looks
+            like it swallowed most of the import — the reason 27 imported
+            vessels can show up here as 7. */}
+        {tab === "upcoming" && !showingPast && counts.past > 0 ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <span>
+              {counts.past} arrival{counts.past === 1 ? " has" : "s have"} already docked in the last
+              30 days and {counts.past === 1 ? "is" : "are"} hidden here.
+            </span>
+            <button
+              type="button"
+              onClick={showPastArrivals}
+              className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 shadow-sm hover:bg-amber-100 dark:bg-white/10 dark:text-amber-100 dark:hover:bg-white/20"
+            >
+              Include them
+            </button>
           </div>
         ) : null}
 

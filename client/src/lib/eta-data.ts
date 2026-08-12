@@ -526,10 +526,13 @@ export async function listLatestBatchEtas(
  * derived here so a caller can't pass a stale/wrong entitlement and make the
  * badge disagree with the table it labels.
  */
+/** How far back "recently departed" looks when counting hidden past arrivals. */
+export const PORT_RADAR_PAST_WINDOW_DAYS = 30;
+
 export async function getPortRadarTabCounts(
   searchParams: Record<string, string | string[] | undefined> = {},
   options: { includeAllCountries?: boolean } = {},
-): Promise<{ newly: number; upcoming: number }> {
+): Promise<{ newly: number; upcoming: number; past: number }> {
   const { workspaceId, countryScope } = await requireEtaWorkspaceId();
   const now = new Date();
   // Counts must use the SAME clamped scope as the feeds, or the badge promises
@@ -542,8 +545,13 @@ export async function getPortRadarTabCounts(
   const vesselWhere: Prisma.VesselETAWhereInput =
     vesselClauses.length > 0 ? { vessel: { AND: vesselClauses } } : {};
 
+  // Arrivals the Upcoming feed is hiding purely because they already happened.
+  // An import of yesterday's schedule lands entirely in here, and without a
+  // number to point at, the page just looks like most of the upload vanished.
+  const pastFrom = new Date(now.getTime() - PORT_RADAR_PAST_WINDOW_DAYS * 86_400_000);
+
   try {
-    const [upcoming, newly] = await Promise.all([
+    const [upcoming, newly, past] = await Promise.all([
       prisma.vesselETA.count({
         where: {
           AND: [
@@ -589,11 +597,21 @@ export async function getPortRadarTabCounts(
         if (!allowed) return batch.length;
         return batch.filter((row) => row.port && allowed.has(row.port.country)).length;
       })(),
+      prisma.vesselETA.count({
+        where: {
+          AND: [
+            etaVisibilityWhere(workspaceId),
+            countryClause(effectiveCountry),
+            { eta: { gte: pastFrom, lt: now } },
+            vesselWhere,
+          ],
+        },
+      }),
     ]);
-    return { newly, upcoming };
+    return { newly, upcoming, past };
   } catch (err) {
     console.error("[eta] getPortRadarTabCounts failed:", err);
-    return { newly: 0, upcoming: 0 };
+    return { newly: 0, upcoming: 0, past: 0 };
   }
 }
 
