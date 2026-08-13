@@ -225,7 +225,7 @@ const faqData: FaqData = {
     {
       question: "Where does the vessel and contact data come from?",
       answer:
-        "MariMail blends your workspace data with a vessel DBMS (IMO records, owner/ISM/commercial managers, port intelligence) and an Apollo-backed people search scoped to your vessels' companies — so you can qualify accounts and find the right decision-makers before you write a word.",
+        "MariMail blends your workspace data with a vessel DBMS (IMO records, owner/ISM/commercial managers, port intelligence) and a people search scoped to your vessels' companies — so you can qualify accounts and find the right decision-makers before you write a word.",
     },
     {
       question: "Do I need any technical setup to get going?",

@@ -56,7 +56,7 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
       const res = await apiFetch(`/api/admin/apollo-accounts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim() || "Apollo account", apiKey: apiKey.trim() }),
+        body: JSON.stringify({ label: label.trim() || "Provider account", apiKey: apiKey.trim() }),
       });
       const payload = (await res.json()) as { error?: { message?: string } };
       if (!res.ok) {
@@ -75,7 +75,7 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
   }
 
   async function act(id: string, action: "test" | "default" | "delete") {
-    if (action === "delete" && !confirm("Remove this Apollo account? Lookups fall back to the next key, or to the platform key if none is left.")) return;
+    if (action === "delete" && !confirm("Remove this provider account? Lookups fall back to the next key, or to the platform key if none is left.")) return;
     setBusy(id);
     setError(null);
     try {
@@ -98,10 +98,10 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
   return (
     <div className="space-y-5">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
-        <h2 className="text-sm font-semibold text-slate-950 dark:text-white">Connect an Apollo account</h2>
+        <h2 className="text-sm font-semibold text-slate-950 dark:text-white">Connect a provider account</h2>
         <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-          Uses your own Apollo plan for this workspace&rsquo;s searches and reveals. Because you pay
-          Apollo directly, reveals made through your key don&rsquo;t spend platform credits.
+          Uses your own provider plan for this workspace&rsquo;s searches and reveals. Because you pay
+          the provider directly, reveals made through your key don&rsquo;t spend platform credits.
         </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -110,7 +110,7 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
             <input
               value={label}
               onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. NextGen Fusion Apollo"
+              placeholder="e.g. NextGen Fusion account"
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
             />
           </label>
@@ -123,7 +123,7 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
                 setApiKey(e.target.value);
                 setTestResult(null);
               }}
-              placeholder="Apollo API key"
+              placeholder="Provider API key"
               autoComplete="off"
               className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
             />
@@ -174,7 +174,7 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
         <h2 className="text-sm font-semibold text-slate-950 dark:text-white">Connected accounts</h2>
         {initial.length === 0 ? (
           <p className="mt-2 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500 dark:border-white/15 dark:text-white/50">
-            None connected. This workspace uses the platform Apollo key, and reveals cost platform
+            None connected. This workspace uses the platform key, and reveals cost platform
             credits.
           </p>
         ) : (

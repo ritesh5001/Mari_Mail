@@ -35,16 +35,16 @@ export default async function AdminApolloAccountsPage() {
     <div className="space-y-5 p-6">
       <div>
         <Link
-          href="/dashboard/admin/apollo"
+          href="/dashboard/admin/contact-source"
           className="text-[11px] text-slate-500 hover:underline dark:text-white/50"
         >
-          ← Apollo settings
+          ← Contact data source
         </Link>
         <h1 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
-          Your Apollo accounts
+          Your provider accounts
         </h1>
         <p className="mt-1 max-w-3xl text-xs text-slate-500 dark:text-white/50">
-          Connect your own Apollo plan instead of using the platform&rsquo;s shared key. A key added
+          Connect your own provider plan instead of using the platform&rsquo;s shared key. A key added
           here belongs to this workspace only — it is never used for anyone else&rsquo;s searches.
           You can connect more than one and switch between them; whichever is marked{" "}
           <span className="font-medium">in use</span> handles live traffic.

@@ -94,7 +94,7 @@ export const EMPTY_ROLE_FILTER: RoleFilter = {
  * rather than erroring, so both ends whitelist against this list.
  */
 export const EMAIL_STATUS_OPTIONS: Array<{ value: string; label: string; hint: string }> = [
-  { value: "verified", label: "Verified", hint: "Apollo has confirmed this address" },
+  { value: "verified", label: "Verified", hint: "Confirmed deliverable address" },
   { value: "likely to engage", label: "Likely to engage", hint: "Deliverable, higher reply rate" },
   { value: "unverified", label: "Unverified", hint: "On file, not confirmed" },
   { value: "unavailable", label: "No email", hint: "Nothing on file — cannot be revealed" },
@@ -691,7 +691,7 @@ export function RoleFilterPanel({
                     </h2>
                     <p className="text-[11px] text-slate-500 dark:text-white/45">
                       {scope === "apollo"
-                        ? "Searching all of Apollo"
+                        ? "Searching the full contact database"
                         : "Searching this list’s vessel companies"}
                     </p>
                   </div>
@@ -772,7 +772,7 @@ export function RoleFilterPanel({
                         <PaneHeader
                           icon={Briefcase}
                           title="Job titles"
-                          description="Apollo matches titles loosely, so “Fleet Manager” also finds “Senior Fleet Manager”. Exclusions win over inclusions."
+                          description="Titles match loosely, so “Fleet Manager” also finds “Senior Fleet Manager”. Exclusions win over inclusions."
                         />
                         <div className="space-y-4">
                           <ChipInput
@@ -811,7 +811,7 @@ export function RoleFilterPanel({
                         <PaneHeader
                           icon={Sparkles}
                           title="Seniority"
-                          description="Apollo's own seniority buckets. Picking none means any level."
+                          description="Standard seniority buckets. Picking none means any level."
                         />
                         <div className="flex flex-wrap gap-2">
                           {SENIORITY_OPTIONS.map((option) => (
@@ -852,7 +852,7 @@ export function RoleFilterPanel({
                             onFetchAllForSelectAll={fetchAllCompanies}
                             tone="include"
                             disabled={disabled}
-                            emptyHint="Start typing to see Apollo companies matching your term."
+                            emptyHint="Start typing to see companies matching your term."
                           />
                           <ChipInput
                             label="Exclude"
@@ -874,7 +874,7 @@ export function RoleFilterPanel({
                         <PaneHeader
                           icon={Mail}
                           title="Email status"
-                          description="Asks Apollo to return only people whose email is in one of these states, so a page comes back full of contactable rows."
+                          description="Returns only people whose email is in one of these states, so a page comes back full of contactable rows."
                         />
                         <div className="space-y-2">
                           {EMAIL_STATUS_OPTIONS.map((option) => {
@@ -920,7 +920,7 @@ export function RoleFilterPanel({
                           })}
                         </div>
                         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] leading-4 text-slate-500 dark:bg-white/[0.03] dark:text-white/45">
-                          Picking none returns every status. Apollo applies this
+                          Picking none returns every status. This is applied
                           during the search, so a page comes back full of rows you
                           can actually contact.
                         </p>
@@ -944,7 +944,7 @@ export function RoleFilterPanel({
                             onFetchSuggestions={apolloPersonLocationFetcher}
                             tone="include"
                             disabled={disabled}
-                            emptyHint="Type a city, state or country — Apollo resolves the name."
+                            emptyHint="Type a city, state or country — we resolve the name."
                           />
                           <ChipInput
                             label="Company HQ is in"
@@ -966,7 +966,7 @@ export function RoleFilterPanel({
                         <PaneHeader
                           icon={Users2}
                           title="Company size"
-                          description="Headcount, not revenue. Apollo matches these exact bands, so a custom range would return nothing."
+                          description="Headcount, not revenue. Only these exact bands match, so a custom range would return nothing."
                         />
                         <div className="flex flex-wrap gap-2">
                           {EMPLOYEE_BANDS.map((band) => (
@@ -1000,7 +1000,7 @@ export function RoleFilterPanel({
                         <PaneHeader
                           icon={Tag}
                           title="Industry & keywords"
-                          description="Free-text match across the company profile. Apollo exposes no exact industry filter, so industry and market-segment terms go here."
+                          description="Free-text match across the company profile. There is no exact industry filter, so industry and market-segment terms go here."
                         />
                         <input
                           value={value.keywords}
@@ -1018,7 +1018,7 @@ export function RoleFilterPanel({
                 <div className="flex shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
                   <p className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-white/45">
                     {totalActive === 0
-                      ? "No filters — Apollo will return everyone in scope."
+                      ? "No filters — everyone in scope will be returned."
                       : `${totalActive} filter${totalActive === 1 ? "" : "s"} active · searching is free`}
                   </p>
                   <button
@@ -1818,7 +1818,7 @@ function ChipInput({
               loadingSuggestions ? (
                 <div className="flex items-center gap-2 px-3 py-2.5 text-[12px] text-slate-500 dark:text-white/60">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Searching Apollo…
+                  Searching…
                 </div>
               ) : canAddFreeText ? (
                 <button
@@ -1836,7 +1836,7 @@ function ChipInput({
                 </button>
               ) : (
                 <p className="px-3 py-2.5 text-[11px] text-slate-400 dark:text-white/40">
-                  {emptyHint ?? "Start typing to see live Apollo suggestions."}
+                  {emptyHint ?? "Start typing to see live suggestions."}
                 </p>
               )
             ) : (

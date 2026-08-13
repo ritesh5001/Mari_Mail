@@ -69,7 +69,7 @@ export function DataSourcesAdmin({
           </h1>
           <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
             Master switches for each data source. Disabling a source skips its query entirely — search results and the
-            vessel "Search Apollo & Maribiz" panel will only contain enabled sources.
+            vessel contact-search panel will only contain enabled sources.
           </p>
         </div>
       </section>
@@ -105,7 +105,7 @@ export function DataSourcesAdmin({
 
       <Row
         icon={<Zap className="h-5 w-5 text-sky-600" />}
-        title="Apollo.io"
+        title="Contact Data Source"
         description="People search by company domain. Email & phone reveals cost workspace credits."
         enabled={state.apollo.enabled}
         saving={saving === "apollo"}
@@ -118,18 +118,18 @@ export function DataSourcesAdmin({
             : "OFF"
         }
         statusOK={state.apollo.enabled && state.apollo.hasApiKey}
-        manageHref="/dashboard/admin/apollo"
+        manageHref="/dashboard/admin/contact-source"
       />
 
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-white/60">
-              Auto-save Apollo search results
+              Auto-save contact search results
             </h2>
             <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-              When ON, every Apollo person returned from a search is upserted into the internal Contact table (with email
-              still locked). Means future searches for the same person are served from your DB — no Apollo round-trip,
+              When ON, every person returned from a search is upserted into the internal Contact table (with email
+              still locked). Means future searches for the same person are served from your DB — no provider round-trip,
               no API quota consumed. Reveals still cost credits.
             </p>
           </div>

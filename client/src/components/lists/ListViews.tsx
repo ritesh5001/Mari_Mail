@@ -385,7 +385,7 @@ export function ContactListDetail({
               <Search className="h-4 w-4 shrink-0 text-accent-500" />
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
-                  Find people with Apollo
+                  Find people
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
                   Search anyone by title, seniority, location, company size and keywords —
@@ -882,7 +882,7 @@ function apolloUnavailableMessage(warnings: string[]): string {
     case "timeout":
       return "Contact search timed out. Try a smaller list, or search again in a moment.";
     default:
-      return "Contact search is unavailable right now. Try again shortly — if it keeps failing, an admin should check the Apollo data source.";
+      return "Contact search is unavailable right now. Try again shortly — if it keeps failing, an admin should check the contact data source.";
   }
 }
 
@@ -1261,7 +1261,7 @@ export function CampaignByRolePanel({
           outOfCredits
             ? `${revealSkipped} skipped — out of credits`
             : rateLimited
-              ? `${revealSkipped} skipped — Apollo rate limit, credits refunded; select them and try again`
+              ? `${revealSkipped} skipped — provider rate limit, credits refunded; select them and try again`
               : `${revealSkipped} skipped — reveal failed, credits refunded`,
         );
       }
@@ -1714,7 +1714,7 @@ export function CampaignByRolePanel({
             {/* Scope-dependent: a contact list has no vessels, so the old
                 fixed "at these vessels' domains" was simply untrue there. */}
             {scope === "apollo"
-              ? "Searching Apollo…"
+              ? "Searching the contact database…"
               : "Searching at these vessels\u2019 domains…"}
           </div>
         )}
@@ -1774,7 +1774,7 @@ export function CampaignByRolePanel({
               {typeof loaded.apolloTotal === "number" && loaded.apolloTotal > loaded.allRows.length ? (
                 <span className="font-medium text-slate-700 dark:text-white/70">
                   {" "}
-                  of {loaded.apolloTotal.toLocaleString()} total in Apollo
+                  of {loaded.apolloTotal.toLocaleString()} total
                 </span>
               ) : null}{" "}
               — {summarizeFilter(loaded.filter)}.
@@ -1906,7 +1906,7 @@ export function CampaignByRolePanel({
                           ) : (
                             <span
                               className="text-[11px] text-slate-400 dark:text-white/40"
-                              title="Apollo matched this person on a company domain we couldn't tie back to a specific vessel in this list."
+                              title="Matched on a company domain we couldn’t tie back to a specific vessel in this list."
                             >
                               —
                             </span>

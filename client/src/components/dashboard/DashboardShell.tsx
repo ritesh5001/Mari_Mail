@@ -64,9 +64,9 @@ const navItems: NavItem[] = [
   { href: "/dashboard/admin/demos", label: "Demo Bookings", icon: Calendar, superAdminOnly: true },
   { href: "/dashboard/admin/data-sources", label: "Data Sources", icon: Settings, superAdminOnly: true },
   { href: "/dashboard/admin/maribiz", label: "Secondary Data Source", icon: Database, superAdminOnly: true },
-  { href: "/dashboard/admin/apollo", label: "Apollo Data Source", icon: Zap, superAdminOnly: true },
-  { href: "/dashboard/admin/apollo/drips", label: "Scheduled Reveals", icon: CalendarClock, superAdminOnly: true },
-  { href: "/dashboard/admin/apollo/accounts", label: "Apollo Accounts", icon: KeyRound, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source", label: "Contact Data Source", icon: Zap, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source/drips", label: "Scheduled Reveals", icon: CalendarClock, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source/accounts", label: "Provider Accounts", icon: KeyRound, superAdminOnly: true },
   { href: "/dashboard/settings", label: "Settings", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
 

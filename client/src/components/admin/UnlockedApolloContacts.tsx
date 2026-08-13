@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Mail, Phone, RefreshCw, Search, Unlock } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
-import type { UnlockedContactDTO } from "@/app/dashboard/admin/apollo/unlocked/page";
+import type { UnlockedContactDTO } from "@/app/dashboard/admin/contact-source/unlocked/page";
 
 type ListResponse = {
   data: { rows: UnlockedContactDTO[]; total: number; nextCursor: string | null };
@@ -76,19 +76,19 @@ export function UnlockedApolloContacts({
     <div className="space-y-6">
       <div>
         <Link
-          href="/dashboard/admin/apollo"
+          href="/dashboard/admin/contact-source"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-ocean dark:text-white/50"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Apollo settings
+          Back to contact data source
         </Link>
         <h1 className="mt-2 flex items-center gap-2 text-2xl font-semibold text-slate-950 dark:text-white">
           <Unlock className="h-6 w-6 text-ocean" />
           Unlocked contacts
         </h1>
         <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Every Apollo person that has been revealed at least once. Any future reveal of these people
-          — from any workspace — is served from here without re-billing Apollo. Users still pay 1
+          Every person that has been revealed at least once. Any future reveal of these people
+          — from any workspace — is served from here without re-billing the provider. Users still pay 1
           MariMail credit per reveal.
         </p>
       </div>
@@ -173,7 +173,7 @@ export function UnlockedApolloContacts({
                 <th className="px-4 py-3">First revealed by</th>
                 <th className="px-4 py-3">Revealed</th>
                 <th className="px-4 py-3">Reuses</th>
-                <th className="px-4 py-3">Apollo ID</th>
+                <th className="px-4 py-3">Provider ID</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/[0.06]">

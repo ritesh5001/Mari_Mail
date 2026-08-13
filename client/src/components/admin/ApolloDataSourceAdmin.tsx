@@ -8,7 +8,7 @@ import type {
   ApolloCreditAnalyticsDTO,
   ApolloSettingsDTO,
   ApolloUsageDTO,
-} from "@/app/dashboard/admin/apollo/page";
+} from "@/app/dashboard/admin/contact-source/page";
 
 function formatDate(iso: string | null) {
   if (!iso) return "Never";
@@ -153,14 +153,14 @@ export function ApolloDataSourceAdmin({
             <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Paid Data Source</p>
             <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-slate-950 dark:text-white">
               <Database className="h-6 w-6 text-ocean" />
-              Apollo.io People API
+              People Data API
             </h1>
             <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
               External database of B2B contacts matched by company domain. Email & phone are
               redacted in search results and unlocked on demand by debiting workspace credits.
             </p>
             <Link
-              href="/dashboard/admin/apollo/unlocked"
+              href="/dashboard/admin/contact-source/unlocked"
               className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
             >
               <Unlock className="h-3.5 w-3.5" />
@@ -171,7 +171,7 @@ export function ApolloDataSourceAdmin({
 
           <label className="inline-flex cursor-pointer select-none items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80">
             <Power className={`h-4 w-4 ${settings.enabled ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"}`} />
-            <span>{settings.enabled ? "Apollo enabled" : "Apollo disabled"}</span>
+            <span>{settings.enabled ? "Enabled" : "Disabled"}</span>
             <span className="relative">
               <input
                 type="checkbox"
@@ -214,7 +214,7 @@ export function ApolloDataSourceAdmin({
             <input
               type="password"
               value={apiKeyInput}
-              placeholder={settings.hasApiKey ? "•••••••••••• — paste a new key to replace" : "Paste Apollo API key"}
+              placeholder={settings.hasApiKey ? "•••••••••••• — paste a new key to replace" : "Paste provider API key"}
               onChange={(event) => setApiKeyInput(event.target.value)}
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
               autoComplete="off"
@@ -232,7 +232,7 @@ export function ApolloDataSourceAdmin({
             ) : (
               <>
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
-                <span className="text-slate-700 dark:text-white/70">No key configured — Apollo calls will fail</span>
+                <span className="text-slate-700 dark:text-white/70">No key configured — lookups will fail</span>
               </>
             )}
           </div>
@@ -267,7 +267,7 @@ export function ApolloDataSourceAdmin({
             Connection
           </h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Test connectivity to Apollo and record the result.
+            Test connectivity to the provider and record the result.
           </p>
 
           {settings.lastTestAt ? (
@@ -322,7 +322,7 @@ export function ApolloDataSourceAdmin({
             Usage
           </h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Counts of Apollo queries, reveals, and cache hits.
+            Counts of queries, reveals, and cache hits.
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -369,7 +369,7 @@ export function ApolloDataSourceAdmin({
               className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
             />
             <span className="mt-1 block text-[11px] text-slate-500 dark:text-white/50">
-              60–86400. How long an identical search is cached before re-hitting Apollo.
+              60–86400. How long an identical search is cached before re-hitting the provider.
             </span>
           </label>
 
@@ -441,7 +441,7 @@ function ApolloCreditAnalyticsPanel({ analytics }: { analytics: ApolloCreditAnal
             Credit consumption
           </h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Platform-wide Apollo credit spend, refunds, and top consumers.
+            Platform-wide credit spend, refunds, and top consumers.
           </p>
         </div>
         <span className="text-[11px] text-slate-400 dark:text-white/40">
@@ -511,7 +511,7 @@ function ApolloCreditAnalyticsPanel({ analytics }: { analytics: ApolloCreditAnal
         </h3>
         {topWorkspaces.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500 dark:text-white/60">
-            No Apollo reveals recorded yet across the platform.
+            No reveals recorded yet across the platform.
           </p>
         ) : (
           <div className="mt-3 max-h-[calc(100vh-320px)] overflow-auto overscroll-x-contain rounded-lg border border-slate-100 dark:border-white/[0.06]">

@@ -115,7 +115,7 @@ async function loadApolloData(): Promise<{
     if (settingsRes.ok) {
       settings = ((await settingsRes.json()) as { data: ApolloSettingsDTO }).data;
     } else {
-      loadError = `Settings endpoint returned ${settingsRes.status}. The server may not yet be restarted with the Apollo routes, or the database migration may not have been applied.`;
+      loadError = `Settings endpoint returned ${settingsRes.status}. The server may not yet be restarted with the contact-source routes, or the database migration may not have been applied.`;
     }
     if (usageRes.ok) {
       usage = ((await usageRes.json()) as { data: ApolloUsageDTO }).data;

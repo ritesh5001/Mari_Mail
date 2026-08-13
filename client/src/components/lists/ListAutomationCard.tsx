@@ -91,7 +91,7 @@ export function ListAutomationCard({
               </div>
               {isSuperAdmin ? (
                 <Link
-                  href="/dashboard/admin/apollo/drips"
+                  href="/dashboard/admin/contact-source/drips"
                   className={`shrink-0 rounded-md border border-current/20 px-2.5 py-1 text-[11px] font-medium ${tone.text} hover:opacity-80`}
                 >
                   Manage

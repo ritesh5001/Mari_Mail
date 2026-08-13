@@ -123,7 +123,7 @@ export function DripTable({ initialDrips }: { initialDrips: DripDTO[] }) {
   if (initialDrips.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-500 dark:border-white/15 dark:text-white/50">
-        No scheduled reveals yet. Open a contact list, search Apollo with the filters you want, then use
+        No scheduled reveals yet. Open a contact list, search with the filters you want, then use
         “Schedule daily reveal”.
       </p>
     );
