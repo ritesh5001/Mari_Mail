@@ -13,6 +13,7 @@ type DemoBookingDTO = {
   fleetSize: string | null;
   message: string | null;
   preferredAt: string | null;
+  scheduledAt: string | null;
   timezone: string | null;
   status: "PENDING" | "CONTACTED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
   notes: string | null;

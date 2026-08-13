@@ -4,6 +4,17 @@ import { Prisma, prisma, DemoBookingStatus } from "@marimail/db";
 import { sendTransactionalEmail } from "@marimail/email";
 import { requireSuperAdmin } from "../auth/middleware.js";
 import { sendData, sendError } from "../lib/http.js";
+import {
+  BOOKING_HORIZON_DAYS,
+  BUSINESS_END_HOUR,
+  BUSINESS_START_HOUR,
+  buildAvailability,
+  describeRejection,
+  formatSlotForHumans,
+  IST_LABEL,
+  SLOT_MINUTES,
+  validateSlot,
+} from "../services/demo-slots.js";
 
 export const demoRouter = Router();
 
@@ -43,6 +54,7 @@ function buildAdminEmail(booking: {
   fleetSize?: string | null;
   message?: string | null;
   preferredAt?: Date | null;
+  scheduledAt?: Date | null;
   timezone?: string | null;
   source?: string | null;
   createdAt: Date;
@@ -54,8 +66,11 @@ function buildAdminEmail(booking: {
     ["Role", booking.role],
     ["Phone", booking.phone],
     ["Fleet size", booking.fleetSize],
+    // The slot is the point of the email, so lead with it and spell out the
+    // timezone — an admin skimming on a phone should not have to convert.
+    ["Demo slot", booking.scheduledAt ? formatSlotForHumans(booking.scheduledAt) : null],
+    ["Their timezone", booking.timezone],
     ["Preferred time", booking.preferredAt ? booking.preferredAt.toISOString() : null],
-    ["Timezone", booking.timezone],
     ["Source", booking.source],
     ["Submitted", booking.createdAt.toISOString()],
   ];
@@ -101,6 +116,11 @@ const createSchema = z.object({
     .transform((value) => (value ? new Date(value) : undefined)),
   timezone: z.string().trim().max(80).optional().or(z.literal("")),
   source: z.string().trim().max(200).optional().or(z.literal("")),
+  // The chosen slot, as the exact UTC instant the /slots response offered.
+  scheduledAt: z
+    .string()
+    .datetime({ offset: true })
+    .transform((value) => new Date(value)),
 });
 
 const updateSchema = z.object({
@@ -120,6 +140,50 @@ const settingsSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => null)),
   successMessage: z.string().trim().min(2).max(500).optional(),
+});
+
+/**
+ * Slots already spoken for.
+ *
+ * Cancelled bookings are excluded so their time returns to the pool — the same
+ * rule the partial unique index enforces at the database level.
+ */
+async function takenSlots(from: Date) {
+  const rows = await prisma.demoBooking.findMany({
+    where: {
+      scheduledAt: { gte: from },
+      status: { not: DemoBookingStatus.CANCELLED },
+    },
+    select: { scheduledAt: true },
+  });
+  return rows
+    .map((row) => row.scheduledAt)
+    .filter((value): value is Date => value !== null)
+    .map((value) => value.toISOString());
+}
+
+// Public: bookable days/slots, always expressed in India business hours.
+demoRouter.get("/slots", async (_req, res, next) => {
+  try {
+    const settings = await getOrCreateSettings();
+    if (!settings.enabled) {
+      return sendData(res, { enabled: false, timezone: IST_LABEL, days: [] });
+    }
+
+    const now = new Date();
+    const days = buildAvailability(now, await takenSlots(now));
+
+    return sendData(res, {
+      enabled: true,
+      timezone: IST_LABEL,
+      slotMinutes: SLOT_MINUTES,
+      businessHours: { start: BUSINESS_START_HOUR, end: BUSINESS_END_HOUR },
+      horizonDays: BOOKING_HORIZON_DAYS,
+      days,
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 // Public: page can check whether bookings are accepting submissions
@@ -151,26 +215,52 @@ demoRouter.post("/", async (req, res, next) => {
     const data = parsed.data;
     const clean = (value: string | undefined) => (value && value.trim() !== "" ? value.trim() : null);
 
+    // Availability is decided here, not trusted from the request. A tab left
+    // open overnight will happily submit a slot that has since passed or been
+    // taken by someone else.
+    const rejection = validateSlot(data.scheduledAt, new Date());
+    if (rejection) {
+      return sendError(res, 400, "SLOT_INVALID", describeRejection(rejection));
+    }
+
     const forwarded = req.header("x-forwarded-for")?.split(",")[0]?.trim();
     const ipAddress = forwarded || req.socket.remoteAddress || null;
     const userAgent = req.header("user-agent") ?? null;
 
-    const booking = await prisma.demoBooking.create({
-      data: {
-        name: data.name.trim(),
-        email: data.email,
-        company: clean(data.company),
-        phone: clean(data.phone),
-        role: clean(data.role),
-        fleetSize: clean(data.fleetSize),
-        message: clean(data.message),
-        preferredAt: data.preferredAt ?? null,
-        timezone: clean(data.timezone),
-        source: clean(data.source),
-        ipAddress,
-        userAgent,
-      },
-    });
+    let booking;
+    try {
+      booking = await prisma.demoBooking.create({
+        data: {
+          name: data.name.trim(),
+          email: data.email,
+          company: clean(data.company),
+          phone: clean(data.phone),
+          role: clean(data.role),
+          fleetSize: clean(data.fleetSize),
+          message: clean(data.message),
+          scheduledAt: data.scheduledAt,
+          status: DemoBookingStatus.SCHEDULED,
+          preferredAt: data.preferredAt ?? null,
+          timezone: clean(data.timezone),
+          source: clean(data.source),
+          ipAddress,
+          userAgent,
+        },
+      });
+    } catch (error) {
+      // Two people can pick the same slot between the availability fetch and
+      // the submit. The partial unique index is what actually decides who gets
+      // it; the loser is told to pick again rather than being double-booked.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        return sendError(
+          res,
+          409,
+          "SLOT_TAKEN",
+          "Sorry, that slot was just booked by someone else. Please choose another time.",
+        );
+      }
+      throw error;
+    }
 
     const recipient = resolveAdminRecipient(settings.adminEmail);
     if (recipient) {
@@ -178,7 +268,7 @@ demoRouter.post("/", async (req, res, next) => {
       try {
         await sendTransactionalEmail({
           to: recipient,
-          subject: `New demo request — ${booking.name}${booking.company ? ` (${booking.company})` : ""}`,
+          subject: `Demo booked ${formatSlotForHumans(data.scheduledAt)} — ${booking.name}${booking.company ? ` (${booking.company})` : ""}`,
           html,
           text,
         });
@@ -197,6 +287,10 @@ demoRouter.post("/", async (req, res, next) => {
       {
         id: booking.id,
         successMessage: settings.successMessage,
+        // Echoed back so the confirmation screen can restate the slot in IST
+        // rather than re-deriving it in the browser.
+        scheduledAt: booking.scheduledAt?.toISOString() ?? null,
+        slotLabel: booking.scheduledAt ? formatSlotForHumans(booking.scheduledAt) : null,
       },
       201,
     );

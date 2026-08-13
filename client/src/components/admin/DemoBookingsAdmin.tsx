@@ -16,6 +16,7 @@ type Booking = {
   fleetSize: string | null;
   message: string | null;
   preferredAt: string | null;
+  scheduledAt: string | null;
   timezone: string | null;
   status: BookingStatus;
   notes: string | null;
@@ -51,6 +52,27 @@ function formatDate(iso: string) {
   });
 }
 
+/**
+ * A booked slot, always rendered in India time.
+ *
+ * Deliberately NOT the viewer's locale: the slot was offered, agreed and
+ * committed to in IST, so showing an admin abroad "4:00 AM" for a 09:30 demo
+ * invites exactly the mix-up this pins down. The zone is printed alongside so
+ * the number is never bare.
+ */
+function formatIstSlot(iso: string) {
+  const formatted = new Date(iso).toLocaleString("en-GB", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return `${formatted} IST`;
+}
+
 const csvColumns: Array<{ header: string; accessor: (b: Booking) => string | null }> = [
   { header: "Name", accessor: (b) => b.name },
   { header: "Email", accessor: (b) => b.email },
@@ -59,8 +81,10 @@ const csvColumns: Array<{ header: string; accessor: (b: Booking) => string | nul
   { header: "Role", accessor: (b) => b.role },
   { header: "Fleet size", accessor: (b) => b.fleetSize },
   { header: "Status", accessor: (b) => b.status },
+  { header: "Demo slot (IST)", accessor: (b) => (b.scheduledAt ? formatIstSlot(b.scheduledAt) : null) },
+  { header: "Demo slot (UTC)", accessor: (b) => b.scheduledAt },
   { header: "Preferred at", accessor: (b) => b.preferredAt },
-  { header: "Timezone", accessor: (b) => b.timezone },
+  { header: "Their timezone", accessor: (b) => b.timezone },
   { header: "Source", accessor: (b) => b.source },
   { header: "Message", accessor: (b) => b.message },
   { header: "Notes", accessor: (b) => b.notes },
@@ -483,6 +507,12 @@ function DetailPanel({
             <Phone className="h-4 w-4 text-slate-400" />
             {booking.phone}
           </a>
+        ) : null}
+        {booking.scheduledAt ? (
+          <div className="flex items-center gap-2 font-semibold text-sky-800 dark:text-sky-300">
+            <Calendar className="h-4 w-4" />
+            {formatIstSlot(booking.scheduledAt)}
+          </div>
         ) : null}
         {booking.preferredAt ? (
           <div className="flex items-center gap-2 text-slate-700 dark:text-white/80">

@@ -1610,7 +1610,16 @@ model DemoBooking {
   role        String?
   fleetSize   String?
   message     String?
+  /// Free-text preference from the older form, kept for historical rows.
   preferredAt DateTime?
+  /// The confirmed slot, as an absolute instant. Slots are always offered on
+  /// India business hours (see server/src/services/demo-slots.ts); this column
+  /// stores UTC so it stays unambiguous wherever it is read.
+  ///
+  /// A partial unique index — added in 20260812090000_demo_booking_slots, since
+  /// Prisma cannot express one — stops two live bookings taking the same slot
+  /// while still letting a CANCELLED booking release it.
+  scheduledAt DateTime?
   timezone    String?
   status      DemoBookingStatus @default(PENDING)
   notes       String?
@@ -1623,6 +1632,7 @@ model DemoBooking {
   @@index([status])
   @@index([createdAt])
   @@index([email])
+  @@index([scheduledAt])
 }
 
 model DemoSettings {

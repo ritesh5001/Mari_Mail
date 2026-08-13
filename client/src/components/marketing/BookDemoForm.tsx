@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import PhoneInput, { type Country } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import { apiUrl } from "@/lib/client-api";
+import { DemoSlotPicker } from "@/components/marketing/DemoSlotPicker";
 
 const inputCls =
   "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:shadow-none dark:placeholder:text-white/30 dark:focus:border-accent-400/60 dark:focus:bg-white/[0.06] dark:focus:ring-0";
@@ -32,7 +33,9 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [slotLabel, setSlotLabel] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [scheduledAt, setScheduledAt] = useState<string | null>(null);
   const [defaultCountry] = useState<Country>(() => detectDefaultCountry());
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -42,6 +45,12 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
     // the browser's `required` validation doesn't cover it — enforce it here.
     if (!phone || phone.trim().length < 6) {
       setError("Please enter your WhatsApp number.");
+      return;
+    }
+
+    // Same story for the slot picker: it's buttons, not a form control.
+    if (!scheduledAt) {
+      setError("Please choose a date and time for your demo.");
       return;
     }
 
@@ -58,6 +67,7 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
       role: String(form.get("role") ?? "").trim(),
       phone: (phone ?? "").trim(),
       message: String(form.get("message") ?? "").trim(),
+      scheduledAt,
       timezone: tz,
       source: typeof window !== "undefined" ? window.location.pathname : "/book-demo",
     };
@@ -69,15 +79,23 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
         body: JSON.stringify(payload),
       });
 
+      const body = (await response.json().catch(() => null)) as
+        | { data?: { slotLabel?: string | null }; error?: { code?: string; message?: string } }
+        | null;
+
       if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as
-          | { error?: { message?: string } }
-          | null;
         setError(body?.error?.message ?? "Couldn't submit your request. Please try again.");
+        // Someone else took the slot in the meantime, or it expired while the
+        // form sat open. Clear it so the picker (which refetches) can't
+        // re-submit the same dead time.
+        if (body?.error?.code === "SLOT_TAKEN" || body?.error?.code === "SLOT_INVALID") {
+          setScheduledAt(null);
+        }
         setPending(false);
         return;
       }
 
+      setSlotLabel(body?.data?.slotLabel ?? null);
       setSubmitted(true);
     } catch {
       setError("Network error. Please try again.");
@@ -92,8 +110,13 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
         <div className="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
           <CheckCircle2 className="h-6 w-6" />
         </div>
-        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Request received</h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-white/65">{successMessage}</p>
+        <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Demo booked</h2>
+        {slotLabel ? (
+          <p className="mx-auto mt-3 max-w-sm rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+            {slotLabel}
+          </p>
+        ) : null}
+        <p className="mt-3 text-sm text-slate-600 dark:text-white/65">{successMessage}</p>
       </div>
     );
   }
@@ -149,6 +172,15 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
         <input id="role" name="role" type="text" required className={inputCls} placeholder="Fleet Manager" />
       </div>
 
+      <div className="border-t border-slate-100 pt-4 dark:border-white/10">
+        <p className={labelCls}>
+          Choose your demo slot<Req />
+        </p>
+        <div className="mt-2">
+          <DemoSlotPicker value={scheduledAt} onChange={setScheduledAt} />
+        </div>
+      </div>
+
       <div>
         <label htmlFor="message" className={labelCls}>
           Your Requirements? (optional)
@@ -174,10 +206,10 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
         {pending ? (
           <>
             <Loader2 className="h-4 w-4 animate-spin" />
-            Submitting…
+            Confirming…
           </>
         ) : (
-          "Request demo"
+          "Confirm demo booking"
         )}
       </button>
       <p className="text-center text-[11px] text-slate-500 dark:text-white/40">By submitting you agree to our terms and privacy policy.</p>
