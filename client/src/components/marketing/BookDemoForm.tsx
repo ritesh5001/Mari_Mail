@@ -16,18 +16,22 @@ function Req() {
   return <span className="ml-0.5 text-red-500" aria-hidden="true">*</span>;
 }
 
-function detectDefaultCountry(): Country {
-  try {
-    const lang = typeof navigator !== "undefined" ? navigator.language : undefined;
-    if (lang) {
-      const region = new Intl.Locale(lang).maximize().region;
-      if (region) return region as Country;
-    }
-  } catch {
-    // fall through to default
-  }
-  return "IN";
-}
+/**
+ * Country the WhatsApp field starts on.
+ *
+ * Fixed to India rather than sniffed from the visitor's locale. The previous
+ * version guarded on `typeof navigator !== "undefined"` to mean "we're in the
+ * browser", but Node has shipped a global `navigator` since v21 and reports
+ * `language: "en-US"` — so server rendering silently resolved to the SERVER's
+ * locale and every visitor got a US flag with a +1 prefix, while the "IN"
+ * fallback underneath it became unreachable. It also made the server and client
+ * disagree, which is its own class of hydration bug.
+ *
+ * A constant is right here regardless: MariMail sells from India and the field
+ * is a WhatsApp number, so India is the useful default. Visitors elsewhere
+ * still pick their own country from the selector.
+ */
+const DEFAULT_PHONE_COUNTRY: Country = "IN";
 
 export function BookDemoForm({ successMessage }: { successMessage: string }) {
   const [pending, setPending] = useState(false);
@@ -36,7 +40,6 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
   const [slotLabel, setSlotLabel] = useState<string | null>(null);
   const [phone, setPhone] = useState<string | undefined>(undefined);
   const [scheduledAt, setScheduledAt] = useState<string | null>(null);
-  const [defaultCountry] = useState<Country>(() => detectDefaultCountry());
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,7 +157,7 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
           <PhoneInput
             id="phone"
             international
-            defaultCountry={defaultCountry}
+            defaultCountry={DEFAULT_PHONE_COUNTRY}
             value={phone}
             onChange={setPhone}
             countryCallingCodeEditable={false}
