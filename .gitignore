@@ -69,3 +69,4 @@ imports/
 !packages/db/prisma/migrations/
 !packages/db/prisma/migrations/**/*.sql
 exports/
+.gstack/

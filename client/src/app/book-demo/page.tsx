@@ -82,7 +82,12 @@ export default async function BookDemoPage() {
             </div>
           </div>
 
-          <div className="relative">
+          {/* min-w-0 is load-bearing. A grid track sized in `fr` still refuses to
+              shrink below its content's min-content width, and the slot picker's
+              horizontally-scrolling date strip reports a wide one. Without this the
+              form column took 1022px of a 1440px viewport and squeezed the headline
+              column down to 195px — one word per line. */}
+          <div className="relative min-w-0">
             <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent-500/40 via-sky-500/20 to-transparent opacity-50 blur-2xl" aria-hidden />
             <div className="relative rounded-2xl border border-sky-100 bg-white p-6 shadow-[0_24px_80px_rgba(79,70,229,0.16)] backdrop-blur dark:border-white/10 dark:bg-[#0a0a0c]/90 dark:shadow-[0_20px_80px_rgba(0,0,0,0.5)]">
               {settings.enabled ? (

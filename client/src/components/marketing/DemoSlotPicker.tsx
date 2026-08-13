@@ -146,7 +146,10 @@ export function DemoSlotPicker({
   }
 
   return (
-    <div className="space-y-3">
+    // min-w-0 on every level that contains the scrolling date strip: an ancestor
+    // flex/grid item defaults to min-width:auto and will otherwise size itself to
+    // the strip's full unscrolled width instead of letting it scroll.
+    <div className="min-w-0 space-y-3">
       {/* The timezone is stated once, prominently, and repeated on every slot
           button's label — a visitor should never have to guess whose clock
           these times belong to. */}
@@ -163,7 +166,7 @@ export function DemoSlotPicker({
         <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-white/70">
           <CalendarDays className="h-3.5 w-3.5" /> Pick a date
         </p>
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex w-full min-w-0 snap-x gap-2 overflow-x-auto pb-1">
           {data.days.map((d) => {
             const active = d.date === activeDate;
             return (
@@ -172,7 +175,7 @@ export function DemoSlotPicker({
                 type="button"
                 onClick={() => setActiveDate(d.date)}
                 aria-pressed={active}
-                className={`shrink-0 rounded-lg border px-3 py-2 text-center transition ${
+                className={`w-[4.75rem] shrink-0 snap-start rounded-lg border px-2 py-2 text-center transition ${
                   active
                     ? "border-sky-500 bg-sky-600 text-white shadow-sm"
                     : "border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-sky-400/40"
