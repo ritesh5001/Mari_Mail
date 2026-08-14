@@ -54,8 +54,6 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, alwaysVisible: true },
-  { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
-  { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
   // The daily workflow, in the order the job is done: find the vessels
   // arriving, put the people in a list, fire the ETA campaign off it, then the
   // inbox and cold outreach. These five stay CONTIGUOUS — anything new goes
@@ -65,6 +63,11 @@ const navItems: NavItem[] = [
   { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
   { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
   { href: "/dashboard/campaigns/cold", label: "Cold campaigns", icon: Mail },
+  // Reference libraries — what you've already collected, rather than a step in
+  // the workflow. They sat directly under Overview, which put two lookup
+  // screens ahead of everything the user actually comes here to do.
+  { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
+  { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
   // Supporting tools — used occasionally, not every day.
   { href: "/dashboard/blocked", label: "Blocked", icon: Ban },
   { href: "/dashboard/referrals", label: "Refer & earn", icon: Gift },
