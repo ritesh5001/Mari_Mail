@@ -9,6 +9,7 @@ import {
   PLAN_CATALOG,
   getStripe,
   grantCredits,
+  CREDIT_COST,
 } from "../services/billing.service.js";
 import { fulfilPaymentLink } from "../services/payment-link.service.js";
 import { describeMembership } from "../services/membership.service.js";
@@ -103,6 +104,7 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
       revealPricing: {
         email: revealSettings?.creditsPerEmailReveal ?? 1,
         phone: revealSettings?.creditsPerPhoneReveal ?? 20,
+        waterfallEmail: CREDIT_COST.WATERFALL_EMAIL,
       },
       creditLedger: ledger,
       payments,

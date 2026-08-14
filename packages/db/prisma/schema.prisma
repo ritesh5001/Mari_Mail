@@ -331,6 +331,7 @@ enum CreditLedgerReason {
   EXPORT_VESSEL
   REVEAL_EMAIL
   REVEAL_PHONE
+  WATERFALL_EMAIL
   REFUND
   ADJUSTMENT
 }
@@ -390,6 +391,7 @@ model User {
   authEvents          AuthEvent[]
   apolloDrips         ApolloDripJob[]          @relation("ApolloDripCreator")
   apolloAccounts      WorkspaceApolloAccount[] @relation("ApolloAccountCreator")
+  emailWaterfallSearches EmailWaterfallSearch[]
   /// Short code this user shares to invite others. Generated on first use.
   referralCode        String?                  @unique
   referralsMade       Referral[]               @relation("ReferralReferrer")
@@ -495,6 +497,7 @@ model Workspace {
   sentMessages             SentMessage[]
   paymentLinks             PaymentLink[]
   payments                 Payment[]
+  emailWaterfallSearches   EmailWaterfallSearch[]
 
   @@index([ownerId])
   @@index([plan])
@@ -889,6 +892,7 @@ model Contact {
   campaignContacts   CampaignContact[]
   emailEvents        EmailEvent[]
   sentMessages       SentMessage[]
+  emailWaterfallSearches EmailWaterfallSearch[]
 
   @@unique([email, workspaceId])
   @@index([workspaceId])
@@ -1872,6 +1876,48 @@ model ApolloRevealCache {
   @@index([email])
   @@index([companyName])
   @@index([emailRevealedAt])
+}
+
+enum EmailWaterfallStatus {
+  PENDING
+  FOUND
+  NOT_FOUND
+  FAILED
+}
+
+/// One explicitly approved, paid attempt to find an email after the normal
+/// provider has no address. The workspace/source/externalId key makes the
+/// operation idempotent: refreshing or double-clicking cannot charge twice.
+model EmailWaterfallSearch {
+  id                String               @id @default(cuid())
+  requestId         String
+  workspaceId       String
+  userId            String?
+  contactId         String?
+  source            DataSource           @default(APOLLO)
+  externalId        String
+  firstName         String
+  lastName          String
+  companyName       String
+  personLinkedinUrl String?
+  status            EmailWaterfallStatus @default(PENDING)
+  email             String?
+  emailStatus       EmailStatus?
+  provider          String?
+  creditsCharged    Int                  @default(0)
+  lastError         String?
+  completedAt       DateTime?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  contact           Contact?             @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, source, externalId])
+  @@index([requestId])
+  @@index([workspaceId, status])
+  @@index([contactId])
+  @@index([createdAt])
 }
 
 enum ApolloPhoneRequestStatus {

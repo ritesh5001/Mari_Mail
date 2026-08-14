@@ -30,6 +30,10 @@ import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSe
 import { ScheduleDripButton } from "@/components/lists/ScheduleDripButton";
 import { ListAutomationCard } from "@/components/lists/ListAutomationCard";
 import {
+  WaterfallEmailConfirmDialog,
+  type WaterfallEmailCandidate,
+} from "@/components/contacts/WaterfallEmailConfirmDialog";
+import {
   RoleFilterPanel,
   EMPTY_ROLE_FILTER,
   EMPTY_RESULT_FILTER,
@@ -214,10 +218,35 @@ export function ContactListDetail({
   // Errors here used to use native alert() — blocking, unstyled, and out of
   // keeping with the toast used everywhere else in this file.
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [waterfallContact, setWaterfallContact] = useState<ContactRow | null>(null);
+  const [waterfallBusy, setWaterfallBusy] = useState(false);
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  const revealPricing = useRevealPricing();
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/api/billing/me")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: { data?: { workspace?: { creditBalance?: number } } } | null) => {
+        if (!cancelled && typeof payload?.data?.workspace?.creditBalance === "number") {
+          setCreditBalance(payload.data.workspace.creditBalance);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function showError(message: string) {
     setError(message);
     window.setTimeout(() => setError(null), 5000);
+  }
+
+  function showNotice(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 6000);
   }
 
   async function deleteList() {
@@ -272,6 +301,11 @@ export function ContactListDetail({
         router.refresh();
       } else {
         const body = await r.json().catch(() => null);
+        if (field === "email" && body?.error?.code === "NO_EMAIL") {
+          setWaterfallContact(contact);
+          showNotice("The normal provider has no email. Approve the 20-credit waterfall to continue.");
+          return;
+        }
         const msg =
           body?.error?.message ||
           (r.status === 402
@@ -288,6 +322,63 @@ export function ContactListDetail({
     }
   }
 
+  async function confirmContactWaterfall() {
+    if (!waterfallContact || waterfallBusy) return;
+    const externalId = apolloExternalId(waterfallContact);
+    if (!externalId) return;
+    setWaterfallBusy(true);
+    try {
+      const response = await apiFetch("/api/contacts/waterfall-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmed: true,
+          candidates: [
+            {
+              externalId,
+              firstName: waterfallContact.firstName,
+              lastName: waterfallContact.lastName,
+              companyName: waterfallContact.companyName,
+              personLinkedinUrl: waterfallContact.personLinkedinUrl ?? null,
+            },
+          ],
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            data?: {
+              results?: Array<{ found: boolean; status: string; charged: number; message: string }>;
+              balance?: number | null;
+            };
+            error?: { code?: string; message?: string };
+          }
+        | null;
+      if (!response.ok || !payload?.data?.results?.[0]) {
+        showError(
+          payload?.error?.code === "INSUFFICIENT_CREDITS"
+            ? "Not enough credits for this waterfall search."
+            : payload?.error?.message ?? "Waterfall search could not start — no credits were charged.",
+        );
+        return;
+      }
+      const result = payload.data.results[0];
+      if (typeof payload.data.balance === "number") setCreditBalance(payload.data.balance);
+      showNotice(
+        result.found
+          ? `Email found. ${result.charged} credits spent.`
+          : result.status === "NOT_FOUND"
+            ? `Waterfall completed with no email found. ${result.charged} credits spent.`
+            : result.message,
+      );
+      setWaterfallContact(null);
+      router.refresh();
+    } catch (error) {
+      showError((error as Error).message || "Waterfall search failed — no credits were charged.");
+    } finally {
+      setWaterfallBusy(false);
+    }
+  }
+
   return (
     <>
       {error && (
@@ -298,6 +389,34 @@ export function ContactListDetail({
           {error}
         </div>
       )}
+      {notice && (
+        <div
+          role="status"
+          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800 shadow-lg dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+        >
+          {notice}
+        </div>
+      )}
+
+      <WaterfallEmailConfirmDialog
+        candidates={
+          waterfallContact
+            ? [
+                {
+                  externalId: apolloExternalId(waterfallContact) ?? "",
+                  firstName: waterfallContact.firstName,
+                  lastName: waterfallContact.lastName,
+                  companyName: waterfallContact.companyName,
+                },
+              ]
+            : []
+        }
+        creditPerSearch={revealPricing.waterfallEmail}
+        creditBalance={creditBalance}
+        busy={waterfallBusy}
+        onCancel={() => setWaterfallContact(null)}
+        onConfirm={confirmContactWaterfall}
+      />
 
       <div className="space-y-5">
         <section className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
@@ -838,6 +957,7 @@ type ApolloRow = {
   emailStatus: string;
   emailLocked?: boolean;
   emailAvailable?: boolean;
+  waterfallStatus?: "FOUND" | "NOT_FOUND" | "FAILED" | "PENDING";
   phoneLocked?: boolean;
   phoneAvailable?: boolean;
   mobilePhone: string | null;
@@ -1080,10 +1200,17 @@ export function CampaignByRolePanel({
   // Reveal prices are set by an admin and differ per field — a phone number
   // costs materially more than an email — so they come from the server with
   // the balance rather than being written into the labels here.
-  const [revealPricing, setRevealPricing] = useState<{ email: number; phone: number }>({
+  const [revealPricing, setRevealPricing] = useState<{
+    email: number;
+    phone: number;
+    waterfallEmail: number;
+  }>({
     email: 1,
     phone: 20,
+    waterfallEmail: 20,
   });
+  const [waterfallPrompt, setWaterfallPrompt] = useState<ApolloRow[]>([]);
+  const [waterfallBusy, setWaterfallBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1094,7 +1221,7 @@ export function CampaignByRolePanel({
           payload: {
             data?: {
               workspace?: { creditBalance?: number };
-              revealPricing?: { email?: number; phone?: number };
+              revealPricing?: { email?: number; phone?: number; waterfallEmail?: number };
             };
           } | null,
         ) => {
@@ -1104,7 +1231,11 @@ export function CampaignByRolePanel({
           }
           const pricing = payload?.data?.revealPricing;
           if (pricing) {
-            setRevealPricing({ email: pricing.email ?? 1, phone: pricing.phone ?? 20 });
+            setRevealPricing({
+              email: pricing.email ?? 1,
+              phone: pricing.phone ?? 20,
+              waterfallEmail: pricing.waterfallEmail ?? 20,
+            });
           }
         },
       )
@@ -1202,6 +1333,119 @@ export function CampaignByRolePanel({
     });
   }
 
+  function requestWaterfall(rows: ApolloRow[]) {
+    const eligible = Array.from(
+      new Map(
+        rows
+          .filter((row) => row.externalId && row.waterfallStatus !== "NOT_FOUND")
+          .map((row) => [String(row.externalId), row]),
+      ).values(),
+    );
+    if (eligible.length === 0) {
+      setToast("These contacts have already been checked by the waterfall.");
+      setTimeout(() => setToast(null), 4000);
+      return;
+    }
+    setWaterfallPrompt(eligible);
+  }
+
+  async function confirmWaterfall() {
+    if (waterfallPrompt.length === 0 || waterfallBusy) return;
+    setWaterfallBusy(true);
+    try {
+      const candidates: Array<WaterfallEmailCandidate & { personLinkedinUrl?: string | null }> =
+        waterfallPrompt.map((row) => ({
+          externalId: String(row.externalId),
+          firstName: row.firstName ?? "",
+          lastName: row.lastName ?? "",
+          companyName: row.companyName ?? "",
+          personLinkedinUrl: row.personLinkedinUrl ?? null,
+        }));
+      const res = await apiFetch("/api/contacts/waterfall-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmed: true, candidates }),
+      });
+      const payload = (await res.json().catch(() => null)) as
+        | {
+            data?: {
+              results?: Array<{
+                externalId: string;
+                status: "FOUND" | "NOT_FOUND" | "FAILED" | "PENDING";
+                found: boolean;
+                email: string | null;
+                contact?: { emailStatus?: string } | null;
+                charged: number;
+                message: string;
+              }>;
+              balance?: number | null;
+            };
+            error?: { code?: string; message?: string };
+          }
+        | null;
+
+      if (!res.ok || !payload?.data?.results) {
+        setToast(
+          payload?.error?.code === "INSUFFICIENT_CREDITS"
+            ? "Not enough credits for this waterfall search."
+            : payload?.error?.message ?? "Waterfall search could not start — no credits were charged.",
+        );
+        setTimeout(() => setToast(null), 6000);
+        return;
+      }
+
+      const results = new Map(payload.data.results.map((result) => [result.externalId, result]));
+      setState((prev) => {
+        if (prev.status !== "loaded") return prev;
+        return {
+          ...prev,
+          allRows: prev.allRows.map((row) => {
+            const result = row.externalId ? results.get(String(row.externalId)) : undefined;
+            if (!result) return row;
+            if (result.found && result.email) {
+              return {
+                ...row,
+                email: result.email,
+                emailLocked: false,
+                emailAvailable: true,
+                emailStatus: result.contact?.emailStatus ?? "UNKNOWN",
+                waterfallStatus: "FOUND",
+              };
+            }
+            return { ...row, waterfallStatus: result.status };
+          }),
+        };
+      });
+
+      if (typeof payload.data.balance === "number") setCreditBalance(payload.data.balance);
+      const found = payload.data.results.filter((result) => result.found).length;
+      const notFound = payload.data.results.filter((result) => result.status === "NOT_FOUND").length;
+      const failedAndRefunded = payload.data.results.filter(
+        (result) => result.status === "FAILED" && result.charged === 0,
+      ).length;
+      const failedNeedsSupport = payload.data.results.filter(
+        (result) => result.status === "FAILED" && result.charged > 0,
+      ).length;
+      const charged = payload.data.results.reduce((sum, result) => sum + result.charged, 0);
+      const parts = [
+        found > 0 ? `${found} email${found === 1 ? "" : "s"} found` : null,
+        notFound > 0 ? `${notFound} not found` : null,
+        failedAndRefunded > 0 ? `${failedAndRefunded} failed and refunded` : null,
+        failedNeedsSupport > 0 ? `${failedNeedsSupport} failed; refund needs support` : null,
+        charged > 0 ? `${charged} credits spent` : "no additional credits spent",
+      ].filter(Boolean);
+      setToast(`Waterfall complete — ${parts.join(" · ")}.`);
+      setTimeout(() => setToast(null), 7000);
+      setWaterfallPrompt([]);
+      if (found > 0) router.refresh();
+    } catch (error) {
+      setToast((error as Error).message || "Waterfall search failed — no credits were charged.");
+      setTimeout(() => setToast(null), 6000);
+    } finally {
+      setWaterfallBusy(false);
+    }
+  }
+
   async function addSelectedToList() {
     if (state.status !== "loaded") return;
     const rowsById = new Map(state.allRows.map((r) => [r.id, r]));
@@ -1214,7 +1458,7 @@ export function CampaignByRolePanel({
     // actually email, so we split the selection into three buckets and act
     // on each accordingly.
     //   - alreadyRevealed → add straight to the list (no credit spent).
-    //   - noEmailOnFile   → skip entirely; there's nothing to reveal.
+    //   - noEmailOnFile   → ask permission for the paid waterfall fallback.
     //   - needsReveal     → attempt reveal (1 credit each). Only the rows
     //                        whose reveal succeeds get added to the list.
     // This prevents "add now, reveal later" from silently persisting locked
@@ -1243,7 +1487,9 @@ export function CampaignByRolePanel({
       let latestBalance: number | null = null;
       const revealedRows: ApolloRow[] = [];
       let revealSkipped = 0;
+      let revealNoEmail = 0;
       let rateLimited = false;
+      const waterfallCandidates = [...noEmailOnFile];
 
       const revealOne = async (row: ApolloRow) => {
         const revealRes = await apiFetch(
@@ -1278,14 +1524,19 @@ export function CampaignByRolePanel({
           if (outcome.status === "fulfilled") {
             revealedRows.push(batch[j]);
           } else {
-            revealSkipped += 1;
             const reason = outcome.reason as Error & { detail?: string };
-            if (reason.message === "INSUFFICIENT_CREDITS") outOfCredits = true;
-            if (
-              reason.message === "APOLLO_UNAVAILABLE" ||
-              /rate|429|limit/i.test(reason.detail ?? "")
-            ) {
-              rateLimited = true;
+            if (reason.message === "NO_EMAIL") {
+              revealNoEmail += 1;
+              waterfallCandidates.push(batch[j]);
+            } else {
+              revealSkipped += 1;
+              if (reason.message === "INSUFFICIENT_CREDITS") outOfCredits = true;
+              if (
+                reason.message === "APOLLO_UNAVAILABLE" ||
+                /rate|429|limit/i.test(reason.detail ?? "")
+              ) {
+                rateLimited = true;
+              }
             }
           }
         }
@@ -1296,7 +1547,10 @@ export function CampaignByRolePanel({
           revealSkipped += needsReveal.length - (i + batch.length);
           break;
         }
-        setRevealProgress({ done: revealedRows.length + revealSkipped, total: needsReveal.length });
+        setRevealProgress({
+          done: revealedRows.length + revealSkipped + revealNoEmail,
+          total: needsReveal.length,
+        });
       }
       setRevealProgress(null);
       if (latestBalance !== null) setCreditBalance(latestBalance);
@@ -1350,8 +1604,8 @@ export function CampaignByRolePanel({
       if (revealedRows.length > 0) {
         notes.push(`${revealedRows.length} revealed`);
       }
-      if (noEmailOnFile.length > 0) {
-        notes.push(`${noEmailOnFile.length} skipped (no email on file)`);
+      if (waterfallCandidates.length > 0) {
+        notes.push(`${waterfallCandidates.length} need waterfall approval`);
       }
       if (revealSkipped > 0) {
         // "reveal failed" for a throttled batch told the user nothing and
@@ -1372,7 +1626,8 @@ export function CampaignByRolePanel({
           : `Nothing added${detail}`,
       );
       setTimeout(() => setToast(null), 6000);
-      setSelected(new Set());
+      setSelected(new Set(waterfallCandidates.map((row) => row.id)));
+      if (waterfallCandidates.length > 0) requestWaterfall(waterfallCandidates);
 
       // 4) Flip local locked flags off for the rows we just revealed so
       //    the results table shows the unlocked state immediately.
@@ -1506,6 +1761,12 @@ export function CampaignByRolePanel({
       }
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
+        if (field === "email" && body?.error?.code === "NO_EMAIL") {
+          setToast("The normal provider has no email. Approve a waterfall search to continue.");
+          setTimeout(() => setToast(null), 5000);
+          requestWaterfall([row]);
+          return;
+        }
         const msg =
           body?.error?.code === "INSUFFICIENT_CREDITS"
             ? "Out of credits — upgrade your plan to reveal more"
@@ -1580,7 +1841,6 @@ export function CampaignByRolePanel({
       }
       return changed ? next : prev;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultFilter]);
   // Feed distinct titles from the latest results back into the include-title
   // autocomplete so the user can pick a title they just saw.
@@ -1919,10 +2179,17 @@ export function CampaignByRolePanel({
                   const needsReveal = selectedRows.filter(
                     (r) => r.emailLocked !== false && r.emailAvailable !== false && r.externalId,
                   ).length;
+                  const needsWaterfall = selectedRows.filter(
+                    (r) => r.emailAvailable === false && r.externalId,
+                  ).length;
+                  const revealCost = needsReveal * revealPricing.email;
                   return (
                     <p className="text-xs text-slate-500 dark:text-white/60">
                       {selected.size} of {visibleRows.length} selected
-                      {needsReveal > 0 ? ` · ${needsReveal} credit${needsReveal === 1 ? "" : "s"} to reveal` : ""}
+                      {revealCost > 0 ? ` · ${revealCost} credit${revealCost === 1 ? "" : "s"} to reveal` : ""}
+                      {needsWaterfall > 0
+                        ? ` · ${needsWaterfall * revealPricing.waterfallEmail} credits if waterfall is approved`
+                        : ""}
                     </p>
                   );
                 })()}
@@ -1938,6 +2205,22 @@ export function CampaignByRolePanel({
                     totalMatches={loaded.apolloTotal}
                   />
                 ) : null}
+                {(() => {
+                  const rows = visibleRows.filter(
+                    (row) => selected.has(row.id) && row.emailAvailable === false && row.externalId,
+                  );
+                  return rows.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => requestWaterfall(rows)}
+                      disabled={adding || waterfallBusy}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-200"
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      Waterfall {rows.length} ({revealPricing.waterfallEmail} each)
+                    </button>
+                  ) : null;
+                })()}
                 <button
                   type="button"
                   onClick={addSelectedToList}
@@ -2040,12 +2323,25 @@ export function CampaignByRolePanel({
                         </td>
                         <td className="px-3 py-2 text-slate-600 dark:text-white/70">
                           {row.emailAvailable === false ? (
-                            <span
-                              className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-white/50"
-                              title="We have no email on file for this contact — nothing to reveal, no credit spent."
-                            >
-                              No email on file
-                            </span>
+                            row.waterfallStatus === "NOT_FOUND" ? (
+                              <span
+                                className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-500 dark:bg-white/[0.06] dark:text-white/50"
+                                title="The paid waterfall was already completed for this contact and found no email."
+                              >
+                                Waterfall checked · no email
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => requestWaterfall([row])}
+                                disabled={waterfallBusy || !row.externalId}
+                                className="inline-flex items-center gap-1.5 rounded-md border border-violet-300 bg-violet-50 px-2 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-200"
+                                title={`Search fallback email sources — requires confirmation and costs ${revealPricing.waterfallEmail} credits`}
+                              >
+                                <Search className="h-3 w-3" />
+                                Waterfall email ({revealPricing.waterfallEmail})
+                              </button>
+                            )
                           ) : row.emailLocked ? (
                             <button
                               type="button"
@@ -2132,7 +2428,7 @@ export function CampaignByRolePanel({
             </div>
           {visibleRows.length > 0 ? (
             <p className="text-[11px] text-slate-400 dark:text-white/40">
-              External contacts stay locked until you spend a credit per email or phone. Adding to the list persists the preview so you can reveal later — nothing here spends credits automatically.
+              Standard reveals use the displayed per-field price. If no email is available, waterfall search costs {revealPricing.waterfallEmail} credits per contact and always asks for confirmation before it runs.
             </p>
           ) : null}
           {loaded.nextPage !== null ? (
@@ -2146,13 +2442,27 @@ export function CampaignByRolePanel({
                 {loaded.loadingMore ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                 Load more matches
               </button>
-              <span className="ml-2 text-[11px] text-slate-400">Loading more is free — credits are only spent on reveal.</span>
+              <span className="ml-2 text-[11px] text-slate-400">Loading more is free. Credits are spent only after you approve a reveal or waterfall search.</span>
             </div>
           ) : null}
         </section>
       ) : null}
         </div>
       </div>
+
+      <WaterfallEmailConfirmDialog
+        candidates={waterfallPrompt.map((row) => ({
+          externalId: String(row.externalId),
+          firstName: row.firstName,
+          lastName: row.lastName,
+          companyName: row.companyName,
+        }))}
+        creditPerSearch={revealPricing.waterfallEmail}
+        creditBalance={creditBalance}
+        busy={waterfallBusy}
+        onCancel={() => setWaterfallPrompt([])}
+        onConfirm={confirmWaterfall}
+      />
 
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">

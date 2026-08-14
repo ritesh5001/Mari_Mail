@@ -33,11 +33,21 @@ import {
   grantCredits,
   CreditDeductionError,
   MembershipInactiveError,
+  canSpendCredits,
+  CREDIT_COST,
+  waterfallEmailCost,
 } from "../services/billing.service.js";
+import {
+  EmailWaterfallUnavailableError,
+  isEmailWaterfallConfigured,
+  searchEmailWaterfall,
+  type EmailWaterfallCandidate,
+  type EmailWaterfallMatch,
+} from "../services/email-waterfall.service.js";
 import { phoneWebhookFor } from "../services/apollo/phone-webhook.js";
 import { getOrCreateDataSourceSettings } from "../services/data-sources/settings.js";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export const contactRouter = Router();
 
@@ -1946,6 +1956,404 @@ export async function revealApolloPerson(
     balance,
   };
 }
+
+const waterfallCandidateSchema = z.object({
+  externalId: z.string().trim().min(1).max(200),
+  firstName: z.string().trim().max(120).default(""),
+  lastName: z.string().trim().max(120).default(""),
+  companyName: z.string().trim().max(240).default(""),
+  personLinkedinUrl: z.string().trim().max(500).nullable().optional(),
+});
+
+const waterfallEmailSchema = z.object({
+  // This bit is deliberately mandatory at the HTTP boundary. A future client,
+  // script, or accidental direct call cannot spend credits without carrying
+  // the same explicit approval the confirmation dialog collects.
+  confirmed: z.boolean().optional().default(false),
+  candidates: z.array(waterfallCandidateSchema).min(1).max(100),
+});
+
+type WaterfallAttempt = Awaited<ReturnType<typeof prisma.emailWaterfallSearch.findFirstOrThrow>>;
+
+async function persistWaterfallEmail(attempt: WaterfallAttempt, match: EmailWaterfallMatch) {
+  const preview = await prisma.contact.findFirst({
+    where: {
+      workspaceId: attempt.workspaceId,
+      source: attempt.source,
+      customFields: { path: ["apolloId"], equals: attempt.externalId },
+    },
+  });
+  const emailOwner = await prisma.contact.findFirst({
+    where: { workspaceId: attempt.workspaceId, email: match.email },
+  });
+
+  let contact;
+  const affectedListIds: string[] = [];
+
+  if (emailOwner && preview && emailOwner.id !== preview.id) {
+    // The waterfall found an address already known under another contact row.
+    // Reuse that canonical row and move any list memberships off the locked
+    // Apollo preview so a campaign never keeps targeting @unknown.local.
+    const memberships = await prisma.listContact.findMany({
+      where: { contactId: preview.id },
+      select: { listId: true },
+    });
+    affectedListIds.push(...memberships.map((membership) => membership.listId));
+    if (affectedListIds.length > 0) {
+      await prisma.listContact.createMany({
+        data: affectedListIds.map((listId) => ({ listId, contactId: emailOwner.id })),
+        skipDuplicates: true,
+      });
+      await prisma.listContact.deleteMany({ where: { contactId: preview.id } });
+      for (const listId of affectedListIds) {
+        const contactCount = await prisma.listContact.count({ where: { listId } });
+        await prisma.contactList.update({ where: { id: listId }, data: { contactCount } });
+      }
+    }
+    contact = await prisma.contact.update({
+      where: { id: emailOwner.id },
+      data: {
+        emailStatus: match.emailStatus,
+        verified: match.emailStatus === "VALID" || emailOwner.verified,
+      },
+    });
+  } else if (preview) {
+    const existingFields =
+      preview.customFields && typeof preview.customFields === "object"
+        ? (preview.customFields as Record<string, unknown>)
+        : {};
+    contact = await prisma.contact.update({
+      where: { id: preview.id },
+      data: {
+        email: match.email,
+        emailStatus: match.emailStatus,
+        verified: match.emailStatus === "VALID",
+        customFields: {
+          ...existingFields,
+          locked: false,
+          waterfallEmailProvider: match.provider,
+          waterfallEmailSearchedAt: new Date().toISOString(),
+        } as never,
+      },
+    });
+  } else if (emailOwner) {
+    contact = emailOwner;
+  } else {
+    contact = await prisma.contact.create({
+      data: {
+        firstName: attempt.firstName || "Unknown",
+        lastName: attempt.lastName,
+        companyName: attempt.companyName || "(unknown)",
+        email: match.email,
+        emailStatus: match.emailStatus,
+        personLinkedinUrl: attempt.personLinkedinUrl,
+        workspaceId: attempt.workspaceId,
+        source: attempt.source,
+        verified: match.emailStatus === "VALID",
+        customFields: {
+          apolloId: attempt.externalId,
+          locked: false,
+          waterfallEmailProvider: match.provider,
+          waterfallEmailSearchedAt: new Date().toISOString(),
+        } as never,
+      },
+    });
+  }
+
+  await prisma.emailWaterfallSearch.update({
+    where: { id: attempt.id },
+    data: {
+      status: "FOUND",
+      email: match.email,
+      emailStatus: match.emailStatus,
+      provider: match.provider,
+      contactId: contact.id,
+      completedAt: new Date(),
+      lastError: null,
+    },
+  });
+
+  const contactLists = await prisma.listContact.findMany({
+    where: { contactId: contact.id },
+    select: { listId: true },
+  });
+  for (const listId of new Set([...affectedListIds, ...contactLists.map((row) => row.listId)])) {
+    void reconcileCampaignsForList(listId);
+  }
+
+  return contact;
+}
+
+/**
+ * Explicitly approved, 20-credit email fallback.
+ *
+ * Apollo reveal remains the inexpensive first step. This route is only called
+ * after the user chooses Waterfall and confirms the exact contacts + total.
+ * New attempt rows and the batch credit deduction share one transaction, so a
+ * double click or repeated HTTP request cannot charge the same contact twice.
+ */
+contactRouter.post("/waterfall-email", requireAuth, async (req, res, next) => {
+  try {
+    const input = waterfallEmailSchema.safeParse(req.body ?? {});
+    if (!input.success) {
+      return sendError(
+        res,
+        400,
+        "VALIDATION_ERROR",
+        input.error.issues[0]?.message ?? "Invalid waterfall search",
+      );
+    }
+
+    const uniqueCandidates = Array.from(
+      new Map(input.data.candidates.map((candidate) => [candidate.externalId, candidate])).values(),
+    );
+    const requestedCost = waterfallEmailCost(uniqueCandidates.length);
+    if (!input.data.confirmed) {
+      return sendError(
+        res,
+        409,
+        "WATERFALL_CONFIRMATION_REQUIRED",
+        `Confirm this waterfall search before spending ${requestedCost} credits (${CREDIT_COST.WATERFALL_EMAIL} per contact).`,
+      );
+    }
+
+    const { workspaceId, userId } = (req as AuthedRequest).auth;
+    const externalIds = uniqueCandidates.map((candidate) => candidate.externalId);
+    const existingBefore = await prisma.emailWaterfallSearch.findMany({
+      where: { workspaceId, source: "APOLLO", externalId: { in: externalIds } },
+      select: { externalId: true },
+    });
+    const existingIds = new Set(existingBefore.map((attempt) => attempt.externalId));
+    if (
+      uniqueCandidates.some((candidate) => !existingIds.has(candidate.externalId)) &&
+      !(await isEmailWaterfallConfigured())
+    ) {
+      return sendError(
+        res,
+        503,
+        "WATERFALL_DISABLED",
+        "Waterfall email search is not configured — no credits were charged.",
+      );
+    }
+
+    const requestId = randomUUID();
+    let reserved:
+      | { attempts: WaterfallAttempt[]; balance: number | null }
+      | undefined;
+    try {
+      reserved = await prisma.$transaction(async (tx) => {
+        await tx.emailWaterfallSearch.createMany({
+          data: uniqueCandidates.map((candidate) => ({
+            requestId,
+            workspaceId,
+            userId,
+            source: "APOLLO",
+            externalId: candidate.externalId,
+            firstName: candidate.firstName,
+            lastName: candidate.lastName,
+            companyName: candidate.companyName,
+            personLinkedinUrl: candidate.personLinkedinUrl ?? null,
+          })),
+          skipDuplicates: true,
+        });
+
+        const attempts = await tx.emailWaterfallSearch.findMany({ where: { requestId } });
+        if (attempts.length === 0) return { attempts, balance: null };
+
+        const workspace = await tx.workspace.findUnique({
+          where: { id: workspaceId },
+          select: { creditBalance: true, billingStatus: true, downgradedAt: true },
+        });
+        const total = waterfallEmailCost(attempts.length);
+        if (!workspace) throw new CreditDeductionError(total, 0);
+        if (!canSpendCredits(workspace)) {
+          throw new MembershipInactiveError(workspace.billingStatus, workspace.creditBalance);
+        }
+        if (workspace.creditBalance < total) {
+          throw new CreditDeductionError(total, workspace.creditBalance);
+        }
+
+        const updated = await tx.workspace.update({
+          where: { id: workspaceId },
+          data: { creditBalance: { decrement: total } },
+          select: { creditBalance: true },
+        });
+        await tx.creditLedger.create({
+          data: {
+            workspaceId,
+            delta: -total,
+            balance: updated.creditBalance,
+            reason: "WATERFALL_EMAIL",
+            detail: `waterfall:${requestId}:${attempts.length} contact(s)`,
+            actorId: userId,
+          },
+        });
+        await tx.emailWaterfallSearch.updateMany({
+          where: { requestId },
+          data: { creditsCharged: CREDIT_COST.WATERFALL_EMAIL },
+        });
+        return { attempts, balance: updated.creditBalance };
+      });
+    } catch (error) {
+      if (error instanceof MembershipInactiveError) {
+        return sendError(res, 403, "SUBSCRIPTION_INACTIVE", error.message);
+      }
+      if (error instanceof CreditDeductionError) {
+        return sendError(res, 402, "INSUFFICIENT_CREDITS", error.message);
+      }
+      throw error;
+    }
+
+    const candidatesById = new Map<string, EmailWaterfallCandidate>(
+      uniqueCandidates.map((candidate) => [candidate.externalId, candidate]),
+    );
+    const processed = new Map<
+      string,
+      {
+        externalId: string;
+        status: "FOUND" | "NOT_FOUND" | "FAILED" | "PENDING";
+        found: boolean;
+        email: string | null;
+        contact: ReturnType<typeof serializeContact> | null;
+        charged: number;
+        message: string;
+      }
+    >();
+
+    // Keep the paid provider work bounded. A large approved selection still
+    // completes, but it does not open 100 simultaneous secondary-data calls.
+    const attempts = reserved?.attempts ?? [];
+    for (let i = 0; i < attempts.length; i += 3) {
+      const batch = attempts.slice(i, i + 3);
+      await Promise.all(
+        batch.map(async (attempt) => {
+          const candidate = candidatesById.get(attempt.externalId)!;
+          try {
+            const match = await searchEmailWaterfall(candidate, workspaceId);
+            if (!match) {
+              await prisma.emailWaterfallSearch.update({
+                where: { id: attempt.id },
+                data: { status: "NOT_FOUND", completedAt: new Date() },
+              });
+              processed.set(attempt.externalId, {
+                externalId: attempt.externalId,
+                status: "NOT_FOUND",
+                found: false,
+                email: null,
+                contact: null,
+                charged: CREDIT_COST.WATERFALL_EMAIL,
+                message: "Waterfall completed, but no verified email was found.",
+              });
+              return;
+            }
+
+            const contact = await persistWaterfallEmail(attempt, match);
+            processed.set(attempt.externalId, {
+              externalId: attempt.externalId,
+              status: "FOUND",
+              found: true,
+              email: match.email,
+              contact: serializeContact(contact),
+              charged: CREDIT_COST.WATERFALL_EMAIL,
+              message: "Email found by waterfall search.",
+            });
+          } catch (error) {
+            const message =
+              error instanceof EmailWaterfallUnavailableError
+                ? error.message
+                : (error as Error).message || "Waterfall search failed";
+            try {
+              await grantCredits(
+                workspaceId,
+                CREDIT_COST.WATERFALL_EMAIL,
+                "REFUND",
+                `waterfall:${attempt.id}:technical-failure`,
+                userId,
+              );
+              await prisma.emailWaterfallSearch.delete({ where: { id: attempt.id } });
+              processed.set(attempt.externalId, {
+                externalId: attempt.externalId,
+                status: "FAILED",
+                found: false,
+                email: null,
+                contact: null,
+                charged: 0,
+                message: `${message} Your 20 credits were refunded.`,
+              });
+            } catch (refundError) {
+              await prisma.emailWaterfallSearch.update({
+                where: { id: attempt.id },
+                data: {
+                  status: "FAILED",
+                  lastError: `${message}; refund failed: ${(refundError as Error).message}`,
+                  completedAt: new Date(),
+                },
+              });
+              processed.set(attempt.externalId, {
+                externalId: attempt.externalId,
+                status: "FAILED",
+                found: false,
+                email: null,
+                contact: null,
+                charged: CREDIT_COST.WATERFALL_EMAIL,
+                message: "The search failed and the automatic refund needs support attention.",
+              });
+            }
+          }
+        }),
+      );
+    }
+
+    // Add idempotent results for contacts searched in an earlier request.
+    const allAttempts = await prisma.emailWaterfallSearch.findMany({
+      where: { workspaceId, source: "APOLLO", externalId: { in: externalIds } },
+      include: { contact: true },
+    });
+    for (const attempt of allAttempts) {
+      if (processed.has(attempt.externalId)) continue;
+      processed.set(attempt.externalId, {
+        externalId: attempt.externalId,
+        status: attempt.status,
+        found: attempt.status === "FOUND" && Boolean(attempt.email),
+        email: attempt.email,
+        contact: attempt.contact ? serializeContact(attempt.contact) : null,
+        charged: 0,
+        message:
+          attempt.status === "FOUND"
+            ? "Email was already found by an earlier waterfall search; no additional credits charged."
+            : attempt.status === "NOT_FOUND"
+              ? "This contact was already searched with no result; no additional credits charged."
+              : attempt.status === "PENDING"
+                ? "A waterfall search for this contact is already running; no additional credits charged."
+                : "The earlier waterfall search failed; no additional credits charged.",
+      });
+    }
+
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { creditBalance: true },
+    });
+    const results = uniqueCandidates.map((candidate) =>
+      processed.get(candidate.externalId) ?? {
+        externalId: candidate.externalId,
+        status: "FAILED" as const,
+        found: false,
+        email: null,
+        contact: null,
+        charged: 0,
+        message: "Waterfall search did not start; no credits charged.",
+      },
+    );
+
+    return sendData(res, {
+      results,
+      balance: workspace?.creditBalance ?? reserved?.balance ?? null,
+      creditPerSearch: CREDIT_COST.WATERFALL_EMAIL,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
 contactRouter.post("/reveal-apollo/:externalId/email", requireAuth, async (req, res, next) => {
   try {

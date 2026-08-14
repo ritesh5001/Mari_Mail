@@ -22,7 +22,8 @@
     "test:drip": "node scripts/apollo-drip.test.mjs",
     "test:capacity": "node scripts/send-capacity.test.mjs",
     "test:apollo-accounts": "node scripts/apollo-accounts.test.mjs",
-    "test:country-scope": "node scripts/country-scope.test.mjs"
+    "test:country-scope": "node scripts/country-scope.test.mjs",
+    "test:waterfall": "tsx scripts/email-waterfall.test.mts"
   },
   "dependencies": {
     "@aws-sdk/client-ses": "^3.1061.0",

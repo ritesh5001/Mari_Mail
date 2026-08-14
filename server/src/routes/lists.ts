@@ -283,6 +283,24 @@ listRouter.post("/:id/apollo-contacts", requireAuth, async (req, res, next) => {
     const contactIds: string[] = [];
     for (const row of input.data.apolloRows) {
       const matchedVesselIds = matchedVesselIdsFor(row);
+      // A paid waterfall may have resolved this Apollo preview to a canonical
+      // contact row (including the duplicate-email merge case). Use that row
+      // directly; recreating the @unknown.local preview here would throw away
+      // the email the user just paid to find.
+      const waterfall = await prisma.emailWaterfallSearch.findUnique({
+        where: {
+          workspaceId_source_externalId: {
+            workspaceId,
+            source: "APOLLO",
+            externalId: row.externalId,
+          },
+        },
+        select: { status: true, contactId: true },
+      });
+      if (waterfall?.status === "FOUND" && waterfall.contactId) {
+        contactIds.push(waterfall.contactId);
+        continue;
+      }
       // Reuse an existing preview if one is already persisted for this
       // (workspace, apolloId) — no duplicate contact rows across successive
       // "Add to list" clicks. Backfill website / personLinkedinUrl /
@@ -362,7 +380,7 @@ listRouter.post("/:id/apollo-contacts", requireAuth, async (req, res, next) => {
       added: linkResult.count,
       persisted: contactIds.length,
       note:
-        "Apollo previews are locked — reveal email/phone (1 credit each) from People Finder before launching a campaign to them.",
+        "Provider previews stay locked until revealed. If the provider has no email, the user can explicitly approve a 20-credit waterfall search.",
     });
   } catch (error) {
     return next(error);

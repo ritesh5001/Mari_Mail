@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/browser-fetch";
 
-export type RevealPricing = { email: number; phone: number };
+export type RevealPricing = { email: number; phone: number; waterfallEmail: number };
 
 /**
  * What a reveal costs, straight from the server.
@@ -18,7 +18,7 @@ export type RevealPricing = { email: number; phone: number };
  * the right numbers for a stock deployment rather than a zero or a blank.
  */
 export function useRevealPricing(): RevealPricing {
-  const [pricing, setPricing] = useState<RevealPricing>({ email: 1, phone: 20 });
+  const [pricing, setPricing] = useState<RevealPricing>({ email: 1, phone: 20, waterfallEmail: 20 });
 
   useEffect(() => {
     let cancelled = false;
@@ -27,7 +27,11 @@ export function useRevealPricing(): RevealPricing {
       .then((payload: { data?: { revealPricing?: Partial<RevealPricing> } } | null) => {
         const next = payload?.data?.revealPricing;
         if (cancelled || !next) return;
-        setPricing({ email: next.email ?? 1, phone: next.phone ?? 20 });
+        setPricing({
+          email: next.email ?? 1,
+          phone: next.phone ?? 20,
+          waterfallEmail: next.waterfallEmail ?? 20,
+        });
       })
       .catch(() => undefined);
     return () => {

@@ -22,7 +22,12 @@ export const CREDIT_COST = {
   VIEW_VESSEL: 1,
   SAVE_VESSEL: 3,
   EXPORT_VESSEL: 2,
+  WATERFALL_EMAIL: 20,
 } as const;
+
+export function waterfallEmailCost(contactCount: number): number {
+  return Math.max(0, Math.trunc(contactCount)) * CREDIT_COST.WATERFALL_EMAIL;
+}
 
 export function planLimits(plan: BillingPlan) {
   return sharedPlanLimits(plan);
@@ -123,7 +128,7 @@ export function canSpendCredits(workspace: Pick<Workspace, "billingStatus" | "do
   return SPENDING_STATUSES.includes(workspace.billingStatus) && workspace.downgradedAt === null;
 }
 
-export async function deductCredits(workspaceId: string, credits: number, reason: "VIEW_VESSEL" | "SAVE_VESSEL" | "EXPORT_VESSEL" | "REVEAL_EMAIL" | "REVEAL_PHONE", detail?: string, actorId?: string | null) {
+export async function deductCredits(workspaceId: string, credits: number, reason: "VIEW_VESSEL" | "SAVE_VESSEL" | "EXPORT_VESSEL" | "REVEAL_EMAIL" | "REVEAL_PHONE" | "WATERFALL_EMAIL", detail?: string, actorId?: string | null) {
   return prisma.$transaction(async (tx) => {
     const workspace = await tx.workspace.findUnique({
       where: { id: workspaceId },
