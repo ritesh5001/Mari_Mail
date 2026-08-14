@@ -34,6 +34,7 @@ import { adminApolloDripRouter } from "./routes/admin/apollo-drips.js";
 import { adminApolloAccountRouter } from "./routes/admin/apollo-accounts.js";
 import { adminDataSourcesRouter } from "./routes/admin/data-sources.js";
 import { adminBillingRouter } from "./routes/admin/billing.js";
+import { adminUsersRouter } from "./routes/admin/users.js";
 import { workspaceRouter } from "./routes/workspaces.js";
 import { inboundRouter, trackingRouter, unsubscribeRouter } from "./routes/tracking.js";
 import { setRealtimeServer } from "./services/realtime.js";
@@ -267,6 +268,7 @@ app.use("/api/admin/apollo-drips", adminApolloDripRouter);
 app.use("/api/admin/apollo-accounts", adminApolloAccountRouter);
 app.use("/api/admin/data-sources", adminDataSourcesRouter);
 app.use("/api/admin/billing", adminBillingRouter);
+app.use("/api/admin/users", adminUsersRouter);
 app.use("/t", trackingRouter);
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
