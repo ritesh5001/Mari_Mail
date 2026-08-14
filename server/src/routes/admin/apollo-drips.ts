@@ -4,6 +4,7 @@ import { Prisma, prisma } from "@marimail/db";
 import { requireSuperAdmin } from "../../auth/middleware.js";
 import type { AuthedRequest } from "../../auth/middleware.js";
 import { sendData, sendError } from "../../lib/http.js";
+import { MAX_FILTER_VALUES } from "../contacts.js";
 import { runApolloDrip, isDripRunning } from "../../services/apollo-drip.service.js";
 
 /**
@@ -16,17 +17,25 @@ import { runApolloDrip, isDripRunning } from "../../services/apollo-drip.service
  */
 export const adminApolloDripRouter = Router();
 
-/** Mirrors apolloPeopleSearchSchema in routes/contacts.ts. */
+/**
+ * Mirrors apolloPeopleSearchSchema in routes/contacts.ts.
+ *
+ * The per-facet ceiling is imported rather than restated: this schema claimed
+ * to mirror the search one but carried no bounds at all, so a drip could be
+ * saved with a filter larger than the search endpoint will accept — and then
+ * fail on every scheduled run, at a time nobody is watching. Sharing the
+ * constant makes "saved" and "runnable" the same condition.
+ */
 const filterSchema = z.object({
-  includeTitles: z.array(z.string()).optional(),
-  excludeTitles: z.array(z.string()).optional(),
-  seniorities: z.array(z.string()).optional(),
-  personLocations: z.array(z.string()).optional(),
-  companyLocations: z.array(z.string()).optional(),
-  employeeRanges: z.array(z.string()).optional(),
-  emailStatus: z.array(z.string()).optional(),
+  includeTitles: z.array(z.string()).max(MAX_FILTER_VALUES).optional(),
+  excludeTitles: z.array(z.string()).max(MAX_FILTER_VALUES).optional(),
+  seniorities: z.array(z.string()).max(20).optional(),
+  personLocations: z.array(z.string()).max(MAX_FILTER_VALUES).optional(),
+  companyLocations: z.array(z.string()).max(MAX_FILTER_VALUES).optional(),
+  employeeRanges: z.array(z.string()).max(12).optional(),
+  emailStatus: z.array(z.string()).max(4).optional(),
   includeSimilarTitles: z.boolean().optional(),
-  keywords: z.string().optional(),
+  keywords: z.string().max(300).optional(),
 });
 
 const createSchema = z.object({

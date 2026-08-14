@@ -1087,14 +1087,30 @@ contactRouter.post("/external-by-list/:listId", requireAuth, bodyAsQuery, extern
  * Searching spends no credits; only revealing an email or phone does. That is
  * why the filter surface can be generous here without costing anything.
  */
+/**
+ * Per-facet ceiling on a people search.
+ *
+ * Raised from 50 to 70: operators building a broad maritime title list
+ * ("Fleet Manager", "Technical Superintendent", "Port Captain", …, plus the
+ * variants the typeahead offers) were running past 50 and getting the search
+ * rejected outright. The cap exists to stop one request fanning out into an
+ * unbounded provider query, not to police normal use.
+ *
+ * Named rather than inlined so the limit is stated once and the error message
+ * below can quote the same number instead of drifting from it.
+ */
+export const MAX_FILTER_VALUES = 70;
+
 const apolloPeopleSearchSchema = z.object({
-  includeTitles: z.array(z.string().trim().min(1)).max(50).optional(),
-  excludeTitles: z.array(z.string().trim().min(1)).max(50).optional(),
+  includeTitles: z.array(z.string().trim().min(1)).max(MAX_FILTER_VALUES).optional(),
+  excludeTitles: z.array(z.string().trim().min(1)).max(MAX_FILTER_VALUES).optional(),
+  // Seniority and headcount are fixed vocabularies (Apollo's own buckets and
+  // bands), so their ceilings track the option count, not MAX_FILTER_VALUES.
   seniorities: z.array(z.string().trim().min(1)).max(20).optional(),
   /** Where the person is. */
-  personLocations: z.array(z.string().trim().min(1)).max(50).optional(),
+  personLocations: z.array(z.string().trim().min(1)).max(MAX_FILTER_VALUES).optional(),
   /** Where their company is headquartered. */
-  companyLocations: z.array(z.string().trim().min(1)).max(50).optional(),
+  companyLocations: z.array(z.string().trim().min(1)).max(MAX_FILTER_VALUES).optional(),
   /** Headcount bands, each "min,max" — Apollo's own format. */
   employeeRanges: z.array(z.string().trim().regex(/^\d+,\d+$/)).max(12).optional(),
   /**
@@ -1114,11 +1130,46 @@ const apolloPeopleSearchSchema = z.object({
   perPage: z.number().int().min(1).max(100).optional(),
 });
 
+/** Filter field → the name the panel shows it under, for error messages. */
+const FILTER_FIELD_LABELS: Record<string, string> = {
+  includeTitles: "Job titles",
+  excludeTitles: "Excluded titles",
+  seniorities: "Seniority",
+  personLocations: "Person location",
+  companyLocations: "Company location",
+  employeeRanges: "Company size",
+  emailStatus: "Email status",
+  keywords: "Keywords",
+};
+
+/**
+ * Turns a filter validation failure into something the person who built the
+ * filter can act on, naming the field as the UI labels it and the actual limit.
+ */
+function describeFilterProblem(error: z.ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return "Invalid filters";
+
+  const field = String(issue.path[0] ?? "");
+  const label = FILTER_FIELD_LABELS[field] ?? field;
+
+  if (issue.code === "too_big" && typeof issue.maximum === "number") {
+    return issue.type === "array"
+      ? `Too many values in “${label}” — keep it to ${issue.maximum} or fewer, then search again.`
+      : `“${label}” is too long — keep it under ${issue.maximum} characters.`;
+  }
+  return label ? `${label}: ${issue.message}` : issue.message;
+}
+
 contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
   try {
     const input = apolloPeopleSearchSchema.safeParse(req.body ?? {});
     if (!input.success) {
-      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid filters");
+      // Zod's own text for an over-long array is "Array must contain at most 70
+      // element(s)" — accurate, but it names neither the field nor anything the
+      // person can act on, and the panel renders it verbatim. Say which filter
+      // is oversized and by how much.
+      return sendError(res, 400, "VALIDATION_ERROR", describeFilterProblem(input.error));
     }
 
     // Search through this workspace's own Apollo account when it has one, so a
