@@ -4,14 +4,11 @@ import {
   AlertCircle,
   Anchor,
   ArrowRight,
-  Inbox,
   Mail,
   Radar,
-  Rocket,
   Send,
   Ship,
   TrendingUp,
-  Users,
 } from "lucide-react";
 import { ActivityChart } from "@/components/analytics/ActivityChart";
 import { RangeSwitcher } from "@/components/dashboard/RangeSwitcher";
@@ -24,6 +21,7 @@ import {
   requireAnalyticsWorkspace,
   trendDirection,
 } from "@/lib/analytics-data";
+import { getCampaignItineraryProgress } from "@/lib/onboarding-data";
 
 export const dynamic = "force-dynamic";
 
@@ -61,76 +59,6 @@ function TrendNote({ trend, suffix }: { trend: number; suffix: string }) {
         ? "text-red-600 dark:text-red-400"
         : "text-slate-500 dark:text-white/45";
   return <p className={`mt-3 text-sm ${tone}`}>{formatTrendDetail(trend, suffix)}</p>;
-}
-
-type ActivationStep = { label: string; href: string; icon: typeof Inbox };
-
-/**
- * The activation steps a workspace has NOT completed yet, in order.
- *
- * Each flag is read from the database (an inbox row, a contact with a real
- * address, a campaign) rather than assumed, so finishing a step makes it
- * disappear on the next load.
- */
-function outstandingSteps(activation: {
-  inboxConnected: boolean;
-  contactsUnlocked: boolean;
-  campaignLaunched: boolean;
-}): ActivationStep[] {
-  const steps: ActivationStep[] = [];
-  if (!activation.inboxConnected) {
-    steps.push({ label: "Connect a sending inbox", href: "/dashboard/inboxes", icon: Inbox });
-  }
-  if (!activation.contactsUnlocked) {
-    steps.push({ label: "Build a contact list", href: "/dashboard/lists", icon: Users });
-  }
-  if (!activation.campaignLaunched) {
-    steps.push({ label: "Launch your first campaign", href: "/dashboard/campaigns/cold", icon: Rocket });
-  }
-  return steps;
-}
-
-/**
- * New/quiet workspace: a grid of zeros tells the user nothing and offers no way
- * forward. Swap it for the steps that actually produce data.
- *
- * A step the user has already done is REMOVED, not ticked. Every one of these
- * was previously hardcoded `done: false`, so a workspace with three inboxes
- * connected and contacts unlocked was still being told to connect an inbox —
- * the checklist asserted things about the user that were plainly untrue, which
- * is worse than no checklist. Once nothing is outstanding the caller drops the
- * card entirely (see `outstandingSteps`).
- */
-function ActivationChecklist({ steps }: { steps: ActivationStep[] }) {
-  return (
-    <section className={CARD}>
-      <h3 className="text-base font-semibold text-slate-900 dark:text-white">Get your first replies</h3>
-      <p className="mt-1 text-sm text-slate-600 dark:text-white/55">
-        Your KPIs fill in as soon as outreach starts moving.{" "}
-        {steps.length === 1 ? "One step left." : `${steps.length} steps to get there.`}
-      </p>
-      <ol className="mt-4 space-y-2">
-        {steps.map((step, i) => {
-          const Icon = step.icon;
-          return (
-            <li key={step.label}>
-              <Link
-                href={step.href}
-                className="group flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 transition-colors hover:border-accent-400 hover:bg-accent-500/[0.04] dark:border-white/10 dark:hover:border-accent-400/50 dark:hover:bg-white/[0.04]"
-              >
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-white/60">
-                  {i + 1}
-                </span>
-                <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/40" />
-                <span className="flex-1 text-sm font-medium text-slate-800 dark:text-white/85">{step.label}</span>
-                <ArrowRight className="h-4 w-4 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-accent-500 dark:text-white/25" />
-              </Link>
-            </li>
-          );
-        })}
-      </ol>
-    </section>
-  );
 }
 
 async function DashboardKpis({
@@ -174,15 +102,6 @@ async function DashboardKpis({
 
   const replies = Math.round(cards.avgReplyRate.value * cards.emailsSent.value);
   const missed = cards.missedOpportunities.value;
-  // A workspace with no sends and no campaigns has nothing to chart — show the
-  // activation path instead of six zeros.
-  const isDormant = cards.emailsSent.value === 0 && cards.activeCampaigns.value === 0;
-  // Setup work still outstanding. A dormant workspace that has already done
-  // all three gets the charts, not a checklist with nothing on it.
-  const steps = outstandingSteps(
-    overview?.activation ?? { inboxConnected: true, contactsUnlocked: true, campaignLaunched: true },
-  );
-
   // Tier 2 — supporting metrics. Every one drills through; a card that looks
   // clickable (hover ring) must actually go somewhere.
   const secondary = [
@@ -338,10 +257,7 @@ async function DashboardKpis({
       </section>
 
       {/* ── Activity + regions ── */}
-      {isDormant && steps.length > 0 ? (
-        <ActivationChecklist steps={steps} />
-      ) : (
-        <section className="grid gap-4 lg:grid-cols-[2fr,1fr]">
+      <section className="grid gap-4 lg:grid-cols-[2fr,1fr]">
           <article className={CARD}>
             <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
               <div>
@@ -395,8 +311,7 @@ async function DashboardKpis({
               )}
             </ul>
           </article>
-        </section>
-      )}
+      </section>
     </>
   );
 }
@@ -406,7 +321,9 @@ export default async function DashboardPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { workspaceId, workspace, countries, hasCountryGrant } = await requireAnalyticsWorkspace();
+  const { workspaceId, userId, workspace, countries, hasCountryGrant } =
+    await requireAnalyticsWorkspace();
+  const itinerary = await getCampaignItineraryProgress(workspaceId, userId);
   const days = (() => {
     const raw = typeof searchParams.range === "string" ? Number(searchParams.range) : 30;
     return [7, 30, 90].includes(raw) ? raw : 30;
@@ -442,7 +359,7 @@ export default async function DashboardPage({
         </div>
       </section>
 
-      <WorkflowJourney />
+      <WorkflowJourney progress={itinerary} />
 
       {/* No country granted = every ETA figure below is legitimately zero.
           Say why, but do NOT offer a picker: the target country is chosen at

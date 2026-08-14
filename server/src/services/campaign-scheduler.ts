@@ -163,10 +163,9 @@ export async function scheduleEtaTrigger(etaTriggerId: string) {
     return { scheduled: 0, contacts: contacts.length };
   }
 
-  // Contacts staged for review are candidates, not members. This function
-  // re-resolves targets from targetConfig on every fire, so without this filter
-  // the upsert below would flip a STAGED row straight to SCHEDULED and email
-  // someone the user never confirmed.
+  // Hold legacy STAGED rows. New list additions are enrolled automatically by
+  // the reconciler, but old review rows must not be flipped to SCHEDULED merely
+  // because targetConfig re-resolves them here.
   const staged = await stagedContactIds(
     trigger.campaignId,
     contacts.map((contact) => contact.id),

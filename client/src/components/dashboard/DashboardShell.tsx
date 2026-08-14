@@ -2,6 +2,7 @@
 
 import {
   Anchor,
+  ArrowRight,
   Ban,
   Gift,
   BarChart3,
@@ -41,6 +42,7 @@ import { SidebarCustomizePanel } from "./SidebarCustomizePanel";
 import { ThemeToggle } from "./ThemeToggle";
 import { CreditBadge } from "@/components/dashboard/CreditBadge";
 import { TrialBanner } from "./TrialBanner";
+import type { CampaignItineraryProgress } from "@/lib/onboarding-types";
 
 type NavItem = {
   href: string;
@@ -238,13 +240,25 @@ function SidebarContent({
   );
 }
 
-export function DashboardShell({ session, children }: { session: AuthSession; children: React.ReactNode }) {
+export function DashboardShell({
+  session,
+  onboardingProgress,
+  children,
+}: {
+  session: AuthSession;
+  onboardingProgress: CampaignItineraryProgress;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState(session.activeWorkspace);
   const [hiddenNavItems, setHiddenNavItems] = useState(session.user.hiddenNavItems ?? []);
+  const setupInProgress =
+    onboardingProgress.available &&
+    !onboardingProgress.isComplete &&
+    onboardingProgress.nextStep !== null;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -266,6 +280,22 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
 
     return () => window.clearInterval(timer);
   }, []);
+
+  // Vessel/contact actions happen in several client-heavy screens. Refreshing
+  // the server snapshot while setup is active lets the global prompt advance
+  // even when the completing action itself does not navigate to a new route.
+  useEffect(() => {
+    if (!setupInProgress) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") router.refresh();
+    };
+    const timer = window.setInterval(refresh, 15_000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [router, setupInProgress]);
 
   const breadcrumb = useMemo(() => {
     const [, , child] = pathname.split("/");
@@ -333,12 +363,21 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
               <h1 className="truncate text-base font-semibold text-slate-950 dark:text-white">{breadcrumb}</h1>
               <Link
                 href="/dashboard#workflow-guide"
-                className="hidden h-7 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 pl-1 pr-3 text-[12px] font-medium text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white md:inline-flex"
+                className={`hidden h-7 items-center gap-1.5 rounded-full border pl-1 pr-2.5 text-[12px] font-medium transition-colors sm:pr-3 md:inline-flex ${
+                  setupInProgress
+                    ? "border-accent-500/30 bg-accent-500/[0.08] text-accent-700 hover:bg-accent-500/[0.13] dark:border-accent-400/25 dark:bg-accent-400/10 dark:text-accent-200"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                }`}
               >
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-sky-100 text-sky-700 dark:bg-white/[0.08] dark:text-current">
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-white/80 text-current shadow-sm dark:bg-white/[0.08] dark:shadow-none">
                   <Play className="h-3 w-3 fill-current" />
                 </span>
-                Tutorial
+                <span className="hidden sm:inline">{setupInProgress ? "Setup" : "How it works"}</span>
+                {setupInProgress ? (
+                  <span className="min-w-4 rounded-full bg-accent-500 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white">
+                    {onboardingProgress.remainingCount}
+                  </span>
+                ) : null}
               </Link>
             </div>
 
@@ -401,6 +440,28 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
 
         <main className="min-h-[calc(100vh-4rem)] bg-transparent px-5 py-6 dark:bg-[#050507]">
           <TrialBanner workspace={activeWorkspace} isSuperAdmin={session.user.isSuperAdmin} />
+          {setupInProgress && pathname !== "/dashboard" && onboardingProgress.nextStep ? (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-accent-500/25 bg-accent-500/[0.07] px-4 py-3 dark:border-accent-400/20 dark:bg-accent-400/[0.08] sm:flex-row sm:items-center">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-500 text-white shadow-sm">
+                <Play className="h-4 w-4 fill-current" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent-600 dark:text-accent-300">
+                  First campaign · {onboardingProgress.completedCount}/{onboardingProgress.total} done
+                </p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-slate-900 dark:text-white">
+                  Next: {onboardingProgress.nextStep.title}
+                </p>
+              </div>
+              <Link
+                href={onboardingProgress.nextStep.href}
+                className="group inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-accent-500 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-accent-600"
+              >
+                Continue setup
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+            </div>
+          ) : null}
           {children}
         </main>
       </div>

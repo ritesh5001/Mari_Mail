@@ -1126,6 +1126,12 @@ model Campaign {
   targetConfig      Json                 @default("{}")
   triggerConfig     Json                 @default("{}")
   defaultDaysBefore Int[]                @default([])
+  // Explicit wizard milestones for the first-campaign itinerary. Campaigns
+  // are created with usable defaults, so their data alone cannot tell whether
+  // a person actually reviewed a step and chose "Save and Next".
+  setupLeadsCompletedAt    DateTime?
+  setupSequenceCompletedAt DateTime?
+  setupOptionsCompletedAt  DateTime?
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   workspace         Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

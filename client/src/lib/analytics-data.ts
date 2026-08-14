@@ -98,12 +98,6 @@ async function getOverviewImpl(
       repliesRecent,
       repliesPrevious,
       missed,
-      // Activation state. Counts, not booleans, because `count` with `take: 1`
-      // is the cheapest way Prisma will answer "is there at least one" and the
-      // checklist only ever asks that question.
-      inboxCount,
-      revealedContactCount,
-      anyCampaignCount,
     ] = await Promise.all([
       // Include workspace-owned + global (admin-authored) ETAs so per-
       // workspace analytics don't zero out when ETAs are shared across
@@ -140,15 +134,6 @@ async function getOverviewImpl(
           ...etaCountry,
         },
       }),
-      prisma.emailAccount.count({ where: { workspaceId } }),
-      // "Unlocked a contact" means a contact we could actually email. Locked
-      // Apollo previews carry an @unknown.local placeholder and are not one.
-      prisma.contact.count({
-        where: { workspaceId, NOT: { email: { endsWith: "@unknown.local" } } },
-      }),
-      // Any campaign at all, in any status — the step is "launch your first
-      // campaign", and a paused or finished one was still launched.
-      prisma.campaign.count({ where: { workspaceId } }),
     ]);
 
     const regions: Record<string, number> = {};
@@ -178,11 +163,6 @@ async function getOverviewImpl(
         avgReplyRate: { value: rate(repliesRecent, sentRecent), trend: trend(rate(repliesRecent, sentRecent), rate(repliesPrevious, sentPrevious)) },
         missedOpportunities: { value: missed },
       },
-      activation: {
-        inboxConnected: inboxCount > 0,
-        contactsUnlocked: revealedContactCount > 0,
-        campaignLaunched: anyCampaignCount > 0,
-      },
       sparkline: sparkline.map((row) => ({ day: row.day.toISOString().slice(0, 10), sent: Number(row.sent), replied: Number(row.replied) })),
     };
   } catch (err) {
@@ -197,10 +177,6 @@ async function getOverviewImpl(
         avgReplyRate: { value: 0, trend: 0 },
         missedOpportunities: { value: 0 },
       },
-      // Assume DONE on failure. A checklist is a nudge, and nudging a
-      // long-standing customer to "connect an inbox" because a query timed out
-      // is worse than showing nothing at all.
-      activation: { inboxConnected: true, contactsUnlocked: true, campaignLaunched: true },
       sparkline: [] as Array<{ day: string; sent: number; replied: number }>,
     };
   }

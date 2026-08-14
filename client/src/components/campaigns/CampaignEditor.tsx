@@ -47,6 +47,7 @@ type SequenceForm = {
 };
 
 type TabKey = "analytics" | "leads" | "sequences" | "options" | "sent";
+type SetupStep = "LEADS" | "SEQUENCES" | "OPTIONS";
 
 const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
   { key: "analytics", label: "Analytics", icon: <Activity className="h-4 w-4" /> },
@@ -58,6 +59,13 @@ const TABS: Array<{ key: TabKey; label: string; icon: React.ReactNode }> = [
 
 // Ordered wizard flow — Analytics is intentionally excluded (post-launch view).
 const WIZARD_STEPS: TabKey[] = ["leads", "sequences", "options"];
+
+function setupStepForTab(tab: TabKey): SetupStep | undefined {
+  if (tab === "leads") return "LEADS";
+  if (tab === "sequences") return "SEQUENCES";
+  if (tab === "options") return "OPTIONS";
+  return undefined;
+}
 
 function generateId() {
   return Math.random().toString(36).slice(2);
@@ -246,7 +254,11 @@ export function CampaignEditor({
   // Nothing about a running campaign needs the routing frozen.
 
   // ---- Save + activate ------------------------------------------------------
-  async function save(overrides?: { status?: Campaign["status"]; skipRespace?: boolean }) {
+  async function save(overrides?: {
+    status?: Campaign["status"];
+    skipRespace?: boolean;
+    completedStep?: SetupStep;
+  }) {
     setError(null);
     setSaving(true);
     try {
@@ -275,6 +287,7 @@ export function CampaignEditor({
           contactListIds: contactListId ? [contactListId] : [],
         },
         triggerConfig: campaign.triggerConfig,
+        setupStepCompleted: overrides?.completedStep,
         sequences: sequences.map((seq, idx) => ({
           stepOrder: idx + 1,
           subject: seq.subject || "(empty)",
@@ -328,7 +341,11 @@ export function CampaignEditor({
     // server read it as a first launch, which also sweeps in contacts that are
     // still staged for review. Keep the status as-is when relaunching.
     const relaunching = campaign.status === "ACTIVE";
-    const ok = await save(relaunching ? { skipRespace: true } : { status: "DRAFT" });
+    const ok = await save(
+      relaunching
+        ? { skipRespace: true, completedStep: "OPTIONS" }
+        : { status: "DRAFT", completedStep: "OPTIONS" },
+    );
     if (!ok) return;
     setSaving(true);
     try {
@@ -447,7 +464,7 @@ export function CampaignEditor({
           )}
           <button
             type="button"
-            onClick={() => save()}
+            onClick={() => save({ completedStep: setupStepForTab(tab) })}
             disabled={saving || pending}
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-white/10 dark:text-white/80 dark:hover:bg-white/[0.06]"
           >
@@ -492,7 +509,7 @@ export function CampaignEditor({
           currentStep={tab as (typeof WIZARD_STEPS)[number]}
           onGoTo={setTab}
           onSaveAndNext={async (nextStep) => {
-            const ok = await save();
+            const ok = await save({ completedStep: setupStepForTab(tab) });
             if (ok) setTab(nextStep);
           }}
           onLaunch={launch}
@@ -2185,4 +2202,3 @@ function statusTone(status: string) {
   if (status === "COMPLETED") return "bg-blue-100 text-blue-700";
   return "bg-slate-100 text-slate-700";
 }
-

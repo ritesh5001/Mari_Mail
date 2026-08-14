@@ -23,12 +23,12 @@ type ListVesselWithCompanies = Prisma.VesselGetPayload<{ include: typeof listVes
  *   and starts sending as soon as the pacing allows. This is what a user
  *   who adds a contact to a live MANUAL campaign's list is asking for.
  *
- *   ETA campaigns: still stage as STAGED for user review. ETA campaigns
- *   involve vessel matching + cross-workspace contact data where the "did
- *   you really mean to email these people" gate matters more, and their
- *   send path is trigger-driven (needs an ETA event to fire), not just a
- *   list-driven schedule. The Leads tab still exposes /staged/confirm for
- *   this path.
+ *   ETA campaigns: automatically enrol every usable newcomer that can be
+ *   attributed to one of the list's vessels, then backscan that vessel's
+ *   upcoming ETAs. The contact inherits the campaign's existing sequence,
+ *   inbox rotation, schedule, and options. Locked, invalid, suppressed, and
+ *   blocked contacts never reach `resolveCampaignContacts`; contacts without
+ *   a vessel match remain unenrolled because no ETA can safely fire for them.
  *
  * Only ACTIVE campaigns are touched. DRAFT campaigns are still list-building
  * — those enrol normally at launch, which is why launch never has staged
@@ -54,7 +54,7 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
     const relevant = campaigns.filter((campaign) => targetsList(campaign.targetConfig, listId));
     if (!relevant.length) return;
 
-    // Full company rows (not just names): mapNewcomersToVessels matches on
+    // Full company rows (not just names): mapContactsToVessels matches on
     // email domain and company website, so it needs the complete signal set.
     const listVessels = await prisma.vessel.findMany({
       where: { listMemberships: { some: { listId } } },
@@ -70,9 +70,10 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
 
       const existing = await prisma.campaignContact.findMany({
         where: { campaignId: campaign.id, contactId: { in: contacts.map((c) => c.id) } },
-        select: { contactId: true },
+        select: { contactId: true, status: true },
       });
-      const known = new Set(existing.map((row) => row.contactId));
+      const existingByContact = new Map(existing.map((row) => [row.contactId, row.status]));
+      const known = new Set(existingByContact.keys());
       const newcomers = contacts.filter((contact) => !known.has(contact.id));
 
       // Self-heal, ETA campaigns only: a contact already enrolled but with no
@@ -89,9 +90,8 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
         await healStrandedEtaContacts(campaign.id, contacts, listVessels);
       }
 
-      if (!newcomers.length) continue;
-
       if (campaign.triggerType === "MANUAL") {
+        if (!newcomers.length) continue;
         // Live auto-enrol: same call the initial launch loop makes, once per
         // new contact. This creates the CampaignContact row (SCHEDULED) and
         // queues its sequence steps on the campaign's window, per-campaign
@@ -115,32 +115,67 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
         continue;
       }
 
-      // ETA path — unchanged. Stage for review; the campaign's Leads tab
-      // promotes STAGED → PENDING via /staged/confirm, which then backscans
-      // pending ETAs to create triggers.
-      const vesselByContact = mapNewcomersToVessels(newcomers, listVessels);
+      // A list addition is explicit opt-in to this already-running campaign.
+      // Include old STAGED rows too so workspaces created before automatic
+      // enrolment self-heal on their next list change.
+      const legacyStaged = contacts.filter(
+        (contact) => existingByContact.get(contact.id) === "STAGED",
+      );
+      const candidates = [...newcomers, ...legacyStaged];
+      if (!candidates.length) continue;
 
-      // skipDuplicates + @@unique([campaignId, contactId]) means an already
-      // enrolled contact is never demoted to STAGED — that's the whole
-      // back-compat story for campaigns already sending.
-      const staged = await prisma.campaignContact.createMany({
-        data: newcomers.map((contact) => ({
-          workspaceId: campaign.workspaceId,
-          campaignId: campaign.id,
-          contactId: contact.id,
-          vesselId: vesselByContact.get(contact.id) ?? null,
-          status: "STAGED" as const,
-          stagedAt: new Date(),
-          stagedReason: "list-membership-changed",
-        })),
-        skipDuplicates: true,
-      });
-
-      if (staged.count > 0) {
+      const vesselByContact = mapContactsToVessels(candidates, listVessels);
+      const attributable = candidates.filter((contact) => vesselByContact.has(contact.id));
+      const deferred = candidates.length - attributable.length;
+      if (!attributable.length) {
         console.log(
-          `[list-reconciler] staged ${staged.count} contact(s) for ETA campaign=${campaign.id} from list=${listId} — awaiting review.`,
+          `[list-reconciler] deferred ${deferred} ETA contact(s) with no vessel attribution campaign=${campaign.id} list=${listId}.`,
         );
+        continue;
       }
+
+      const fresh = attributable.filter((contact) => !known.has(contact.id));
+      if (fresh.length) {
+        await prisma.campaignContact.createMany({
+          data: fresh.map((contact) => ({
+            workspaceId: campaign.workspaceId,
+            campaignId: campaign.id,
+            contactId: contact.id,
+            vesselId: vesselByContact.get(contact.id)!,
+            status: "PENDING" as const,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // Different contacts can belong to different vessels, so legacy staged
+      // rows are promoted individually to preserve their attribution.
+      for (const contact of attributable.filter(
+        (item) => existingByContact.get(item.id) === "STAGED",
+      )) {
+        await prisma.campaignContact.updateMany({
+          where: { campaignId: campaign.id, contactId: contact.id, status: "STAGED" },
+          data: {
+            vesselId: vesselByContact.get(contact.id)!,
+            status: "PENDING",
+            stagedAt: null,
+            stagedReason: null,
+          },
+        });
+      }
+
+      const vesselIds = Array.from(
+        new Set(
+          attributable
+            .map((contact) => vesselByContact.get(contact.id))
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const scheduled = await scheduleUpcomingEtasForCampaignVessels(campaign.id, vesselIds);
+
+      console.log(
+        `[list-reconciler] auto-enrolled ${attributable.length} ETA contact(s) campaign=${campaign.id} list=${listId} · scheduled ${scheduled} step(s)${deferred ? ` · ${deferred} deferred without a vessel match` : ""}.`,
+      );
     }
   } catch (err) {
     console.warn(`[list-reconciler] failed for list=${listId}: ${(err as Error).message}`);
@@ -148,23 +183,23 @@ export async function reconcileCampaignsForList(listId: string): Promise<void> {
 }
 
 /**
- * Which newly-added vessel surfaced each candidate — the grouping key for the
- * review UI. Same union rule the ETA scheduler uses: live matcher OR the
+ * Which list vessel each contact belongs to. Uses the same union rule the ETA
+ * scheduler uses: live matcher OR the
  * explicit matchedVesselIds pinned onto Apollo contacts when they were added
  * from the list's vessel-domain search (Apollo bridges related domains —
  * citi.com ↔ citibank.com — that the matcher can't reconnect from the
  * persisted contact alone).
  *
  * CampaignContact.vesselId is a single FK, so a contact matching two vessels
- * gets grouped under the first. Contacts with no vessel signal map to null and
- * land in the UI's "Other new contacts" bucket.
+ * is attributed to the first. Contacts with no vessel signal stay unenrolled
+ * until a later list update supplies an association that can drive an ETA.
  */
-function mapNewcomersToVessels(
-  newcomers: Contact[],
+function mapContactsToVessels(
+  contacts: Contact[],
   vessels: ListVesselWithCompanies[],
 ): Map<string, string> {
   const byContact = new Map<string, string>();
-  for (const contact of newcomers) {
+  for (const contact of contacts) {
     const pinned = pinnedVesselIds(contact);
     const hit = vessels.find(
       (vessel) => matchContactToVessel(contact, vessel) !== null || pinned.includes(vessel.id),

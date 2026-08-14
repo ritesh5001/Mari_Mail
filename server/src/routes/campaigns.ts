@@ -202,6 +202,10 @@ const updateCampaignSchema = createCampaignSchema.partial().extend({
   status: z
     .enum(["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"])
     .optional(),
+  // Set only by an explicit Save / Save-and-Next action in the editor. These
+  // markers drive the saved-progress itinerary on the dashboard; campaign
+  // defaults make row-existence checks too optimistic for sequence/options.
+  setupStepCompleted: z.enum(["LEADS", "SEQUENCES", "OPTIONS"]).optional(),
 });
 
 /**
@@ -772,6 +776,15 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
     if (windowError) return sendError(res, 400, "INVALID_SENDING_WINDOW", windowError);
 
     const sequencesInput = parsed.data.sequences;
+    const setupCompletedAt = new Date();
+    const setupProgressUpdate =
+      parsed.data.setupStepCompleted === "LEADS"
+        ? { setupLeadsCompletedAt: setupCompletedAt }
+        : parsed.data.setupStepCompleted === "SEQUENCES"
+          ? { setupSequenceCompletedAt: setupCompletedAt }
+          : parsed.data.setupStepCompleted === "OPTIONS"
+            ? { setupOptionsCompletedAt: setupCompletedAt }
+            : {};
 
     const campaign = await prisma.$transaction(async (tx) => {
       const updated = await tx.campaign.update({
@@ -807,6 +820,7 @@ campaignRouter.patch("/:id", requireAuth, async (req, res, next) => {
           ...(sequencesInput !== undefined
             ? { defaultDaysBefore: defaultDaysBefore(sequencesInput) }
             : {}),
+          ...setupProgressUpdate,
         },
       });
 
@@ -985,7 +999,14 @@ campaignRouter.post("/:id/activate", requireAuth, async (req, res, next) => {
 
     const updated = await prisma.campaign.update({
       where: { id: campaign.id },
-      data: { status: "ACTIVE" },
+      // A successful launch is definitive proof that the whole setup was
+      // reviewed, including for campaigns created before progress tracking.
+      data: {
+        status: "ACTIVE",
+        setupLeadsCompletedAt: campaign.setupLeadsCompletedAt ?? new Date(),
+        setupSequenceCompletedAt: campaign.setupSequenceCompletedAt ?? new Date(),
+        setupOptionsCompletedAt: campaign.setupOptionsCompletedAt ?? new Date(),
+      },
     });
 
     // Return immediately so the client sees a fast Launch response — the ETA
@@ -1176,9 +1197,9 @@ campaignRouter.post("/:id/launch", requireAuth, async (req, res, next) => {
 });
 
 // ─── Staged review ────────────────────────────────────────────────────────────
-// Contacts pulled in by a list change on a live campaign are STAGED rather than
-// enrolled (see campaign-list-reconciler). These three routes are the review
-// surface: read the queue, confirm the picks, drop the rest.
+// Legacy review surface. New list additions auto-enrol into active ETA
+// campaigns; these routes remain so workspaces with STAGED rows created before
+// that behavior can still inspect, confirm, or dismiss them.
 
 // Apollo persists unrevealed people with a placeholder address. They resolve as
 // campaign targets but resolveCampaignContacts drops them at send time, so

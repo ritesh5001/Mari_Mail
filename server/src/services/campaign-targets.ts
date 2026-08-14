@@ -220,13 +220,12 @@ export async function removeSuppressed(workspaceId: string, contacts: Contact[])
 }
 
 /**
- * Contacts staged for review are candidates, not campaign members — they were
- * pulled in by a list change on a live campaign and nobody has confirmed them
- * yet. Every send path must subtract these before scheduling or sending.
+ * Legacy contacts staged for review are candidates, not campaign members.
+ * New list additions auto-enrol, but every send path must keep holding older
+ * STAGED rows until the reconciler promotes them or a user confirms them.
  *
  * Deliberately not folded into resolveCampaignContacts: that resolves the
- * *candidate* set, which is exactly what the review UI and the confirm
- * endpoint need to enumerate.
+ * *candidate* set, which the compatibility review UI still enumerates.
  */
 export async function stagedContactIds(campaignId: string, candidateIds: string[]) {
   if (!candidateIds.length) return new Set<string>();
