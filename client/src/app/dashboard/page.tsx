@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { ActivityChart } from "@/components/analytics/ActivityChart";
 import { RangeSwitcher } from "@/components/dashboard/RangeSwitcher";
-import { TargetCountryBanner } from "@/components/marine/TargetCountryBanner";
+import { NoCountryNotice } from "@/components/marine/NoCountryNotice";
 import {
   formatRate,
   formatTrendDetail,
@@ -442,9 +442,10 @@ export default async function DashboardPage({
       </section>
 
       {/* No country granted = every ETA figure below is legitimately zero.
-          Say why and let them fix it here, rather than showing a grid of
-          zeros — or, as it did before, every country's arrivals. */}
-      {hasCountryGrant ? null : <TargetCountryBanner />}
+          Say why, but do NOT offer a picker: the target country is chosen at
+          onboarding and set by the plan, so letting someone re-pick it here
+          would be a second, unpriced way to change a paid entitlement. */}
+      {hasCountryGrant ? null : <NoCountryNotice />}
 
       <Suspense fallback={<KpiSkeleton />}>
         <DashboardKpis workspaceId={workspaceId} days={days} countries={countries} />

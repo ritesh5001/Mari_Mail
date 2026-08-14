@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Coins,
   CreditCard,
+  Globe,
   Loader2,
   RefreshCw,
   Search,
@@ -549,13 +550,24 @@ function UserDetailPanel({
             {section === "overview" && <OverviewSection detail={detail} workspace={workspace} />}
 
             {section === "billing" && workspace && (
-              <SubscriptionSection
-                workspace={workspace}
-                onGrant={(body) =>
-                  act("/subscription", { ...body, workspaceId: workspace.id }, "Subscription applied.")
-                }
-                payments={detail.payments.filter((p) => p.workspaceId === workspace.id)}
-              />
+              <>
+                <SubscriptionSection
+                  workspace={workspace}
+                  onGrant={(body) =>
+                    act("/subscription", { ...body, workspaceId: workspace.id }, "Subscription applied.")
+                  }
+                  payments={detail.payments.filter((p) => p.workspaceId === workspace.id)}
+                />
+                <CountryAccessSection
+                  workspaceId={workspace.id}
+                  countryLimit={workspace.countryLimit}
+                  allowedCountries={workspace.allowedCountries}
+                  onSaved={() => {
+                    void load();
+                    onChanged();
+                  }}
+                />
+              </>
             )}
 
             {section === "credits" && workspace && (
@@ -995,6 +1007,164 @@ function ActivitySection({ detail }: { detail: AdminUserDetailDTO }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Country access for a workspace, admin-only.
+ *
+ * The user-facing picker was removed: which countries a workspace can see is a
+ * priced entitlement chosen at onboarding, not a setting anyone can flip. That
+ * left legacy workspaces — signed up before the country step existed, or
+ * through it without choosing — permanently at zero, since the ETA scope fails
+ * closed. This is the sanctioned way to fix them.
+ */
+function CountryAccessSection({
+  workspaceId,
+  countryLimit,
+  allowedCountries,
+  onSaved,
+}: {
+  workspaceId: string;
+  countryLimit: number;
+  allowedCountries: string[];
+  onSaved: () => void;
+}) {
+  const [options, setOptions] = useState<Array<{ country: string; countryName: string }>>([]);
+  const [selected, setSelected] = useState<string[]>(allowedCountries);
+  const [limit, setLimit] = useState(countryLimit);
+  const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setSelected(allowedCountries);
+    setLimit(countryLimit);
+  }, [allowedCountries, countryLimit, workspaceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/workspaces/port-countries")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { data?: Array<{ country: string; countryName: string }> } | null) => {
+        if (!cancelled) setOptions(payload?.data ?? []);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visible = search.trim()
+    ? options.filter(
+        (o) =>
+          o.countryName.toLowerCase().includes(search.trim().toLowerCase()) ||
+          o.country.toLowerCase().includes(search.trim().toLowerCase()),
+      )
+    : options;
+
+  function toggle(code: string) {
+    setSelected((prev) => (prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]));
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    const res = await apiFetch("/api/admin/billing/country-access", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId, countryLimit: limit, allowedCountries: selected }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+      setError(payload?.error?.message ?? "Could not save country access.");
+      return;
+    }
+    setSaved(true);
+    onSaved();
+  }
+
+  const overLimit = selected.length > limit;
+
+  return (
+    <div className="rounded-lg border border-slate-200 p-4 dark:border-white/[0.08]">
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+        <Globe className="h-4 w-4 text-ocean" />
+        Country access
+      </h3>
+      <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
+        Which countries&rsquo; arrivals this workspace can see. A workspace with none selected sees no ETAs at all —
+        the scope fails closed rather than showing every country.
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="text-sm">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-white/50">
+            Allowance
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={1000}
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="mt-1 w-24 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+          />
+        </label>
+        <p className={cn("text-xs", overLimit ? "text-rose-600 dark:text-rose-300" : "text-slate-500 dark:text-white/50")}>
+          {selected.length} of {limit} selected
+          {overLimit ? " — raise the allowance or deselect some" : ""}
+        </p>
+      </div>
+
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search countries…"
+        className="mt-3 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+      />
+
+      <div className="mt-2 max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-100 p-2 dark:border-white/[0.06]">
+        {visible.length === 0 ? (
+          <p className="px-1 py-2 text-xs text-slate-500 dark:text-white/50">No countries match.</p>
+        ) : (
+          visible.map((option) => (
+            <label
+              key={option.country}
+              className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-slate-700 hover:bg-slate-50 dark:text-white/75 dark:hover:bg-white/[0.04]"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(option.country)}
+                onChange={() => toggle(option.country)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              {option.countryName} ({option.country})
+            </label>
+          ))
+        )}
+      </div>
+
+      {error ? (
+        <p className="mt-2 flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-300">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {error}
+        </p>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={saving || overLimit}
+        className="mt-3 inline-flex items-center gap-2 rounded-md bg-ocean px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : saved ? <CheckCircle2 className="h-4 w-4" /> : <Globe className="h-4 w-4" />}
+        {saved ? "Saved" : "Save country access"}
+      </button>
     </div>
   );
 }

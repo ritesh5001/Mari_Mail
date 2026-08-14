@@ -10,7 +10,7 @@ import {
 import { serializeRadarEta } from "@/lib/port-radar-serialize";
 import { PortRadarTabs, type PortRadarTabKey } from "@/components/marine/PortRadarTabs";
 import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
-import { TargetCountryBanner } from "@/components/marine/TargetCountryBanner";
+import { NoCountryNotice } from "@/components/marine/NoCountryNotice";
 import { getServerSession } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -95,7 +95,7 @@ export default async function PortRadarPage({
 
   return (
     <div className="space-y-5">
-      {needsCountry ? <TargetCountryBanner /> : null}
+      {needsCountry ? <NoCountryNotice /> : null}
 
       <VesselFilterPanel
         searchParams={searchParams}

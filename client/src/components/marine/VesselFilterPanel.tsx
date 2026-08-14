@@ -1,10 +1,21 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Filter, Search, Upload, X } from "lucide-react";
-import { GooeyFilter } from "@/components/ui/gooey-filter";
+import {
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Filter,
+  Radar,
+  Ruler,
+  Search,
+  Ship,
+  Upload,
+  Wrench,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 import { cn } from "@/lib/cn";
@@ -1059,12 +1070,49 @@ export function VesselFilterPanel({
     </>
   );
 
-  const sectionList: Array<{ key: string; title: string; count: number; body: React.ReactNode; defaultOpen?: boolean }> = [
-    { key: "eta", title: "ETA & voyage", count: etaVoyageCount, body: etaVoyageBody, defaultOpen: true },
-    { key: "type", title: "Vessel type", count: typeCount, body: vesselTypeBody },
-    { key: "size", title: "Size & specs", count: sizeCount, body: sizeSpecsBody },
-    { key: "owner", title: "Owner & manager", count: ownerCount, body: ownerBody },
-    { key: "builders", title: "Builders & class", count: buildersCount, body: buildersBody },
+  const sectionList: FilterSectionMeta[] = [
+    {
+      key: "eta",
+      title: "ETA & voyage",
+      icon: Radar,
+      description:
+        "When they arrive and where. Set an arrival window, pick destination countries and ports, and narrow by voyage state.",
+      count: etaVoyageCount,
+      body: etaVoyageBody,
+      defaultOpen: true,
+    },
+    {
+      key: "type",
+      title: "Vessel type",
+      icon: Ship,
+      description: "Hull categories, flag, identifiers and the data-quality toggles.",
+      count: typeCount,
+      body: vesselTypeBody,
+    },
+    {
+      key: "size",
+      title: "Size & specs",
+      icon: Ruler,
+      description: "Deadweight, tonnage, dimensions and capacity — every field is a min/max range.",
+      count: sizeCount,
+      body: sizeSpecsBody,
+    },
+    {
+      key: "owner",
+      title: "Owner & manager",
+      icon: Building2,
+      description: "Registered and beneficial owners, technical and commercial managers, operators.",
+      count: ownerCount,
+      body: ownerBody,
+    },
+    {
+      key: "builders",
+      title: "Builders & class",
+      icon: Wrench,
+      description: "Shipyard, engine builder, classification society and P&I club.",
+      count: buildersCount,
+      body: buildersBody,
+    },
   ];
 
   const sections = (
@@ -1191,7 +1239,6 @@ export function VesselFilterPanel({
   if (orientation === "modal") {
     return (
       <FilterModalShell
-        activeBadge={activeBadge}
         active={active}
         searchRow={searchRow}
         sections={sectionList}
@@ -1496,8 +1543,13 @@ function RangeRow({
 type FilterSectionMeta = {
   key: string;
   title: string;
+  /** Rail icon. Same role as the contact filter's category icons. */
+  icon: typeof Radar;
+  /** One line under the pane heading saying what this section is for. */
+  description: string;
   count: number;
   body: React.ReactNode;
+  defaultOpen?: boolean;
 };
 
 /**
@@ -1509,7 +1561,6 @@ type FilterSectionMeta = {
  * exit animation actually plays.
  */
 function FilterModalShell({
-  activeBadge,
   active,
   searchRow,
   sections,
@@ -1518,7 +1569,6 @@ function FilterModalShell({
   chips,
   savedSets,
 }: {
-  activeBadge: React.ReactNode;
   active: number;
   searchRow: React.ReactNode;
   sections: FilterSectionMeta[];
@@ -1661,128 +1711,145 @@ function FilterModalShell({
           role="dialog"
           aria-modal="true"
           aria-label="Filter vessels"
-          className={`fixed inset-0 z-[70] flex items-stretch justify-stretch transition-opacity duration-200 ${
+          onMouseDown={(event) => {
+            // mousedown, not click: a click that STARTED inside the dialog and
+            // ended on the backdrop (dragging to select text) must not close it.
+            if (event.target === event.currentTarget) close();
+          }}
+          className={`fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm transition-opacity duration-200 ${
             visible ? "opacity-100" : "opacity-0"
           }`}
         >
-          <button
-            type="button"
-            aria-label="Close filters"
-            onClick={close}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm dark:bg-black/60"
-          />
           <div
-            className={`relative m-3 flex flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-shell transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0A0A0C] sm:m-6 ${
+            className={`flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0C0C0F] ${
               visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-[0.98] opacity-0"
             }`}
           >
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-white/10">
-              <div className="flex items-center gap-3">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white/90">Filter Vessels</h2>
-                {activeBadge}
+            {/* Header — icon tile, title, and what this filter is searching. */}
+            <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-white px-5 py-3.5 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500/12 text-accent-600 dark:text-accent-300">
+                <Filter className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">Filters</h2>
+                <p className="text-[11px] text-slate-500 dark:text-white/45">
+                  Searching arrivals in the countries your plan covers
+                </p>
               </div>
+              {active > 0 ? (
+                <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-500 px-1.5 text-[10px] font-bold text-white">
+                  {active}
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={close}
                 aria-label="Close"
-                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:text-white/60 dark:hover:bg-white/[0.06]"
+                className="ml-auto rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:text-white/40 dark:hover:bg-white/[0.06] dark:hover:text-white/70"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="flex min-h-0 flex-1 flex-col">
-              {/* Horizontal gooey tab bar. A SOLID brand-blue pill slides
-                  between tabs on a gooey-filtered layer, so its leading/trailing
-                  edges pinch and stretch like liquid as it moves. The active
-                  label flips to white on top of the pill; the goo needs a
-                  saturated, opaque shape (not a faint tint) to render. */}
-              <GooeyFilter id="vessel-filter-goo" strength={9} />
-              <nav className="shrink-0 overflow-x-auto overflow-y-visible border-b border-slate-100 px-4 py-4 dark:border-white/10">
-                <div className="relative flex w-max min-w-full gap-1">
-                  {/* Gooey pill layer (behind labels) */}
-                  <div
-                    className="pointer-events-none absolute inset-0 flex gap-1"
-                    style={{ filter: "url(#vessel-filter-goo)" }}
-                    aria-hidden
-                  >
-                    {sections.map((s) => (
-                      <div key={s.key} className="relative flex-1 px-4 py-2">
-                        {s.key === activeSection?.key && (
-                          <motion.div
-                            layoutId="vessel-filter-active-tab"
-                            className="absolute inset-0 rounded-full bg-gradient-to-r from-accent-500 to-accent-600 shadow-[0_6px_20px_rgba(79,109,255,0.35)]"
-                            transition={{ type: "spring", bounce: 0.2, duration: 0.55 }}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Crisp interactive labels (above the goo) */}
-                  {sections.map((s) => {
-                    const isActive = s.key === activeSection?.key;
-                    return (
-                      <button
-                        key={s.key}
-                        type="button"
-                        onClick={() => setActiveKey(s.key)}
-                        className={`relative z-10 flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-300 ${
-                          isActive
-                            ? "font-semibold text-[#ffffff]"
-                            : "text-slate-600 hover:text-slate-900 dark:text-white/65 dark:hover:text-white"
-                        }`}
-                      >
-                        <span>{s.title}</span>
-                        {s.count ? (
-                          <span
-                            className={`rounded-full px-1.5 text-xs font-semibold ${
-                              isActive
-                                ? "bg-white/25 text-[#ffffff]"
-                                : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/60"
-                            }`}
-                          >
-                            {s.count}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* Body — category rail on the left, the active pane on the right.
+                A vertical rail rather than the old horizontal tab bar: the
+                sections are a list of places to go, and reading a column of
+                labels beats scanning a row that scrolls sideways once there
+                are five of them. */}
+            <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+              <nav className="shrink-0 space-y-0.5 overflow-y-auto border-b border-slate-100 p-2 dark:border-white/[0.06] sm:w-56 sm:border-b-0 sm:border-r">
+                {sections.map((section) => {
+                  const Icon = section.icon;
+                  const isActive = section.key === activeSection?.key;
+                  return (
+                    <button
+                      key={section.key}
+                      type="button"
+                      onClick={() => setActiveKey(section.key)}
+                      className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[13px] transition ${
+                        isActive
+                          ? "border border-accent-500/30 bg-accent-500/[0.07] font-semibold text-accent-700 shadow-sm dark:text-accent-200"
+                          : "border border-transparent font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-white/65 dark:hover:bg-white/[0.04] dark:hover:text-white"
+                      }`}
+                    >
+                      <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-accent-500" : "text-slate-400 dark:text-white/40"}`} />
+                      <span className="min-w-0 flex-1 truncate">{section.title}</span>
+                      {section.count ? (
+                        <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+                          {section.count}
+                        </span>
+                      ) : null}
+                      {isActive ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-accent-500" /> : null}
+                    </button>
+                  );
+                })}
               </nav>
 
-              {/* The modal pane is the scroll container; strip the inner
-                  max-height caps the section bodies use in the compact
-                  (horizontal) layout so lists fill the tall modal instead of
-                  being clipped to ~288px with empty space below. */}
+              {/* The pane is the scroll container; strip the inner max-height
+                  caps the section bodies use in the compact layout so lists
+                  fill the modal instead of being clipped with empty space. */}
               <div
                 key={activeSection?.key}
-                className="min-h-0 flex-1 overflow-y-auto px-8 pb-6 pt-8 animate-in-fade [&_.max-h-56]:max-h-none [&_.max-h-72]:max-h-none [&_.max-h-80]:max-h-none"
+                className="min-h-0 flex-1 overflow-y-auto px-5 py-5 animate-in-fade [&_.max-h-56]:max-h-none [&_.max-h-72]:max-h-none [&_.max-h-80]:max-h-none"
               >
+                {activeSection ? (
+                  <div className="mb-4 flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-500/12 text-accent-600 dark:text-accent-300">
+                      <activeSection.icon className="h-4.5 w-4.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-[15px] font-semibold text-slate-900 dark:text-white">
+                        {activeSection.title}
+                      </h3>
+                      <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500 dark:text-white/50">
+                        {activeSection.description}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 <SectionVariantContext.Provider value="plain">
                   {activeSection?.body}
                 </SectionVariantContext.Provider>
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4 dark:border-white/10 dark:bg-white/[0.02]">
-              <button
-                type="button"
-                onClick={() => {
-                  onReset();
-                  close();
-                }}
-                className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-white/60 dark:hover:text-white"
-              >
-                Reset
-              </button>
-              <button
-                type="button"
-                onClick={handleApply}
-                className="rounded-md bg-navy px-5 py-2 text-sm font-semibold text-white hover:bg-ocean dark:bg-accent-600 dark:hover:bg-accent-500"
-              >
-                Show Results
-              </button>
+            {/* Footer — states what the filter currently does, then Done (keep
+                the selection, close) and Apply & search (run it). */}
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 dark:border-white/[0.06] dark:bg-white/[0.02]">
+              <p className="text-[12px] text-slate-500 dark:text-white/45">
+                {active === 0
+                  ? "No filters — every arrival in scope will be returned."
+                  : `${active} filter${active === 1 ? "" : "s"} applied.`}
+              </p>
+              <div className="flex items-center gap-2">
+                {active > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onReset();
+                      close();
+                    }}
+                    className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-600 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                  >
+                    Reset
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={close}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApply}
+                  className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  Apply &amp; search
+                </button>
+              </div>
             </div>
           </div>
         </div>
