@@ -28,7 +28,12 @@ import {
   recordEmailReveal as recordApolloEmailReveal,
   recordPhoneReveal as recordApolloPhoneReveal,
 } from "../services/apollo/usage.js";
-import { deductCredits, grantCredits, CreditDeductionError } from "../services/billing.service.js";
+import {
+  deductCredits,
+  grantCredits,
+  CreditDeductionError,
+  MembershipInactiveError,
+} from "../services/billing.service.js";
 import { getOrCreateDataSourceSettings } from "../services/data-sources/settings.js";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
 import { createHash } from "node:crypto";
@@ -1685,6 +1690,13 @@ export async function revealApolloPerson(
         userId,
       );
     } catch (error) {
+      if (error instanceof MembershipInactiveError) {
+        return {
+          status: 403 as const,
+          code: "SUBSCRIPTION_INACTIVE" as const,
+          message: error.message,
+        };
+      }
       if (error instanceof CreditDeductionError) {
         return {
           status: 402 as const,
@@ -1746,6 +1758,13 @@ export async function revealApolloPerson(
       balance = await deductCredits(workspaceId, price, reason, `apollo:${externalId}`, userId);
     }
   } catch (error) {
+    if (error instanceof MembershipInactiveError) {
+      return {
+        status: 403 as const,
+        code: "SUBSCRIPTION_INACTIVE" as const,
+        message: error.message,
+      };
+    }
     if (error instanceof CreditDeductionError) {
       return {
         status: 402 as const,

@@ -8,6 +8,7 @@ import { sendData, sendError } from "../lib/http.js";
 import {
   CREDIT_COST,
   CreditDeductionError,
+  MembershipInactiveError,
   deductCredits,
 } from "../services/billing.service.js";
 import { cacheJson, workspaceCacheKey } from "../services/cache.service.js";
@@ -189,6 +190,9 @@ vesselRouter.get("/:imoNumber", requireAuth, async (req, res, next) => {
         try {
           await deductCredits(workspaceId, CREDIT_COST.VIEW_VESSEL, "VIEW_VESSEL", `Viewed global vessel ${imoNumber}`, userId);
         } catch (creditError) {
+          if (creditError instanceof MembershipInactiveError) {
+            return sendError(res, 403, "SUBSCRIPTION_INACTIVE", creditError.message);
+          }
           if (creditError instanceof CreditDeductionError) {
             return sendError(res, 402, "INSUFFICIENT_CREDITS", creditError.message);
           }
@@ -212,6 +216,9 @@ vesselRouter.post("/:imoNumber/save", requireAuth, async (req, res, next) => {
     try {
       await deductCredits(workspaceId, CREDIT_COST.SAVE_VESSEL, "SAVE_VESSEL", `Saved global vessel ${imoNumber}`, userId);
     } catch (creditError) {
+      if (creditError instanceof MembershipInactiveError) {
+        return sendError(res, 403, "SUBSCRIPTION_INACTIVE", creditError.message);
+      }
       if (creditError instanceof CreditDeductionError) {
         return sendError(res, 402, "INSUFFICIENT_CREDITS", creditError.message);
       }
@@ -265,6 +272,9 @@ vesselRouter.post("/export", requireAuth, async (req, res, next) => {
     try {
       await deductCredits(workspaceId, cost, "EXPORT_VESSEL", `Export ${vessels.length} vessels`, userId);
     } catch (creditError) {
+      if (creditError instanceof MembershipInactiveError) {
+        return sendError(res, 403, "SUBSCRIPTION_INACTIVE", creditError.message);
+      }
       if (creditError instanceof CreditDeductionError) {
         return sendError(res, 402, "INSUFFICIENT_CREDITS", creditError.message);
       }

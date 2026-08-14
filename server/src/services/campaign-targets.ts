@@ -1,4 +1,5 @@
 import { Prisma, prisma, type Contact, type VesselETA } from "@marimail/db";
+import { isBlocked, loadBlockIndex } from "./blocklist.service.js";
 
 export type TargetRole = "SHIP_OWNER" | "ISM_MANAGER" | "COMMERCIAL_MANAGER";
 const targetRoles: TargetRole[] = ["SHIP_OWNER", "ISM_MANAGER", "COMMERCIAL_MANAGER"];
@@ -182,18 +183,40 @@ export async function resolveCampaignContacts(input: {
   return removeSuppressed(input.workspaceId, contacts);
 }
 
+/**
+ * Removes everyone this workspace must not mail, for both reasons:
+ *
+ *  - SUPPRESSED — the recipient opted out, bounced or complained.
+ *  - BLOCKED — the sender put them on the workspace do-not-contact list, by
+ *    person or by company (see blocklist.service).
+ *
+ * Both live here rather than at the call sites because this is the one funnel
+ * every campaign target set passes through; a second filter somewhere else is
+ * a second place to forget.
+ */
 export async function removeSuppressed(workspaceId: string, contacts: Contact[]) {
   if (!contacts.length) return [];
   const emails = contacts.map((contact) => contact.email.toLowerCase());
-  const suppressions = await prisma.globalSuppression.findMany({
-    where: {
-      email: { in: emails },
-      OR: [{ workspaceId }, { workspaceId: null }],
-    },
-    select: { email: true },
-  });
+  const [suppressions, blockIndex] = await Promise.all([
+    prisma.globalSuppression.findMany({
+      where: {
+        email: { in: emails },
+        OR: [{ workspaceId }, { workspaceId: null }],
+      },
+      select: { email: true },
+    }),
+    loadBlockIndex(workspaceId),
+  ]);
   const suppressed = new Set(suppressions.map((item) => item.email.toLowerCase()));
-  return contacts.filter((contact) => !suppressed.has(contact.email.toLowerCase()));
+  return contacts.filter(
+    (contact) =>
+      !suppressed.has(contact.email.toLowerCase()) &&
+      !isBlocked(blockIndex, {
+        email: contact.email,
+        companyName: contact.companyName,
+        website: contact.website,
+      }),
+  );
 }
 
 /**

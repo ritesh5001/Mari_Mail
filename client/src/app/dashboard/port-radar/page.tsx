@@ -10,6 +10,7 @@ import {
 import { serializeRadarEta } from "@/lib/port-radar-serialize";
 import { PortRadarTabs, type PortRadarTabKey } from "@/components/marine/PortRadarTabs";
 import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
+import { TargetCountryBanner } from "@/components/marine/TargetCountryBanner";
 import { getServerSession } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -88,8 +89,14 @@ export default async function PortRadarPage({
   // Contact counts load lazily client-side after rows render, so seed with 0.
   const initialRows = initial.etas.map((eta) => serializeRadarEta(eta, 0));
 
+  // An empty grant means the feed is legitimately empty. Offer the picker
+  // rather than an unexplained blank radar.
+  const needsCountry = !isSuperAdmin && (grantedCountries?.length ?? 0) === 0;
+
   return (
     <div className="space-y-5">
+      {needsCountry ? <TargetCountryBanner /> : null}
+
       <VesselFilterPanel
         searchParams={searchParams}
         basePath="/dashboard/port-radar"

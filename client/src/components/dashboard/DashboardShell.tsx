@@ -2,6 +2,7 @@
 
 import {
   Anchor,
+  Ban,
   BarChart3,
   Bell,
   Bookmark,
@@ -54,11 +55,14 @@ const navItems: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard, alwaysVisible: true },
   { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
   { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
+  // Ordered along the job to be done: find the vessels arriving, put the people
+  // in a list, fire the ETA campaign off it, then the inbox and cold outreach.
   { href: "/dashboard/port-radar", label: "ETA / Port Radar", icon: Radar },
   { href: "/dashboard/lists", label: "Lists", icon: List },
+  { href: "/dashboard/blocked", label: "Blocked", icon: Ban },
+  { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
   { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
   { href: "/dashboard/campaigns/cold", label: "Cold campaigns", icon: Mail },
-  { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/billing", label: "Plan & billing", icon: CreditCard, billingManagerOnly: true },
   { href: "/dashboard/marine-db", label: "Marine DB", icon: Anchor, superAdminOnly: true },

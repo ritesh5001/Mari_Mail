@@ -699,7 +699,17 @@ export async function listPorts() {
  * port list is fetched once and then reused across users and reloads.
  */
 export async function listMapPorts(scope: CountryScope, includeAllCountries: boolean) {
-  const key = includeAllCountries ? "all" : (scopeToList(scope)?.join(",") ?? "unscoped");
+  // Three distinct cases, three distinct keys. "none" (granted no country →
+  // no ports) must never collide with "unscoped" (no restriction → every
+  // port), or one would serve the other's rows out of the cache.
+  const scopeList = scopeToList(scope);
+  const key = includeAllCountries
+    ? "all"
+    : scopeList === null
+      ? "unscoped"
+      : scopeList.length === 0
+        ? "none"
+        : scopeList.join(",");
   const load = unstable_cache(
     async () =>
       prisma.port.findMany({

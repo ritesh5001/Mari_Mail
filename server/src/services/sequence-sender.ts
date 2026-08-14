@@ -5,6 +5,7 @@ import {
   type CampaignSequence,
   type Contact,
 } from "@marimail/db";
+import { isEmailBlocked } from "./blocklist.service.js";
 import {
   bodyToHtml,
   plainTextFromHtml,
@@ -215,13 +216,45 @@ export function buildPersonalization(
   };
 }
 
-export async function findSuppression(workspaceId: string, email: string) {
-  return prisma.globalSuppression.findFirst({
-    where: {
+/**
+ * The send-time do-not-mail check.
+ *
+ * Returns a suppression row for an opt-out/bounce, or a synthetic row for a
+ * workspace block. Both stop the send, and callers already log
+ * `suppression.reason`, so a blocked recipient reads as "blocked_contact" /
+ * "blocked_company" in the skip reason rather than being indistinguishable
+ * from an unsubscribe.
+ *
+ * Checked here, at send time, and not only when the campaign's targets are
+ * resolved: a contact blocked AFTER a campaign went live is already queued,
+ * and "never contact them again" has to mean the queued send too.
+ */
+export async function findSuppression(
+  workspaceId: string,
+  email: string,
+  candidate?: { companyName?: string | null; website?: string | null },
+) {
+  const [suppression, blocked] = await Promise.all([
+    prisma.globalSuppression.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        OR: [{ workspaceId }, { workspaceId: null }],
+      },
+    }),
+    isEmailBlocked(workspaceId, email, candidate),
+  ]);
+  if (suppression) return suppression;
+  if (blocked) {
+    return {
+      id: `block:${blocked.toLowerCase()}`,
+      workspaceId,
       email: email.toLowerCase(),
-      OR: [{ workspaceId }, { workspaceId: null }],
-    },
-  });
+      reason: blocked === "CONTACT" ? "blocked_contact" : "blocked_company",
+      token: "",
+      createdAt: new Date(),
+    };
+  }
+  return null;
 }
 
 export async function shouldSkip(input: {

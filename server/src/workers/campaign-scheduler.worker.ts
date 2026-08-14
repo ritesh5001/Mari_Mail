@@ -39,7 +39,10 @@ async function processEtaStep(job: Job<EtaStepJob>, token?: string) {
     return { skipped: true, reason: "missing-or-inactive" };
   }
 
-  const suppression = await findSuppression(trigger.workspaceId, contact.email);
+  const suppression = await findSuppression(trigger.workspaceId, contact.email, {
+    companyName: contact.companyName,
+    website: contact.website,
+  });
   if (suppression) {
     await prisma.campaignContact.updateMany({
       where: { campaignId: trigger.campaignId, contactId: contact.id },

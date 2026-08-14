@@ -216,7 +216,10 @@ async function sendOneNow(
     };
   }
 
-  const suppression = await findSuppression(campaign.workspaceId, contact.email);
+  const suppression = await findSuppression(campaign.workspaceId, contact.email, {
+    companyName: contact.companyName,
+    website: contact.website,
+  });
   if (suppression) {
     await prisma.campaignContact.upsert({
       where: { campaignId_contactId: { campaignId: campaign.id, contactId: contact.id } },

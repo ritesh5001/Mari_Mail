@@ -85,11 +85,29 @@ export async function activateMembership(
   return prisma.$transaction(async (tx) => {
     const workspace = await tx.workspace.findUnique({
       where: { id: workspaceId },
-      select: { currentPeriodEnd: true, allowedCountries: true, creditBalance: true },
+      select: {
+        currentPeriodEnd: true,
+        trialEndsAt: true,
+        allowedCountries: true,
+        creditBalance: true,
+      },
     });
     if (!workspace) throw new Error(`Workspace ${workspaceId} not found`);
 
-    const periodEnd = nextPeriodEnd(workspace.currentPeriodEnd, periodDays);
+    // Time already granted, whichever form it took. A workspace on trial has
+    // no `currentPeriodEnd` — registration sets only `trialEndsAt` — so
+    // basing the new period on `currentPeriodEnd` alone confiscated the unused
+    // trial days from anyone who subscribed before their trial ran out, which
+    // is precisely the customer you least want to short-change. Same rule the
+    // renewal sweep uses to decide when access lapses.
+    const grantedUntil =
+      workspace.currentPeriodEnd && workspace.trialEndsAt
+        ? workspace.currentPeriodEnd > workspace.trialEndsAt
+          ? workspace.currentPeriodEnd
+          : workspace.trialEndsAt
+        : (workspace.currentPeriodEnd ?? workspace.trialEndsAt);
+
+    const periodEnd = nextPeriodEnd(grantedUntil, periodDays);
 
     const data: Prisma.WorkspaceUpdateInput = {
       plan,

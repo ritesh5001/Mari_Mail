@@ -55,7 +55,7 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
     sinceMonth.setUTCDate(1);
     sinceMonth.setUTCHours(0, 0, 0, 0);
 
-    const [vesselCount, monthlySent, ledger, payments] = await Promise.all([
+    const [vesselCount, monthlySent, ledger, payments, revealSettings] = await Promise.all([
       prisma.vessel.count({ where: { workspaceId } }),
       prisma.emailEvent.count({ where: { workspaceId, eventType: "SENT", occurredAt: { gte: sinceMonth } } }),
       prisma.creditLedger.findMany({
@@ -81,6 +81,13 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
           createdAt: true,
         },
       }),
+      // Reveal pricing is admin-configurable, so the UI must read it rather
+      // than hardcode it — a panel that promises "1 credit" while the server
+      // charges 20 is worse than no label at all.
+      prisma.apolloSettings.findUnique({
+        where: { id: "singleton" },
+        select: { creditsPerEmailReveal: true, creditsPerPhoneReveal: true },
+      }),
     ]);
 
     return sendData(res, {
@@ -92,6 +99,10 @@ billingRouter.get("/me", requireAuth, async (req, res, next) => {
       usage: {
         vessels: vesselCount,
         emailsThisMonth: monthlySent,
+      },
+      revealPricing: {
+        email: revealSettings?.creditsPerEmailReveal ?? 1,
+        phone: revealSettings?.creditsPerPhoneReveal ?? 20,
       },
       creditLedger: ledger,
       payments,

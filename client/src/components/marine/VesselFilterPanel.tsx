@@ -8,6 +8,7 @@ import { GooeyFilter } from "@/components/ui/gooey-filter";
 import Link from "next/link";
 import { apiFetch } from "@/lib/browser-fetch";
 import { cn } from "@/lib/cn";
+import { SavedFilterSets } from "@/components/filters/SavedFilterSets";
 import {
   ETA_CONFIDENCES,
   VESSEL_TYPE_CATEGORIES,
@@ -516,6 +517,43 @@ export function VesselFilterPanel({
     if (typeof pageSize === "string") params.set("pageSize", pageSize);
     const qs = params.toString();
     router.push(qs ? `${basePath}?${qs}` : basePath);
+  }
+
+  /**
+   * Apply a change immediately, without waiting for the Search button.
+   *
+   * Used by the chip ×: `apply()` reads from `state`, and React state updates
+   * are asynchronous, so patching and then applying in the same handler would
+   * navigate with the value the user just removed still in the URL.
+   */
+  function applyWith(part: Partial<FilterState>) {
+    const next = { ...state, ...part };
+    setState(next);
+    const params = stateToParams(next);
+    const pageSize = searchParams.pageSize;
+    if (typeof pageSize === "string") params.set("pageSize", pageSize);
+    const qs = params.toString();
+    router.push(qs ? `${basePath}?${qs}` : basePath);
+  }
+
+  /**
+   * The JSON a saved set stores: the query string this filter produces.
+   *
+   * Saving the URL params rather than the state object means a set round-trips
+   * through exactly the same parser the address bar does, and a set saved
+   * before a field existed simply lacks that key — `searchParamsToState` fills
+   * the default. No separate migration path for presets.
+   */
+  const savedFilterConfig = Object.fromEntries(stateToParams(state).entries());
+
+  function loadSavedFilter(config: unknown) {
+    const raw = (config ?? {}) as Record<string, unknown>;
+    const params: SearchParams = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value === "string") params[key] = value;
+      else if (Array.isArray(value)) params[key] = value.filter((v): v is string => typeof v === "string");
+    }
+    setState(searchParamsToState(params));
   }
 
   function reset() {
@@ -1039,6 +1077,98 @@ export function VesselFilterPanel({
     </>
   );
 
+  /**
+   * Active filters as removable chips, mirroring the contact search toolbar.
+   *
+   * The chip is the answer to "what am I actually filtering by right now?",
+   * which a bare count on a Filters button cannot give. Each one names its
+   * value, jumps to the pane it came from when clicked, and drops just that
+   * value on the ×; multi-select facets get one chip per value so removing a
+   * single country doesn't wipe the other three.
+   *
+   * Removing a chip applies immediately — it is an undo of something already
+   * in the result set, and making the user press Search afterwards would leave
+   * the toolbar disagreeing with the table.
+   */
+  const activeChips: Array<{ key: string; label: string; section: string; onRemove: () => void }> = [];
+  const pushChip = (key: string, label: string, section: string, part: Partial<FilterState>) => {
+    activeChips.push({ key, label, section, onRemove: () => applyWith(part) });
+  };
+  const pushText = (field: keyof FilterState, prefix: string, section: string) => {
+    const raw = state[field];
+    if (typeof raw === "string" && raw.trim()) {
+      pushChip(String(field), `${prefix}: ${raw.trim()}`, section, { [field]: "" } as Partial<FilterState>);
+    }
+  };
+  const pushRange = (
+    minField: keyof FilterState,
+    maxField: keyof FilterState,
+    label: string,
+    section: string,
+  ) => {
+    const min = String(state[minField] ?? "").trim();
+    const max = String(state[maxField] ?? "").trim();
+    if (!min && !max) return;
+    pushChip(`${String(minField)}-range`, `${label} ${min || "…"}–${max || "…"}`, section, {
+      [minField]: "",
+      [maxField]: "",
+    } as Partial<FilterState>);
+  };
+  const pushList = (
+    field: "vesselType" | "destCountry" | "destPort" | "etaConfidence" | "voyageStatus",
+    prefix: string,
+    section: string,
+    format: (value: string) => string = (v) => v,
+  ) => {
+    for (const item of state[field]) {
+      pushChip(`${field}:${item}`, `${prefix}: ${format(item)}`, section, {
+        [field]: state[field].filter((v) => v !== item),
+      } as Partial<FilterState>);
+    }
+  };
+
+  if (state.hasEta) pushChip("hasEta", "Has an ETA", "eta", { hasEta: false });
+  if (state.noCampaign) pushChip("noCampaign", "No campaign attached", "eta", { noCampaign: false });
+  if (state.etaFrom || state.etaTo) {
+    pushChip("etaWindow", `ETA ${state.etaFrom || "any"} → ${state.etaTo || "any"}`, "eta", {
+      etaFrom: "",
+      etaTo: "",
+    });
+  }
+  pushList("destCountry", "Country", "eta", (code) => countries.find((c) => c.country === code)?.countryName ?? code);
+  pushList("destPort", "Port", "eta", (code) => ports.find((p) => p.portCode === code)?.portName ?? code);
+  pushList("etaConfidence", "Confidence", "eta", formatVesselEnum);
+  pushList("voyageStatus", "Voyage", "eta", formatVesselEnum);
+  pushList("vesselType", "Type", "type", formatVesselEnum);
+  pushRange("dwtMin", "dwtMax", "DWT", "size");
+  pushRange("gtMin", "gtMax", "GT", "size");
+  pushRange("netTonMin", "netTonMax", "Net tonnage", "size");
+  pushRange("builtMin", "builtMax", "Built", "size");
+  pushRange("loaMin", "loaMax", "LOA", "size");
+  pushRange("beamMin", "beamMax", "Beam", "size");
+  pushRange("teuMin", "teuMax", "TEU", "size");
+  pushText("flag", "Flag", "type");
+  pushText("owner", "Owner", "owner");
+  pushText("registeredOwner", "Registered owner", "owner");
+  pushText("beneficialOwner", "Beneficial owner", "owner");
+  pushText("manager", "Manager", "owner");
+  pushText("technicalManager", "Technical manager", "owner");
+  pushText("operator", "Operator", "owner");
+  pushText("classSociety", "Class", "builders");
+  pushText("pAndIClub", "P&I", "builders");
+  pushText("shipBuilder", "Builder", "builders");
+  pushText("engineBuilder", "Engine", "builders");
+  pushText("mmsi", "MMSI", "type");
+  pushText("callsign", "Callsign", "type");
+  pushText("market", "Market", "type");
+  pushText("sizeClass", "Size class", "size");
+  pushText("globalArea", "Area", "eta");
+  pushText("navStatus", "Nav status", "eta");
+  pushText("currentPortCountry", "Currently in", "eta");
+  if (state.verified) pushChip("verified", "Verified only", "type", { verified: false });
+  if (state.hasMmsi) pushChip("hasMmsi", "AIS active", "type", { hasMmsi: false });
+  if (state.hasEmail) pushChip("hasEmail", "Has contact email", "type", { hasEmail: false });
+
   const searchRow = (
     <div className="flex min-w-0 gap-2">
       <input
@@ -1067,6 +1197,16 @@ export function VesselFilterPanel({
         sections={sectionList}
         onApply={apply}
         onReset={reset}
+        chips={activeChips}
+        savedSets={
+          <SavedFilterSets
+            entityType="ETA"
+            value={savedFilterConfig}
+            hasFilter={active > 0}
+            onLoad={loadSavedFilter}
+            namePlaceholder="e.g. Tankers · Brazil · 7 days"
+          />
+        }
       />
     );
   }
@@ -1375,6 +1515,8 @@ function FilterModalShell({
   sections,
   onApply,
   onReset,
+  chips,
+  savedSets,
 }: {
   activeBadge: React.ReactNode;
   active: number;
@@ -1382,6 +1524,8 @@ function FilterModalShell({
   sections: FilterSectionMeta[];
   onApply: () => void;
   onReset: () => void;
+  chips: Array<{ key: string; label: string; section: string; onRemove: () => void }>;
+  savedSets: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -1438,33 +1582,78 @@ function FilterModalShell({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center">
-        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white/90">
-          <Filter className="h-4 w-4 text-ocean" />
-          Vessel filters
-          {activeBadge}
+    /* ── Toolbar ──────────────────────────────────────────────────────────
+       Deliberately the same shape as the contact search toolbar: a Filters
+       button carrying the active count, then the chips for what is actually
+       applied, then Clear / Saved sets / Search on the right. The two filters
+       used to look like different products; the panes behind them were always
+       the same idea, so only the front door needed to agree. */
+    <div className="rounded-xl border border-slate-200/70 bg-white shadow-sm ring-1 ring-black/[0.02] dark:border-white/[0.08] dark:bg-white/[0.02] dark:ring-white/[0.02]">
+      <div className="flex flex-wrap items-center gap-2 p-2">
+        <button
+          type="button"
+          onClick={open}
+          className="group inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 shadow-sm transition-all hover:border-accent-400 hover:text-accent-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-accent-400/60"
+        >
+          <Filter className="h-3.5 w-3.5 text-accent-500" />
+          Filters
+          {active ? (
+            <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+              {active}
+            </span>
+          ) : null}
+        </button>
+
+        <span className="hidden h-6 w-px shrink-0 bg-slate-200 sm:block dark:bg-white/10" />
+
+        {/* Horizontal scroll, so a 40-chip filter never wraps the toolbar into
+            a wall of text. */}
+        <div className="scrollbar-thin flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
+          {chips.length === 0 ? (
+            <span className="truncate text-[12px] text-slate-400 dark:text-white/35">No filters</span>
+          ) : (
+            chips.map((chip) => (
+              <span
+                key={chip.key}
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-accent-500/25 bg-accent-500/10 py-0.5 pl-2 pr-1 text-[11px] font-medium text-accent-700 dark:text-accent-200"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveKey(chip.section);
+                    open();
+                  }}
+                  className="max-w-[180px] truncate hover:underline"
+                  title="Edit this filter"
+                >
+                  {chip.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={chip.onRemove}
+                  aria-label={`Remove ${chip.label}`}
+                  className="rounded-full p-0.5 opacity-60 transition hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/15"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))
+          )}
         </div>
-        <div className="min-w-0 flex-1 md:max-w-lg">{searchRow}</div>
-        <div className="flex items-center gap-2 md:ml-auto">
+
+        {active ? (
           <button
             type="button"
-            onClick={open}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-white/60 dark:hover:bg-white/[0.06]"
+            onClick={onReset}
+            className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
           >
-            <Filter className="h-4 w-4" />
-            Filter vessels
+            Clear
           </button>
-          {active ? (
-            <button
-              type="button"
-              onClick={onReset}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-[#262631] dark:text-white/70"
-            >
-              Reset
-            </button>
-          ) : null}
-        </div>
+        ) : null}
+
+        <div className="shrink-0">{savedSets}</div>
+
+        <div className="min-w-[220px] shrink-0 grow sm:grow-0 sm:basis-[320px]">{searchRow}</div>
       </div>
 
       {mounted ? (

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ActivityChart } from "@/components/analytics/ActivityChart";
 import { RangeSwitcher } from "@/components/dashboard/RangeSwitcher";
+import { TargetCountryBanner } from "@/components/marine/TargetCountryBanner";
 import {
   formatRate,
   formatTrendDetail,
@@ -61,21 +62,51 @@ function TrendNote({ trend, suffix }: { trend: number; suffix: string }) {
   return <p className={`mt-3 text-sm ${tone}`}>{formatTrendDetail(trend, suffix)}</p>;
 }
 
+type ActivationStep = { label: string; href: string; icon: typeof Inbox };
+
+/**
+ * The activation steps a workspace has NOT completed yet, in order.
+ *
+ * Each flag is read from the database (an inbox row, a contact with a real
+ * address, a campaign) rather than assumed, so finishing a step makes it
+ * disappear on the next load.
+ */
+function outstandingSteps(activation: {
+  inboxConnected: boolean;
+  contactsUnlocked: boolean;
+  campaignLaunched: boolean;
+}): ActivationStep[] {
+  const steps: ActivationStep[] = [];
+  if (!activation.inboxConnected) {
+    steps.push({ label: "Connect a sending inbox", href: "/dashboard/inboxes", icon: Inbox });
+  }
+  if (!activation.contactsUnlocked) {
+    steps.push({ label: "Build a contact list", href: "/dashboard/lists", icon: Users });
+  }
+  if (!activation.campaignLaunched) {
+    steps.push({ label: "Launch your first campaign", href: "/dashboard/campaigns/cold", icon: Rocket });
+  }
+  return steps;
+}
+
 /**
  * New/quiet workspace: a grid of zeros tells the user nothing and offers no way
- * forward. Swap it for the three steps that actually produce data.
+ * forward. Swap it for the steps that actually produce data.
+ *
+ * A step the user has already done is REMOVED, not ticked. Every one of these
+ * was previously hardcoded `done: false`, so a workspace with three inboxes
+ * connected and contacts unlocked was still being told to connect an inbox —
+ * the checklist asserted things about the user that were plainly untrue, which
+ * is worse than no checklist. Once nothing is outstanding the caller drops the
+ * card entirely (see `outstandingSteps`).
  */
-function ActivationChecklist({ hasCampaigns }: { hasCampaigns: boolean }) {
-  const steps = [
-    { label: "Connect a sending inbox", href: "/dashboard/inboxes", icon: Inbox, done: false },
-    { label: "Build a contact list", href: "/dashboard/lists", icon: Users, done: false },
-    { label: "Launch your first campaign", href: "/dashboard/campaigns/cold", icon: Rocket, done: hasCampaigns },
-  ];
+function ActivationChecklist({ steps }: { steps: ActivationStep[] }) {
   return (
     <section className={CARD}>
       <h3 className="text-base font-semibold text-slate-900 dark:text-white">Get your first replies</h3>
       <p className="mt-1 text-sm text-slate-600 dark:text-white/55">
-        Your KPIs fill in as soon as outreach starts moving. Three steps to get there.
+        Your KPIs fill in as soon as outreach starts moving.{" "}
+        {steps.length === 1 ? "One step left." : `${steps.length} steps to get there.`}
       </p>
       <ol className="mt-4 space-y-2">
         {steps.map((step, i) => {
@@ -86,14 +117,8 @@ function ActivationChecklist({ hasCampaigns }: { hasCampaigns: boolean }) {
                 href={step.href}
                 className="group flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 transition-colors hover:border-accent-400 hover:bg-accent-500/[0.04] dark:border-white/10 dark:hover:border-accent-400/50 dark:hover:bg-white/[0.04]"
               >
-                <span
-                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold ${
-                    step.done
-                      ? "bg-emerald-500 text-[#ffffff]"
-                      : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-white/60"
-                  }`}
-                >
-                  {step.done ? "✓" : i + 1}
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 dark:bg-white/10 dark:text-white/60">
+                  {i + 1}
                 </span>
                 <Icon className="h-4 w-4 shrink-0 text-slate-400 dark:text-white/40" />
                 <span className="flex-1 text-sm font-medium text-slate-800 dark:text-white/85">{step.label}</span>
@@ -151,6 +176,11 @@ async function DashboardKpis({
   // A workspace with no sends and no campaigns has nothing to chart — show the
   // activation path instead of six zeros.
   const isDormant = cards.emailsSent.value === 0 && cards.activeCampaigns.value === 0;
+  // Setup work still outstanding. A dormant workspace that has already done
+  // all three gets the charts, not a checklist with nothing on it.
+  const steps = outstandingSteps(
+    overview?.activation ?? { inboxConnected: true, contactsUnlocked: true, campaignLaunched: true },
+  );
 
   // Tier 2 — supporting metrics. Every one drills through; a card that looks
   // clickable (hover ring) must actually go somewhere.
@@ -307,8 +337,8 @@ async function DashboardKpis({
       </section>
 
       {/* ── Activity + regions ── */}
-      {isDormant ? (
-        <ActivationChecklist hasCampaigns={cards.activeCampaigns.value > 0} />
+      {isDormant && steps.length > 0 ? (
+        <ActivationChecklist steps={steps} />
       ) : (
         <section className="grid gap-4 lg:grid-cols-[2fr,1fr]">
           <article className={CARD}>
@@ -375,7 +405,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const { workspaceId, workspace, countries } = await requireAnalyticsWorkspace();
+  const { workspaceId, workspace, countries, hasCountryGrant } = await requireAnalyticsWorkspace();
   const days = (() => {
     const raw = typeof searchParams.range === "string" ? Number(searchParams.range) : 30;
     return [7, 30, 90].includes(raw) ? raw : 30;
@@ -410,6 +440,11 @@ export default async function DashboardPage({
           </div>
         </div>
       </section>
+
+      {/* No country granted = every ETA figure below is legitimately zero.
+          Say why and let them fix it here, rather than showing a grid of
+          zeros — or, as it did before, every country's arrivals. */}
+      {hasCountryGrant ? null : <TargetCountryBanner />}
 
       <Suspense fallback={<KpiSkeleton />}>
         <DashboardKpis workspaceId={workspaceId} days={days} countries={countries} />

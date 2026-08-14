@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  Ban,
   Building2,
   ChevronRight,
   Clock,
@@ -22,6 +23,7 @@ import type {
 } from "@/lib/contact-data";
 import { apiFetch } from "@/lib/browser-fetch";
 import { useClientSort } from "@/hooks/useClientSort";
+import { useRevealPricing } from "@/hooks/useRevealPricing";
 import { SortableHeader } from "@/components/table/SortableHeader";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import { ImportContactsCsvSection } from "@/components/lists/ImportContactsCsvSection";
@@ -387,10 +389,14 @@ export function ContactListDetail({
                 <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
                   Find people
                 </h3>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-white/55">
-                  Search anyone by title, seniority, location, company size and keywords —
-                  no vessel needed — then add them straight to this list. Searching is free;
-                  only revealing an email spends a credit.
+                {/* One line only. The full explanation lives in the title
+                    tooltip — it was three lines of prose above a collapsed
+                    panel, which is the last place it earns its space. */}
+                <p
+                  className="mt-0.5 truncate text-xs text-slate-500 dark:text-white/55"
+                  title="Search anyone by title, seniority, location, company size and keywords — no vessel needed — then add them straight to this list. Searching is free; only revealing an email spends a credit."
+                >
+                  No vessel needed. Searching is free — reveals cost credits.
                 </p>
               </div>
               <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
@@ -631,6 +637,7 @@ function ContactsTable({
   onReveal: (contact: ContactRow, field: "email" | "phone") => void;
   revealing: Record<string, "email" | "phone" | undefined>;
 }) {
+  const revealPricing = useRevealPricing();
   // Trimmed to the fields that matter for a list-detail view. The Apollo-
   // style extras (Departments, Contact Owner, LinkedIn, Salesforce ID,
   // Corporate Phone) blew the table past 1600px wide and forced horizontal
@@ -679,7 +686,7 @@ function ContactsTable({
                       onClick={() => onReveal(contact, "email")}
                       disabled={busy === "email"}
                       className="inline-flex items-center gap-1.5 rounded-md border border-ocean/40 bg-ocean/5 px-2 py-1 text-xs font-semibold text-ocean hover:bg-ocean/10 disabled:opacity-60 dark:border-ocean/50 dark:text-ocean-light"
-                      title="Reveal email (1 credit)"
+                      title={`Reveal email (${revealPricing.email} credit${revealPricing.email === 1 ? "" : "s"})`}
                     >
                       {busy === "email" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
                       Reveal email
@@ -694,7 +701,7 @@ function ContactsTable({
                       onClick={() => onReveal(contact, "phone")}
                       disabled={busy === "phone"}
                       className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 dark:border-white/[0.08] dark:bg-white/[0.02] dark:text-white/70 dark:hover:bg-white/[0.04]"
-                      title="Reveal mobile phone (1 credit)"
+                      title={`Reveal mobile phone (${revealPricing.phone} credits)`}
                     >
                       {busy === "phone" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
                       Reveal phone
@@ -1070,21 +1077,114 @@ export function CampaignByRolePanel({
   // mount from /api/billing/me; each successful reveal returns a fresh
   // balance so we can update this in place without another round-trip.
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
+  // Reveal prices are set by an admin and differ per field — a phone number
+  // costs materially more than an email — so they come from the server with
+  // the balance rather than being written into the labels here.
+  const [revealPricing, setRevealPricing] = useState<{ email: number; phone: number }>({
+    email: 1,
+    phone: 20,
+  });
 
   useEffect(() => {
     let cancelled = false;
     apiFetch("/api/billing/me")
       .then((r) => (r.ok ? r.json() : null))
-      .then((payload: { data?: { workspace?: { creditBalance?: number } } } | null) => {
-        if (!cancelled && typeof payload?.data?.workspace?.creditBalance === "number") {
-          setCreditBalance(payload.data.workspace.creditBalance);
-        }
-      })
+      .then(
+        (
+          payload: {
+            data?: {
+              workspace?: { creditBalance?: number };
+              revealPricing?: { email?: number; phone?: number };
+            };
+          } | null,
+        ) => {
+          if (cancelled) return;
+          if (typeof payload?.data?.workspace?.creditBalance === "number") {
+            setCreditBalance(payload.data.workspace.creditBalance);
+          }
+          const pricing = payload?.data?.revealPricing;
+          if (pricing) {
+            setRevealPricing({ email: pricing.email ?? 1, phone: pricing.phone ?? 20 });
+          }
+        },
+      )
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Rows blocked from this panel, so the table can grey them out immediately
+  // instead of waiting for a re-search to drop them.
+  const [blockedRows, setBlockedRows] = useState<Map<string, "CONTACT" | "COMPANY">>(new Map());
+  const [blocking, setBlocking] = useState<string | null>(null);
+
+  /**
+   * Block a person, or their whole company, straight from the search results.
+   *
+   * This is where blocking actually belongs: the moment you see a company you
+   * already serve in the results is the moment you want it gone, and making the
+   * user copy the domain into a settings page instead guarantees it never
+   * happens. The row stays visible but struck through, so the user can see the
+   * action landed — and undo it from the Blocked page.
+   */
+  async function blockRow(row: ApolloRow, kind: "CONTACT" | "COMPANY") {
+    setBlocking(`${row.id}:${kind}`);
+    const body =
+      kind === "CONTACT"
+        ? {
+            kind: "CONTACT",
+            email: row.email,
+            label: (row.fullName ?? `${row.firstName} ${row.lastName}`).trim() || row.email,
+          }
+        : {
+            kind: "COMPANY",
+            domain: row.companyDomain ?? undefined,
+            website: row.website ?? undefined,
+            companyName: row.companyName || undefined,
+            email: row.email || undefined,
+            label: row.companyName || row.companyDomain || undefined,
+          };
+    try {
+      const res = await apiFetch(`/api/blocklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        setToast(payload?.error?.message ?? "Could not block that.");
+        return;
+      }
+      setBlockedRows((prev) => {
+        const next = new Map(prev);
+        if (kind === "CONTACT") {
+          next.set(row.id, "CONTACT");
+        } else {
+          // A company block covers every row from that company on screen.
+          const key = (row.companyName || row.companyDomain || "").toLowerCase();
+          if (state.status === "loaded") {
+            for (const other of state.allRows) {
+              const otherKey = (other.companyName || other.companyDomain || "").toLowerCase();
+              if (key && otherKey === key) next.set(other.id, "COMPANY");
+            }
+          }
+          next.set(row.id, "COMPANY");
+        }
+        return next;
+      });
+      // Blocked rows must not stay selected — adding them to the list would be
+      // an instruction the server is now bound to refuse.
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
+      setToast(kind === "CONTACT" ? "Contact blocked." : "Company blocked — nobody there will be contacted.");
+    } finally {
+      setBlocking(null);
+    }
+  }
 
   function toggleRow(rowId: string) {
     setSelected((prev) => {
@@ -1643,14 +1743,21 @@ export function CampaignByRolePanel({
 
   return (
     <div className="space-y-4">
-      {/* Credit balance banner. Rendered above the filter so the user can
+      {/* Credit balance strip. Rendered above the filter so the user can
           see how many reveals they can afford before they select rows. Only
           shows once we have a real number from /api/billing/me — no
-          skeleton flicker if the fetch is still in flight. */}
+          skeleton flicker if the fetch is still in flight.
+
+          The pricing sentence that used to sit on the left is now the row's
+          tooltip: it is the same text on every list, so after the first read
+          it is pure furniture. */}
       {creditBalance !== null ? (
-        <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-4 py-2 text-xs dark:border-white/10 dark:bg-white/[0.02]">
-          <span className="text-slate-600 dark:text-white/70">
-            Every reveal spends 1 credit. Adding contacts to this list reveals their emails first — locked previews aren&rsquo;t added.
+        <div
+          className="flex items-center justify-end gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-xs dark:border-white/10 dark:bg-white/[0.02]"
+          title={`An email reveal spends ${revealPricing.email} credit${revealPricing.email === 1 ? "" : "s"}; a phone number spends ${revealPricing.phone}. Adding contacts to this list reveals their emails first — locked previews aren’t added.`}
+        >
+          <span className="text-slate-500 dark:text-white/50">
+            {revealPricing.email} / email · {revealPricing.phone} / phone
           </span>
           <span
             className={`ml-3 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
@@ -1852,7 +1959,7 @@ export function CampaignByRolePanel({
                         aria-label="Select all"
                       />
                     </th>
-                    {["Name", "Title", "Company", "Vessel", "Email", "Phone", "Country"].map((label) => (
+                    {["Name", "Title", "Company", "Vessel", "Email", "Phone", "Country", "Block"].map((label) => (
                       <th key={label} className="whitespace-nowrap px-3 py-2">{label}</th>
                     ))}
                   </tr>
@@ -1864,8 +1971,14 @@ export function CampaignByRolePanel({
                       "(no name)";
                     const emailKey = `${row.id}:email`;
                     const phoneKey = `${row.id}:phone`;
+                    const blockedAs = blockedRows.get(row.id);
                     return (
-                      <tr key={row.id} className={`hover:bg-slate-50 dark:hover:bg-white/[0.02] ${selected.has(row.id) ? "bg-ocean/5" : ""}`}>
+                      <tr
+                        key={row.id}
+                        className={`hover:bg-slate-50 dark:hover:bg-white/[0.02] ${selected.has(row.id) ? "bg-ocean/5" : ""} ${
+                          blockedAs ? "opacity-50 line-through" : ""
+                        }`}
+                      >
                         <td className="px-3 py-2">
                           <input
                             type="checkbox"
@@ -1926,7 +2039,7 @@ export function CampaignByRolePanel({
                               onClick={() => reveal(row, "email")}
                               disabled={revealing.has(emailKey)}
                               className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
-                              title="Unlock this email — 1 credit"
+                              title={`Unlock this email — ${revealPricing.email} credit${revealPricing.email === 1 ? "" : "s"}`}
                             >
                               {revealing.get(emailKey) === "email" ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -1948,18 +2061,56 @@ export function CampaignByRolePanel({
                               onClick={() => reveal(row, "phone")}
                               disabled={revealing.has(phoneKey)}
                               className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
-                              title="Unlock this phone — 1 credit"
+                              title={`Unlock this phone — ${revealPricing.phone} credits`}
                             >
                               {revealing.get(phoneKey) === "phone" ? (
                                 <Loader2 className="h-3 w-3 animate-spin" />
                               ) : null}
-                              Reveal phone
+                              Reveal phone ({revealPricing.phone})
                             </button>
                           ) : (
                             <span className="block max-w-[160px] truncate" title={row.mobilePhone ?? undefined}>{row.mobilePhone ?? "—"}</span>
                           )}
                         </td>
                         <td className="px-3 py-2 text-slate-600 dark:text-white/70">{row.country ?? "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2 no-underline">
+                          {blockedAs ? (
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-300">
+                              {blockedAs === "COMPANY" ? "Company blocked" : "Blocked"}
+                            </span>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void blockRow(row, "CONTACT")}
+                                disabled={blocking !== null || !row.email}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40 dark:border-white/10 dark:text-white/60"
+                                title="Never contact this person from this workspace"
+                              >
+                                {blocking === `${row.id}:CONTACT` ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Ban className="h-3 w-3" />
+                                )}
+                                Person
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void blockRow(row, "COMPANY")}
+                                disabled={blocking !== null || !row.companyName}
+                                className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40 dark:border-white/10 dark:text-white/60"
+                                title="Never contact anyone at this company"
+                              >
+                                {blocking === `${row.id}:COMPANY` ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Building2 className="h-3 w-3" />
+                                )}
+                                Company
+                              </button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}

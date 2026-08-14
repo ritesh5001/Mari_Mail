@@ -92,10 +92,49 @@ export class CreditDeductionError extends Error {
   }
 }
 
+/**
+ * Raised when a workspace has the credits but not the right to spend them.
+ *
+ * Credits are an asset the customer bought; a lapsed subscription is a lack of
+ * access, not a forfeiture. So the balance is never touched when a membership
+ * ends — the spend is refused instead, and the moment they subscribe again the
+ * same balance is spendable, with that period's allowance added on top.
+ */
+export class MembershipInactiveError extends Error {
+  constructor(
+    public billingStatus: BillingStatus,
+    public creditBalance: number,
+  ) {
+    super("Your subscription has ended. Your credits are safe — renew to start using them again.");
+  }
+}
+
+/**
+ * Which billing states may spend credits.
+ *
+ * PAST_DUE is deliberately included: it is the grace window for a declined
+ * card or a slow finance team, and the membership lifecycle treats it as a
+ * working state everywhere else. Only CANCELED — or a workspace the sweep has
+ * actually downgraded — loses the ability to spend.
+ */
+const SPENDING_STATUSES: BillingStatus[] = ["ACTIVE", "TRIALING", "PAST_DUE"];
+
+export function canSpendCredits(workspace: Pick<Workspace, "billingStatus" | "downgradedAt">) {
+  return SPENDING_STATUSES.includes(workspace.billingStatus) && workspace.downgradedAt === null;
+}
+
 export async function deductCredits(workspaceId: string, credits: number, reason: "VIEW_VESSEL" | "SAVE_VESSEL" | "EXPORT_VESSEL" | "REVEAL_EMAIL" | "REVEAL_PHONE", detail?: string, actorId?: string | null) {
   return prisma.$transaction(async (tx) => {
-    const workspace = await tx.workspace.findUnique({ where: { id: workspaceId }, select: { creditBalance: true } });
+    const workspace = await tx.workspace.findUnique({
+      where: { id: workspaceId },
+      select: { creditBalance: true, billingStatus: true, downgradedAt: true },
+    });
     if (!workspace) throw new CreditDeductionError(credits, 0);
+    // Checked inside the transaction, alongside the balance, so a membership
+    // that lapses mid-request can't be raced by a concurrent reveal.
+    if (!canSpendCredits(workspace)) {
+      throw new MembershipInactiveError(workspace.billingStatus, workspace.creditBalance);
+    }
     if (workspace.creditBalance < credits) throw new CreditDeductionError(credits, workspace.creditBalance);
     const updated = await tx.workspace.update({
       where: { id: workspaceId },

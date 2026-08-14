@@ -306,10 +306,15 @@ async function requireWorkspaceContext() {
     notFound();
   }
   // Mirror Port Radar's scope resolution: the plan's multi-country allowlist
-  // first, then the legacy single country, then null. This page used to read
+  // first, then the legacy single country. This page used to read
   // `targetPortCountry` alone — which registration sets to `countries[0]` —
   // so a Pro workspace granted Brazil + India saw Brazilian vessels only.
-  const countryScope: CountryScope = workspaceCountryScope(session.activeWorkspace);
+  //
+  // Super-admins read unscoped; for everyone else a workspace with no grant
+  // resolves to `[]` (match nothing), not `null` (match everything).
+  const countryScope: CountryScope = session.user.isSuperAdmin
+    ? null
+    : workspaceCountryScope(session.activeWorkspace);
 
   return {
     workspaceId: session.activeWorkspace.id,

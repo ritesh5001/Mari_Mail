@@ -11,13 +11,20 @@ export async function requireAnalyticsWorkspace() {
   const session = await getServerSession();
   if (!session?.activeWorkspace) notFound();
   // The plan's country grant, resolved once here so every caller scopes the
-  // same way rather than each remembering to.
-  const scope = workspaceCountryScope(session.activeWorkspace);
+  // same way rather than each remembering to. Super-admins read unscoped, the
+  // same exception Port Radar makes for them — for everyone else a workspace
+  // with no grant now resolves to `[]` and reads nothing, rather than
+  // everything.
+  const scope = session.user.isSuperAdmin ? null : workspaceCountryScope(session.activeWorkspace);
+  const countries = Array.isArray(scope) ? scope : scope ? [scope] : null;
   return {
     workspaceId: session.activeWorkspace.id,
     userId: session.user.id,
     workspace: session.activeWorkspace,
-    countries: Array.isArray(scope) ? scope : scope ? [scope] : null,
+    countries,
+    // `[]` = granted nothing, so every ETA figure will be zero. The page shows
+    // the country picker instead of a wall of zeros it can't explain.
+    hasCountryGrant: countries === null || countries.length > 0,
   };
 }
 
@@ -91,6 +98,12 @@ async function getOverviewImpl(
       repliesRecent,
       repliesPrevious,
       missed,
+      // Activation state. Counts, not booleans, because `count` with `take: 1`
+      // is the cheapest way Prisma will answer "is there at least one" and the
+      // checklist only ever asks that question.
+      inboxCount,
+      revealedContactCount,
+      anyCampaignCount,
     ] = await Promise.all([
       // Include workspace-owned + global (admin-authored) ETAs so per-
       // workspace analytics don't zero out when ETAs are shared across
@@ -127,6 +140,15 @@ async function getOverviewImpl(
           ...etaCountry,
         },
       }),
+      prisma.emailAccount.count({ where: { workspaceId } }),
+      // "Unlocked a contact" means a contact we could actually email. Locked
+      // Apollo previews carry an @unknown.local placeholder and are not one.
+      prisma.contact.count({
+        where: { workspaceId, NOT: { email: { endsWith: "@unknown.local" } } },
+      }),
+      // Any campaign at all, in any status — the step is "launch your first
+      // campaign", and a paused or finished one was still launched.
+      prisma.campaign.count({ where: { workspaceId } }),
     ]);
 
     const regions: Record<string, number> = {};
@@ -156,6 +178,11 @@ async function getOverviewImpl(
         avgReplyRate: { value: rate(repliesRecent, sentRecent), trend: trend(rate(repliesRecent, sentRecent), rate(repliesPrevious, sentPrevious)) },
         missedOpportunities: { value: missed },
       },
+      activation: {
+        inboxConnected: inboxCount > 0,
+        contactsUnlocked: revealedContactCount > 0,
+        campaignLaunched: anyCampaignCount > 0,
+      },
       sparkline: sparkline.map((row) => ({ day: row.day.toISOString().slice(0, 10), sent: Number(row.sent), replied: Number(row.replied) })),
     };
   } catch (err) {
@@ -170,6 +197,10 @@ async function getOverviewImpl(
         avgReplyRate: { value: 0, trend: 0 },
         missedOpportunities: { value: 0 },
       },
+      // Assume DONE on failure. A checklist is a nudge, and nudging a
+      // long-standing customer to "connect an inbox" because a query timed out
+      // is worse than showing nothing at all.
+      activation: { inboxConnected: true, contactsUnlocked: true, campaignLaunched: true },
       sparkline: [] as Array<{ day: string; sent: number; replied: number }>,
     };
   }

@@ -16,7 +16,10 @@ async function processManualStep(job: Job<ManualStepJob>, token?: string) {
     return { skipped: true, reason: "missing-or-inactive" };
   }
 
-  const suppression = await findSuppression(campaign.workspaceId, contact.email);
+  const suppression = await findSuppression(campaign.workspaceId, contact.email, {
+    companyName: contact.companyName,
+    website: contact.website,
+  });
   if (suppression) {
     await prisma.campaignContact.updateMany({
       where: { campaignId: campaign.id, contactId: contact.id },

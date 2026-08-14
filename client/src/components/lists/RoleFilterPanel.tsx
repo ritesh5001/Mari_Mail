@@ -1,29 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Bookmark,
-  BookmarkPlus,
   Briefcase,
   Building2,
   Check,
-  ChevronDown,
   ChevronRight,
   Filter,
   Loader2,
   Mail,
   MapPin,
-  Pencil,
   Search,
   SlidersHorizontal,
   Sparkles,
   Tag,
-  Trash2,
   Users2,
   X,
 } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
+import { SavedFilterSets } from "@/components/filters/SavedFilterSets";
 
 /**
  * Filter shape for the role picker. Callers hold this in state and re-fetch
@@ -554,9 +550,9 @@ export function RoleFilterPanel({
               a 40-chip filter never wraps the toolbar into a wall. */}
           <div className="scrollbar-thin flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto py-0.5">
             {activeChips.length === 0 ? (
-              <span className="truncate text-[12px] text-slate-400 dark:text-white/35">
-                No filters yet — add some to narrow the search.
-              </span>
+              // The Filters button is right next to this; a sentence telling
+              // the user to press it is noise, so the empty state is silent.
+              <span className="truncate text-[12px] text-slate-400 dark:text-white/35">No filters</span>
             ) : (
               activeChips.map((chip) => {
                 const toneClass =
@@ -604,7 +600,28 @@ export function RoleFilterPanel({
           ) : null}
 
           <div className="shrink-0">
-            <SavedFilterSets value={value} onLoad={onChange} disabled={disabled} />
+            {/* Saves EVERY facet, not just titles/companies — an earlier
+                version dropped locations, employee ranges and keywords, so a
+                loaded preset silently un-checked those fields. */}
+            <SavedFilterSets
+              entityType="CONTACT"
+              value={{
+                includeTitles: value.includeTitles,
+                excludeTitles: value.excludeTitles,
+                includeCompanies: value.includeCompanies,
+                excludeCompanies: value.excludeCompanies,
+                seniorities: value.seniorities,
+                personLocations: value.personLocations,
+                companyLocations: value.companyLocations,
+                employeeRanges: value.employeeRanges,
+                keywords: value.keywords,
+                emailStatus: value.emailStatus,
+              }}
+              hasFilter={totalActive > 0}
+              onLoad={(config) => onChange(normalizeRoleFilter(config))}
+              disabled={disabled}
+              namePlaceholder="e.g. Fleet Managers · India"
+            />
           </div>
 
           <button
@@ -1056,7 +1073,6 @@ export function RoleFilterPanel({
 
 // --- Saved filter sets -----------------------------------------------------
 
-type SavedSet = { id: string; name: string; filterConfig: RoleFilter };
 
 /**
  * Save the current filter as a named preset, and reload any saved preset
@@ -1067,277 +1083,6 @@ type SavedSet = { id: string; name: string; filterConfig: RoleFilter };
  * flow supports rename + overwrite so users can iterate on a set instead of
  * being forced to make a new one each time.
  */
-function SavedFilterSets({
-  value,
-  onLoad,
-  disabled,
-}: {
-  value: RoleFilter;
-  onLoad: (next: RoleFilter) => void;
-  disabled?: boolean;
-}) {
-  const [sets, setSets] = useState<SavedSet[]>([]);
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [naming, setNaming] = useState<null | { mode: "create" } | { mode: "rename"; id: string }>(null);
-  const [name, setName] = useState("");
-  const [loadedId, setLoadedId] = useState<string | null>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
-
-  const hasFilter =
-    value.includeTitles.length +
-      value.excludeTitles.length +
-      value.includeCompanies.length +
-      value.excludeCompanies.length +
-      value.seniorities.length +
-      value.personLocations.length +
-      value.companyLocations.length +
-      value.employeeRanges.length +
-      value.emailStatus.length +
-      (value.keywords.trim() ? 1 : 0) >
-    0;
-
-  const load = useCallback(async () => {
-    try {
-      const res = await apiFetch("/api/saved-filters?entityType=CONTACT");
-      if (!res.ok) return;
-      const body = (await res.json()) as {
-        data?: { filters?: Array<{ id: string; name: string; filterConfig: unknown }> };
-      };
-      const rows = body.data?.filters ?? [];
-      setSets(
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          filterConfig: normalizeRoleFilter(r.filterConfig),
-        })),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // Close the dropdown on outside click. Capture phase for the same reason as
-  // ChipInput: deleting a set unmounts its row synchronously, and a bubble-phase
-  // listener would then test a detached node, read it as an outside click, and
-  // close the dropdown out from under the user mid-manage.
-  useEffect(() => {
-    if (!open && !naming) return;
-    function onDoc(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setNaming(null);
-      }
-    }
-    document.addEventListener("mousedown", onDoc, true);
-    return () => document.removeEventListener("mousedown", onDoc, true);
-  }, [open, naming]);
-
-  async function save() {
-    const trimmed = name.trim();
-    if (trimmed.length < 2 || !naming) return;
-    setSaving(true);
-    try {
-      // Redesigned save: persists EVERY filter field, not just titles/companies.
-      // The old save dropped locations, employee ranges and keywords, so a
-      // loaded preset silently un-checked those fields.
-      const filterConfig = {
-        includeTitles: value.includeTitles,
-        excludeTitles: value.excludeTitles,
-        includeCompanies: value.includeCompanies,
-        excludeCompanies: value.excludeCompanies,
-        seniorities: value.seniorities,
-        personLocations: value.personLocations,
-        companyLocations: value.companyLocations,
-        employeeRanges: value.employeeRanges,
-        keywords: value.keywords,
-        emailStatus: value.emailStatus,
-      };
-
-      if (naming.mode === "rename") {
-        // Overwrite = delete + re-create with the same name (or new one). The
-        // saved-filters route has no PATCH, and add-then-remove is a single
-        // click for the user so it stays fine.
-        await apiFetch(`/api/saved-filters/${naming.id}`, { method: "DELETE" });
-      }
-      const res = await apiFetch("/api/saved-filters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: trimmed,
-          entityType: "CONTACT",
-          filterConfig,
-        }),
-      });
-      if (res.ok) {
-        const payload = (await res.json()) as { data?: { id?: string } };
-        setName("");
-        setNaming(null);
-        if (payload.data?.id) setLoadedId(payload.data.id);
-        await load();
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove(id: string) {
-    const res = await apiFetch(`/api/saved-filters/${id}`, { method: "DELETE" });
-    if (res.ok) {
-      setSets((prev) => prev.filter((s) => s.id !== id));
-      if (loadedId === id) setLoadedId(null);
-    }
-  }
-
-  const loadedName = loadedId ? sets.find((s) => s.id === loadedId)?.name ?? null : null;
-
-  return (
-    <div ref={boxRef} className="relative flex items-center gap-2">
-      {/* Saved sets picker — shows the loaded set's name when there is one. */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        disabled={disabled}
-        /* Fixed width, not flex-1: this now sits in a shrink-0 toolbar slot,
-           where "grow to fill" has no width to resolve against and a long set
-           name would stretch the whole toolbar. */
-        className="inline-flex w-[124px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[12px] font-medium text-slate-700 shadow-sm transition hover:border-accent-400 hover:text-accent-600 disabled:opacity-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/75 dark:hover:border-accent-400/60"
-      >
-        <Bookmark className="h-3.5 w-3.5 shrink-0 text-accent-500" />
-        <span className="min-w-0 flex-1 truncate text-left">
-          {loadedName ? loadedName : `Saved sets${sets.length ? ` (${sets.length})` : ""}`}
-        </span>
-        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/40 ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {/* Save current filter — disabled until the user has picked at least
-          one facet; keeps empty presets out of the dropdown. */}
-      <button
-        type="button"
-        onClick={() => {
-          setNaming({ mode: "create" });
-          setName(loadedName ?? "");
-          setOpen(false);
-        }}
-        disabled={disabled || !hasFilter}
-        title={hasFilter ? "Save this filter as a set" : "Add some filters first"}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-500/25 bg-accent-500/10 px-2.5 py-2 text-[12px] font-semibold text-accent-600 shadow-sm transition hover:bg-accent-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-500/10 disabled:hover:text-accent-600 dark:text-accent-200 dark:disabled:hover:text-accent-200"
-      >
-        <BookmarkPlus className="h-3.5 w-3.5" />
-        Save
-      </button>
-
-      {/* Naming popover — used for both "create" and "rename" flows */}
-      {naming ? (
-        /* Anchored right and given its own width — the toolbar slot it hangs
-           off is ~200px, far too narrow for a name field plus two buttons. */
-        <div className="absolute right-0 top-full z-[70] mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
-          <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
-            {naming.mode === "rename" ? "Rename set" : "Name this filter set"}
-          </label>
-          <div className="flex items-center gap-1.5">
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void save();
-                if (e.key === "Escape") {
-                  setNaming(null);
-                  setName("");
-                }
-              }}
-              placeholder="e.g. Fleet Managers · India"
-              className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[12px] text-slate-800 outline-none transition focus:border-accent-400 focus:ring-2 focus:ring-accent-500/15 dark:border-white/10 dark:bg-white/[0.04] dark:text-white"
-            />
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={saving || name.trim().length < 2}
-              className="inline-flex items-center gap-1 rounded-md bg-accent-500 px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-600 disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setNaming(null);
-                setName("");
-              }}
-              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/[0.05]"
-              aria-label="Cancel"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {open ? (
-        <div className="absolute right-0 top-full z-[60] mt-1 w-[280px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
-          {sets.length === 0 ? (
-            <p className="px-3 py-3 text-[11px] text-slate-500 dark:text-white/50">
-              No saved sets yet. Configure filters and hit <span className="font-semibold text-accent-600 dark:text-accent-300">Save</span>.
-            </p>
-          ) : (
-            <ul className="max-h-72 overflow-y-auto py-1">
-              {sets.map((s) => {
-                const isLoaded = loadedId === s.id;
-                return (
-                  <li key={s.id} className={`group flex items-center gap-1 px-1.5 py-0.5 ${isLoaded ? "bg-accent-500/[0.06]" : ""}`}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onLoad(normalizeRoleFilter(s.filterConfig));
-                        setLoadedId(s.id);
-                        setOpen(false);
-                      }}
-                      className="flex flex-1 items-center gap-2 truncate rounded px-2 py-1.5 text-left text-[12px] font-medium text-slate-700 hover:bg-slate-50 hover:text-accent-600 dark:text-white/80 dark:hover:bg-white/[0.05] dark:hover:text-accent-200"
-                      title="Load this set"
-                    >
-                      {isLoaded ? (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-accent-500" />
-                      ) : (
-                        <Bookmark className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-white/40" />
-                      )}
-                      <span className="truncate">{s.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNaming({ mode: "rename", id: s.id });
-                        setName(s.name);
-                        setOpen(false);
-                      }}
-                      aria-label={`Rename ${s.name}`}
-                      className="rounded p-1.5 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-slate-100 hover:text-accent-600 dark:hover:bg-white/[0.05]"
-                    >
-                      <Pencil className="h-3 w-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void remove(s.id)}
-                      aria-label={`Delete ${s.name}`}
-                      className="rounded p-1.5 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 /** Coerce arbitrary saved JSON back into a full RoleFilter (missing arrays → []). */
 function normalizeRoleFilter(raw: unknown): RoleFilter {
   const r = (raw ?? {}) as Partial<RoleFilter>;

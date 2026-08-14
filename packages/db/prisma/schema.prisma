@@ -479,6 +479,7 @@ model Workspace {
   emailAccounts            EmailAccount[]
   sendingDomains           SendingDomain[]
   suppressions             GlobalSuppression[]
+  blocks                   WorkspaceBlock[]
   serviceRecords           ServiceRecord[]
   creditLedger             CreditLedger[]
   billingEvents            BillingEvent[]
@@ -1432,6 +1433,46 @@ model GlobalSuppression {
   @@index([email])
 }
 
+/// What a block matches on.
+enum BlockKind {
+  /// One person, matched by email address.
+  CONTACT
+  /// A whole company, matched by email domain and by company name.
+  COMPANY
+}
+
+/// A workspace's do-not-contact list.
+///
+/// Distinct from GlobalSuppression, which records what the RECIPIENT did
+/// (unsubscribed, bounced, complained) and is written by webhooks and the
+/// unsubscribe link. This is what the SENDER decided: a customer they already
+/// serve, a competitor, a company that asked to be left alone. Mixing the two
+/// would make "unsubscribe" and "we don't want to mail them" indistinguishable
+/// in the UI and let a user "unblock" someone who actually opted out.
+///
+/// `value` is the normalised match key — a lowercase email for CONTACT, a
+/// lowercase domain (or, failing that, a normalised company name) for COMPANY —
+/// so uniqueness is enforceable as one composite key rather than a pile of
+/// nullable columns that Postgres would never dedupe.
+model WorkspaceBlock {
+  id          String    @id @default(cuid())
+  workspaceId String
+  kind        BlockKind
+  value       String
+  /// What to show in the UI: the person's name, or the company's display name.
+  label       String?
+  /// Set when the block was created from a contact already in the database.
+  contactId   String?
+  /// Free-text note from whoever added it.
+  reason      String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, kind, value])
+  @@index([workspaceId, kind])
+}
+
 model ServiceRecord {
   id          String    @id @default(cuid())
   workspaceId String
@@ -1719,7 +1760,9 @@ model ApolloSettings {
   cacheTtlSeconds       Int       @default(1800)
   maxResultsPerQuery    Int       @default(25)
   creditsPerEmailReveal Int       @default(1)
-  creditsPerPhoneReveal Int       @default(1)
+  // A phone number costs the provider far more than an email and is worth more
+  // to the user, so it is priced accordingly. Admin-editable per deployment.
+  creditsPerPhoneReveal Int       @default(20)
   lastTestAt            DateTime?
   lastTestStatus        String?
   lastTestError         String?

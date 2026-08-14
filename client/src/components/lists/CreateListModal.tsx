@@ -105,23 +105,8 @@ export function CreateListModal({
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
             Kind
           </p>
-          <button
-            type="button"
-            onClick={() => setKind("CONTACT")}
-            className={`flex w-full items-start gap-3 rounded-md border p-3 text-left transition ${
-              kind === "CONTACT"
-                ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10"
-                : "border-slate-200 hover:border-slate-300 dark:border-white/10"
-            }`}
-          >
-            <Users className="mt-0.5 h-5 w-5 text-emerald-600" />
-            <div>
-              <p className="text-sm font-semibold text-slate-950 dark:text-white">Contact list</p>
-              <p className="text-xs text-slate-500 dark:text-white/60">
-                Contacts + companies only. Ideal for cold campaigns or a CSV you already have.
-              </p>
-            </div>
-          </button>
+          {/* ETA first, then Contact — same order the two sections appear in on
+              the Lists page, so the picker and the page never disagree. */}
           <button
             type="button"
             onClick={() => setKind("ETA")}
@@ -136,6 +121,23 @@ export function CreateListModal({
               <p className="text-sm font-semibold text-slate-950 dark:text-white">ETA list</p>
               <p className="text-xs text-slate-500 dark:text-white/60">
                 Contacts + companies + vessels. Used by ETA campaigns that fire when a listed vessel gets an ETA.
+              </p>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setKind("CONTACT")}
+            className={`flex w-full items-start gap-3 rounded-md border p-3 text-left transition ${
+              kind === "CONTACT"
+                ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10"
+                : "border-slate-200 hover:border-slate-300 dark:border-white/10"
+            }`}
+          >
+            <Users className="mt-0.5 h-5 w-5 text-emerald-600" />
+            <div>
+              <p className="text-sm font-semibold text-slate-950 dark:text-white">Contact list</p>
+              <p className="text-xs text-slate-500 dark:text-white/60">
+                Contacts + companies only. Ideal for cold campaigns or a CSV you already have.
               </p>
             </div>
           </button>
