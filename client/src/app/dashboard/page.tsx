@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { ActivityChart } from "@/components/analytics/ActivityChart";
 import { RangeSwitcher } from "@/components/dashboard/RangeSwitcher";
+import { WorkflowJourney } from "@/components/dashboard/WorkflowJourney";
 import { NoCountryNotice } from "@/components/marine/NoCountryNotice";
 import {
   formatRate,
@@ -440,6 +441,8 @@ export default async function DashboardPage({
           </div>
         </div>
       </section>
+
+      <WorkflowJourney />
 
       {/* No country granted = every ETA figure below is legitimately zero.
           Say why, but do NOT offer a picker: the target country is chosen at

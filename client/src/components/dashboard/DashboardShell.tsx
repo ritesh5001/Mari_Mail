@@ -331,15 +331,15 @@ export function DashboardShell({ session, children }: { session: AuthSession; ch
 
             <div className="flex min-w-0 items-center gap-3">
               <h1 className="truncate text-base font-semibold text-slate-950 dark:text-white">{breadcrumb}</h1>
-              <button
-                type="button"
+              <Link
+                href="/dashboard#workflow-guide"
                 className="hidden h-7 items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 pl-1 pr-3 text-[12px] font-medium text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white md:inline-flex"
               >
                 <span className="grid h-5 w-5 place-items-center rounded-full bg-sky-100 text-sky-700 dark:bg-white/[0.08] dark:text-current">
                   <Play className="h-3 w-3 fill-current" />
                 </span>
                 Tutorial
-              </button>
+              </Link>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
