@@ -696,7 +696,13 @@ export function RoleFilterPanel({
               aria-modal="true"
               aria-label="Search filters"
             >
-              <div className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0C0C0F]">
+              {/* FIXED height, not max-height. With `max-h` the dialog sized itself to
+                  whichever pane was open, so switching from Job titles to Seniority
+                  visibly shrank the window and moved the footer buttons out from
+                  under the cursor. The height is clamped rather than a flat vh so it
+                  stays comfortable on a laptop and does not become a full-height
+                  sheet on a tall monitor; the pane scrolls inside it. */}
+              <div className="flex h-[clamp(480px,72vh,660px)] max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] dark:border-white/10 dark:bg-[#0C0C0F]">
                 {/* Header */}
                 <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 via-white to-white px-5 py-3.5 dark:border-white/[0.06] dark:from-white/[0.03] dark:via-transparent dark:to-transparent">
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-500/12 text-accent-600 dark:text-accent-300">

@@ -1720,8 +1720,14 @@ function FilterModalShell({
             visible ? "opacity-100" : "opacity-0"
           }`}
         >
+          {/* FIXED height, not max-height. With `max-h` the dialog sized itself
+              to whichever section was open — ETA & voyage is tall, Builders &
+              class is short — so every tab switch resized the window and moved
+              the footer buttons out from under the cursor. Clamped rather than a
+              flat vh so it stays comfortable on a laptop and doesn't become a
+              full-height sheet on a tall monitor; the pane scrolls inside it. */}
           <div
-            className={`flex max-h-[86vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0C0C0F] ${
+            className={`flex h-[clamp(480px,72vh,660px)] max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0C0C0F] ${
               visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-[0.98] opacity-0"
             }`}
           >
