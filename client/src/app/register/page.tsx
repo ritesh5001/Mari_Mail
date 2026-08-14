@@ -15,6 +15,15 @@ export default function RegisterPage({
     targetPortCountry:
       typeof searchParams.targetPortCountry === "string" ? searchParams.targetPortCountry : "",
     plan: typeof searchParams.plan === "string" ? searchParams.plan : "",
+    // Referral code from an invite link (/register?ref=ABC12345). Carried
+    // through the form and sent with the signup; an unknown code is ignored
+    // server-side rather than blocking the account.
+    referralCode:
+      typeof searchParams.ref === "string"
+        ? searchParams.ref
+        : typeof searchParams.referralCode === "string"
+          ? searchParams.referralCode
+          : "",
   };
 
   return <RegisterPanel defaults={defaults} serverError={error} />;

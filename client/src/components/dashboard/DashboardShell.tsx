@@ -3,6 +3,7 @@
 import {
   Anchor,
   Ban,
+  Gift,
   BarChart3,
   Bell,
   Bookmark,
@@ -60,6 +61,7 @@ const navItems: NavItem[] = [
   { href: "/dashboard/port-radar", label: "ETA / Port Radar", icon: Radar },
   { href: "/dashboard/lists", label: "Lists", icon: List },
   { href: "/dashboard/blocked", label: "Blocked", icon: Ban },
+  { href: "/dashboard/referrals", label: "Refer & earn", icon: Gift },
   { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
   { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
   { href: "/dashboard/campaigns/cold", label: "Cold campaigns", icon: Mail },

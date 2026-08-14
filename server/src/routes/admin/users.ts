@@ -5,6 +5,7 @@ import { PLANS } from "@marimail/utils/plans";
 import { invalidateAccountState, requireSuperAdmin, type AuthedRequest } from "../../auth/middleware.js";
 import { sendData, sendError } from "../../lib/http.js";
 import { applyPlanToWorkspace, grantCredits } from "../../services/billing.service.js";
+import { rewardReferralForPurchase } from "../../services/referral.service.js";
 
 /**
  * The people directory of the admin panel (super-admin only).
@@ -493,6 +494,15 @@ adminUsersRouter.post("/:id/subscription", requireSuperAdmin, async (req, res, n
         ...(recordPayment ? { paymentProvider: "MANUAL" as const } : {}),
       },
     });
+
+    // A subscription an admin grants by hand is still a conversion, so it pays
+    // the referrer on the same terms as a self-serve checkout — otherwise the
+    // reward would depend on which door the customer happened to come through.
+    try {
+      await rewardReferralForPurchase(workspace.id, { plan: plan as BillingPlan });
+    } catch (error) {
+      console.error("[referral] reward failed for admin grant", workspace.id, error);
+    }
 
     if (recordPayment) {
       await prisma.payment.create({

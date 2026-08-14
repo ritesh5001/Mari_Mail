@@ -25,6 +25,8 @@ export type RegisterDefaults = {
   timezone: string;
   targetPortCountry: string;
   plan?: string;
+  /** From ?ref= on an invite link. Empty when the visitor came in cold. */
+  referralCode?: string;
 };
 
 /**
@@ -253,6 +255,7 @@ export function RegisterForm({
         targetPortCountry: selectedCountries[0] ?? country,
         plan,
         countries: selectedCountries,
+        ...(defaults.referralCode ? { referralCode: defaults.referralCode } : {}),
       }),
     });
 
@@ -314,6 +317,12 @@ export function RegisterForm({
           </div>
         ))}
       </div>
+
+      {/* An invite is worth confirming out loud: the referrer told them to use
+          this link, and silence would leave both sides unsure it registered.
+          Verified against the server so a mistyped code says so here, before
+          the account exists and the chance to fix it is gone. */}
+      {step === 1 && defaults.referralCode ? <ReferralNotice code={defaults.referralCode} /> : null}
 
       {step === 1 ? (
       <>
@@ -661,3 +670,55 @@ function FloatingField({
  */
 const FLOATING_INPUT_CLS =
   "block w-full rounded-lg border-0 bg-transparent px-3.5 py-3 text-sm text-slate-950 placeholder:text-slate-400 outline-none focus:ring-0 dark:text-white dark:placeholder:text-white/30";
+
+/**
+ * Confirms an invite code on the signup form.
+ *
+ * Checked against the server rather than trusted from the URL: a code that
+ * doesn't resolve pays nobody, and the honest thing is to say so while the
+ * visitor can still ask their referrer for the right link. Signup is never
+ * blocked either way — the account matters more than the attribution.
+ */
+function ReferralNotice({ code }: { code: string }) {
+  const [state, setState] = useState<
+    { status: "checking" } | { status: "valid"; name: string | null } | { status: "invalid" }
+  >({ status: "checking" });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${apiUrl}/api/referrals/lookup?code=${encodeURIComponent(code)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { data?: { valid?: boolean; referrerName?: string | null } } | null) => {
+        if (cancelled) return;
+        setState(
+          payload?.data?.valid
+            ? { status: "valid", name: payload.data.referrerName ?? null }
+            : { status: "invalid" },
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "invalid" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  if (state.status === "checking") return null;
+
+  if (state.status === "invalid") {
+    return (
+      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+        We don&rsquo;t recognise the invite code <span className="font-semibold">{code}</span>. You can still sign up —
+        just check the link with whoever sent it.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+      <span className="font-semibold">{state.name ? `${state.name} invited you.` : "You were invited."}</span>{" "}
+      Subscribe within {TRIAL_DAYS} days and they earn referral credits — your plan is unchanged.
+    </div>
+  );
+}

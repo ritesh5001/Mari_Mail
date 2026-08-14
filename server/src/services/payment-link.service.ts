@@ -5,6 +5,7 @@ import {
   type Prisma,
 } from "@marimail/db";
 import { applyPlanToWorkspace, getStripe, grantCredits } from "./billing.service.js";
+import { rewardReferralForPurchase } from "./referral.service.js";
 
 /**
  * Admin-created payment links for (usually Enterprise) deals.
@@ -132,6 +133,13 @@ export async function fulfilPaymentLink(
       billingStatus: "ACTIVE",
       actorId: opts?.actorId ?? link.createdById ?? null,
     });
+    // A deal closed over an admin payment link is still a subscription the
+    // referrer brought in, so it pays out on the same terms as self-serve.
+    try {
+      await rewardReferralForPurchase(link.workspaceId, { plan: link.grantPlan });
+    } catch (error) {
+      console.error("[referral] reward failed for payment link", link.id, error);
+    }
   }
 
   // Apply country access (independent of plan).

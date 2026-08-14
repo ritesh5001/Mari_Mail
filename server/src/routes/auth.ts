@@ -38,6 +38,7 @@ import {
 } from "../auth/totp.js";
 import { encryptSecret, decryptSecret, parseEncryptedSecret } from "@marimail/utils";
 import { passwordProblem } from "@marimail/utils/password-policy";
+import { attachReferralAtSignup, resolveReferralCode } from "../services/referral.service.js";
 import {
   PLANS,
   SIGNUP_PLAN_TO_BILLING,
@@ -99,6 +100,10 @@ const registerSchema = z.object({
   // Turnstile/hCaptcha/reCAPTCHA solve token. Optional in the schema because
   // the check is enforced separately — only when a secret is configured.
   captchaToken: z.string().max(4000).optional(),
+  // Referral code, from ?ref= on the register link or typed in by hand. An
+  // unknown code is IGNORED rather than rejected: someone mistyping an invite
+  // still wants an account, and failing their signup over it would be absurd.
+  referralCode: z.string().trim().max(32).optional(),
 });
 
 // Plan data comes from the shared catalog so signup, the marketing page and
@@ -472,6 +477,13 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
     const allowedCountries = (input.data.countries ?? []).slice(0, countryLimit);
     const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
 
+    // Resolved BEFORE the transaction: it is a read against another user's row
+    // and has no business holding a write transaction open. A code that
+    // doesn't resolve simply means no referral.
+    const referrer = input.data.referralCode
+      ? await resolveReferralCode(input.data.referralCode)
+      : null;
+
     const user = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
@@ -539,6 +551,18 @@ authRouter.post("/register", registerRateLimit, async (req, res, next) => {
           role: "OWNER",
         },
       });
+
+      // Attribution happens here, at signup, and fixes the payout target for
+      // good — the reward is only paid later, when they subscribe, and by then
+      // the referrer may have switched workspaces.
+      if (referrer) {
+        await attachReferralAtSignup(tx, {
+          code: input.data.referralCode as string,
+          referredUserId: createdUser.id,
+          referredWorkspaceId: workspace.id,
+          owner: referrer,
+        });
+      }
 
       return tx.user.update({
         where: { id: createdUser.id },

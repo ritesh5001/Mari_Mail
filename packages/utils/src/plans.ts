@@ -194,6 +194,24 @@ export const TRIAL_DAYS = 14;
 export const TRIAL_CREDITS = 500;
 
 /**
+ * How long after signup a referred user can subscribe and still pay out.
+ *
+ * Matched to the trial length on purpose: the referral is a reward for turning
+ * an invite into a customer while the invite is still the reason they are
+ * here. Someone who signs up, goes quiet for four months and subscribes later
+ * converted on their own.
+ */
+export const REFERRAL_REWARD_WINDOW_DAYS = 14;
+
+/** Share of the referred user's plan credits paid to the referrer. */
+export const REFERRAL_REWARD_RATE = 0.1;
+
+/** The reward for a plan, in credits. Floored — credits are whole units. */
+export function referralRewardCredits(monthlyCredits: number): number {
+  return Math.floor(monthlyCredits * REFERRAL_REWARD_RATE);
+}
+
+/**
  * Days after `currentPeriodEnd` that a lapsed workspace keeps working.
  *
  * Access is not cut the instant a renewal is missed: a failed card or a finance

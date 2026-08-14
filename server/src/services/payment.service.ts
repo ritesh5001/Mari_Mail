@@ -2,6 +2,7 @@ import { prisma, type BillingPlan, type PaymentProvider, type Payment } from "@m
 import { BILLING_PERIOD_DAYS, PLANS, creditPack } from "@marimail/utils/plans";
 import { activateMembership } from "./membership.service.js";
 import { grantCredits } from "./billing.service.js";
+import { rewardReferralForPurchase } from "./referral.service.js";
 
 /**
  * Creating and fulfilling payments, for every gateway.
@@ -121,6 +122,21 @@ export async function fulfilPayment(
       actorId: payment.userId,
       detail: `${PLANS[payment.grantPlan].label} plan payment`,
     });
+
+    // Pay whoever referred this workspace. Inside the same
+    // provision-exactly-once guard, so a replayed webhook cannot pay twice —
+    // and the reward itself claims the referral row conditionally as a second
+    // line of defence. A failure here must not fail the payment: the customer
+    // has been charged and provisioned, and an unpaid referral is a support
+    // ticket, not a lost subscription.
+    try {
+      await rewardReferralForPurchase(payment.workspaceId, {
+        plan: payment.grantPlan,
+        paymentId: payment.id,
+      });
+    } catch (error) {
+      console.error("[referral] reward failed for payment", payment.id, error);
+    }
   }
 
   if (payment.grantCredits && payment.grantCredits > 0) {

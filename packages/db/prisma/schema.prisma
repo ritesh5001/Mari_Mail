@@ -324,6 +324,8 @@ enum CreditLedgerReason {
   PLAN_REPLENISH
   ADD_ON_PURCHASE
   ADMIN_GRANT
+  /// Paid to a referrer when someone they invited subscribes.
+  REFERRAL_REWARD
   VIEW_VESSEL
   SAVE_VESSEL
   EXPORT_VESSEL
@@ -388,6 +390,10 @@ model User {
   authEvents          AuthEvent[]
   apolloDrips         ApolloDripJob[]          @relation("ApolloDripCreator")
   apolloAccounts      WorkspaceApolloAccount[] @relation("ApolloAccountCreator")
+  /// Short code this user shares to invite others. Generated on first use.
+  referralCode        String?                  @unique
+  referralsMade       Referral[]               @relation("ReferralReferrer")
+  referredBy          Referral?                @relation("ReferralReferred")
 }
 
 model Account {
@@ -480,6 +486,8 @@ model Workspace {
   sendingDomains           SendingDomain[]
   suppressions             GlobalSuppression[]
   blocks                   WorkspaceBlock[]
+  referralRewards          Referral[]                 @relation("ReferralReferrerWorkspace")
+  referredBy               Referral?                  @relation("ReferralReferredWorkspace")
   serviceRecords           ServiceRecord[]
   creditLedger             CreditLedger[]
   billingEvents            BillingEvent[]
@@ -1431,6 +1439,56 @@ model GlobalSuppression {
   @@unique([email, workspaceId])
   @@index([workspaceId])
   @@index([email])
+}
+
+/// Where a referral is in its lifecycle.
+enum ReferralStatus {
+  /// Signed up with the code; the reward window is still open.
+  PENDING
+  /// They subscribed inside the window and the referrer has been paid.
+  REWARDED
+  /// The window closed with no subscription. Terminal — a later purchase
+  /// does NOT pay out, which is the whole point of a time-limited offer.
+  EXPIRED
+}
+
+/// One person invited another.
+///
+/// Rewarded once, on the referred workspace's FIRST subscription payment, and
+/// only if that payment lands inside the window opened at signup. The row is
+/// the ledger of that promise: it records who owes what to whom, when the
+/// window shuts, and what was actually paid — so a reward can be audited long
+/// after the credits were spent.
+model Referral {
+  id                 String         @id @default(cuid())
+  /// The code as it was used, snapshotted — a referrer may change theirs.
+  code               String
+  referrerUserId     String
+  /// Where the reward is paid. Resolved at signup so a later workspace switch
+  /// can't redirect someone else's earned credits.
+  referrerWorkspaceId String
+  /// One referral per referred user, enforced below: a person can be referred
+  /// exactly once, ever.
+  referredUserId     String         @unique
+  referredWorkspaceId String        @unique
+  status             ReferralStatus @default(PENDING)
+  /// Signup + REFERRAL_REWARD_WINDOW_DAYS. After this, no payout.
+  expiresAt          DateTime
+  /// What was actually paid, once it was.
+  rewardCredits      Int?
+  rewardedAt         DateTime?
+  /// The payment that triggered the reward, for audit.
+  paymentId          String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  referrer           User           @relation("ReferralReferrer", fields: [referrerUserId], references: [id], onDelete: Cascade)
+  referrerWorkspace  Workspace      @relation("ReferralReferrerWorkspace", fields: [referrerWorkspaceId], references: [id], onDelete: Cascade)
+  referred           User           @relation("ReferralReferred", fields: [referredUserId], references: [id], onDelete: Cascade)
+  referredWorkspace  Workspace      @relation("ReferralReferredWorkspace", fields: [referredWorkspaceId], references: [id], onDelete: Cascade)
+
+  @@index([referrerUserId])
+  @@index([status, expiresAt])
 }
 
 /// What a block matches on.
