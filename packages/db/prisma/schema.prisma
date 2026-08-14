@@ -1863,3 +1863,46 @@ model ApolloRevealCache {
   @@index([companyName])
   @@index([emailRevealedAt])
 }
+
+enum ApolloPhoneRequestStatus {
+  /// Asked for; waiting on Apollo's webhook.
+  PENDING
+  /// The number arrived and was written to the cache and the contact.
+  DELIVERED
+  /// Apollo told us there is no number, or the wait ran out. Credits refunded.
+  FAILED
+}
+
+/// One in-flight phone reveal.
+///
+/// Apollo does not return a phone number in the response to
+/// `people/match?reveal_phone_number=true`. It answers immediately and delivers
+/// the number later to a `webhook_url`, which is why the parameter is mandatory
+/// and why a request without it fails with a 400. So a phone reveal is a
+/// two-part transaction, and this row is the part that has to survive between
+/// them: who asked, what they were charged, and whether it ever arrived.
+///
+/// Without it the webhook would have an Apollo person id and no idea which
+/// workspace paid for it — and an undelivered reveal would silently keep the
+/// customer's credits.
+model ApolloPhoneRequest {
+  id             String                   @id @default(cuid())
+  /// Apollo's person id. Not unique: two workspaces may each pay for the same
+  /// person, and both are owed the result.
+  apolloId       String
+  workspaceId    String
+  userId         String?
+  /// The workspace's contact row to write the number back to, when known.
+  contactId      String?
+  status         ApolloPhoneRequestStatus @default(PENDING)
+  /// Charged up front and refunded if this never completes.
+  creditsCharged Int
+  phone          String?
+  failureReason  String?
+  requestedAt    DateTime                 @default(now())
+  settledAt      DateTime?
+
+  @@index([apolloId, status])
+  @@index([status, requestedAt])
+  @@index([workspaceId])
+}

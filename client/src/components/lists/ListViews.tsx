@@ -1491,6 +1491,19 @@ export function CampaignByRolePanel({
     setRevealing((prev) => new Map(prev).set(key, field));
     try {
       const res = await apiFetch(`/api/contacts/reveal-apollo/${row.externalId}/${field}`, { method: "POST" });
+      // 202 = Apollo took the phone request and will deliver the number to our
+      // webhook in a moment. It is not a failure and the row has no number to
+      // show yet, so say so rather than falling through to the success path
+      // (which would read `data.contact` off a body that has none).
+      if (res.status === 202) {
+        const body = (await res.json().catch(() => null)) as
+          | { data?: { message?: string; balance?: number } }
+          | null;
+        if (typeof body?.data?.balance === "number") setCreditBalance(body.data.balance);
+        setToast(body?.data?.message ?? "Fetching this number — it'll appear shortly.");
+        setTimeout(() => setToast(null), 6000);
+        return;
+      }
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null;
         const msg =

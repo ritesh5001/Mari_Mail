@@ -75,6 +75,15 @@ export type ApolloSearchResult = {
 export type ApolloMatchOptions = {
   reveal_personal_emails?: boolean;
   reveal_phone_number?: boolean;
+  /**
+   * Where Apollo should POST the phone number.
+   *
+   * MANDATORY whenever `reveal_phone_number` is true — Apollo answers the match
+   * call without the number and delivers it here later, and rejects the request
+   * outright ("Please add a valid 'webhook_url' parameter") if it has nowhere to
+   * send it. Omitted for email reveals, which are synchronous.
+   */
+  webhook_url?: string;
 };
 
 export class ApolloError extends Error {
@@ -271,6 +280,7 @@ export async function matchPerson(
       id,
       reveal_personal_emails: options.reveal_personal_emails ?? false,
       reveal_phone_number: options.reveal_phone_number ?? false,
+      ...(options.webhook_url ? { webhook_url: options.webhook_url } : {}),
     },
     config,
   );

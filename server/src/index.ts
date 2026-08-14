@@ -15,6 +15,7 @@ import { companyRouter } from "./routes/companies.js";
 import { contactRouter } from "./routes/contacts.js";
 import { blocklistRouter } from "./routes/blocklist.js";
 import { referralRouter } from "./routes/referrals.js";
+import { apolloWebhookRouter } from "./routes/apollo-webhooks.js";
 import { demoRouter } from "./routes/demo.js";
 import { filterRouter } from "./routes/filters.js";
 import { importRouter } from "./routes/imports.js";
@@ -245,6 +246,9 @@ app.use("/api/companies", companyRouter);
 app.use("/api/contacts", contactRouter);
 app.use("/api/blocklist", blocklistRouter);
 app.use("/api/referrals", referralRouter);
+// Public: Apollo calls this with revealed phone numbers. Authenticated by a
+// per-person HMAC token in the query string, not by a session.
+app.use("/api/apollo", apolloWebhookRouter);
 app.use("/api/demo", demoRouter);
 app.use("/api/campaigns", campaignRouter);
 app.use("/api/filter", filterRouter);

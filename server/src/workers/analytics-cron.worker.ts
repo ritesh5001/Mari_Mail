@@ -3,6 +3,7 @@ import type { Redis } from "ioredis";
 import { recomputeEngagementScores } from "../services/engagement-scoring.service.js";
 import { sendWeeklyDigests } from "../services/digest.service.js";
 import { sweepMemberships } from "../services/membership-sweep.service.js";
+import { refundStalePhoneReveals } from "../services/apollo/phone-webhook.js";
 import { runAllApolloDrips } from "../services/apollo-drip.service.js";
 import { workerOptionsFor } from "./shared-worker-options.js";
 
@@ -74,7 +75,11 @@ export function startAnalyticsCronWorker(connection: Redis) {
     async (job: Job<Record<string, never>, { ok: boolean; detail?: unknown }, CronJobName>) => {
       if (job.name === "membership-sweep") {
         const result = await sweepMemberships();
-        return { ok: true, detail: result };
+        // Rides along with the hourly sweep rather than earning its own cron
+        // entry: it is the same kind of work (settle what the clock has made
+        // stale) and the timeout is measured in tens of minutes.
+        const phoneRefunds = await refundStalePhoneReveals();
+        return { ok: true, detail: { ...result, phoneRefunds } };
       }
       if (job.name === "engagement-score") {
         const result = await recomputeEngagementScores();

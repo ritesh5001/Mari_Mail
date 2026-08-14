@@ -34,6 +34,7 @@ import {
   CreditDeductionError,
   MembershipInactiveError,
 } from "../services/billing.service.js";
+import { phoneWebhookFor } from "../services/apollo/phone-webhook.js";
 import { getOrCreateDataSourceSettings } from "../services/data-sources/settings.js";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
 import { createHash } from "node:crypto";
@@ -1752,6 +1753,20 @@ export async function revealApolloPerson(
   }
   const apolloConfig = { baseUrl: creds.apiBaseUrl.replace(/\/$/, ""), apiKey: creds.apiKey };
 
+  // Phone reveals are asynchronous at Apollo's end and REQUIRE a callback URL.
+  // Checked here, before the credit is taken: without it Apollo rejects the
+  // call outright, and charging 20 credits for a request that cannot succeed —
+  // then relying on the refund path to undo it — is not something to do to a
+  // customer when the failure is knowable in advance.
+  const phoneWebhook = field === "phone" ? phoneWebhookFor(externalId) : null;
+  if (phoneWebhook && !phoneWebhook.configured) {
+    return {
+      status: 503 as const,
+      code: "PHONE_REVEAL_UNCONFIGURED" as const,
+      message: `Phone reveal is not available yet — you were not charged. ${phoneWebhook.reason}`,
+    };
+  }
+
   let balance: number | null = null;
   try {
     if (creds.billsPlatformCredits) {
@@ -1787,6 +1802,7 @@ export async function revealApolloPerson(
       {
         reveal_personal_emails: field === "email",
         reveal_phone_number: field === "phone",
+        ...(phoneWebhook?.configured ? { webhook_url: phoneWebhook.url } : {}),
       },
       apolloConfig,
     );
@@ -1829,14 +1845,28 @@ export async function revealApolloPerson(
     };
   }
   if (field === "phone" && !realPhone) {
-    if (creds.billsPlatformCredits)
-      await grantCredits(workspaceId, price, "REFUND", `apollo:${externalId}:phone:no-data`, userId).catch(
-      () => undefined,
-    );
+    // NOT an error, and not "no phone on file" — this is the normal shape of an
+    // Apollo phone reveal. The number is delivered to our webhook seconds to
+    // minutes later; until then the request is parked here so the callback can
+    // attribute it, and so the sweep can refund it if it never lands.
+    const contactRow = await prisma.contact.findFirst({
+      where: { workspaceId, email: { endsWith: `${externalId}@unknown.local` } },
+      select: { id: true },
+    });
+    await prisma.apolloPhoneRequest.create({
+      data: {
+        apolloId: externalId,
+        workspaceId,
+        userId,
+        contactId: contactRow?.id ?? null,
+        creditsCharged: creds.billsPlatformCredits ? price : 0,
+      },
+    });
     return {
-      status: 422 as const,
-      code: "NO_PHONE",
-      message: "Apollo has no phone on file for this contact — you were not charged.",
+      status: 202 as const,
+      code: "PHONE_PENDING" as const,
+      message: "Apollo is fetching this number — it'll appear here shortly. Refresh in a moment.",
+      balance,
     };
   }
 
@@ -1933,6 +1963,12 @@ contactRouter.post("/reveal-apollo/:externalId/phone", requireAuth, async (req, 
     const { workspaceId, userId } = (req as AuthedRequest).auth;
     const result = await revealApolloPerson("phone", req.params.externalId, workspaceId, userId);
     if (result.status === 200) return sendData(res, { contact: result.contact, balance: result.balance });
+    // 202 is a SUCCESS: Apollo accepted the request and will deliver the number
+    // to our webhook. Reporting it through sendError would show the user a
+    // failure for a reveal that is on its way and already paid for.
+    if (result.status === 202) {
+      return sendData(res, { pending: true, message: result.message, balance: result.balance }, 202);
+    }
     return sendError(res, result.status, result.code, result.message);
   } catch (error) {
     return next(error);
