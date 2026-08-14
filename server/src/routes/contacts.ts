@@ -1758,7 +1758,7 @@ export async function revealApolloPerson(
   // call outright, and charging 20 credits for a request that cannot succeed —
   // then relying on the refund path to undo it — is not something to do to a
   // customer when the failure is knowable in advance.
-  const phoneWebhook = field === "phone" ? phoneWebhookFor(externalId) : null;
+  const phoneWebhook = field === "phone" ? await phoneWebhookFor(externalId) : null;
   if (phoneWebhook && !phoneWebhook.configured) {
     return {
       status: 503 as const,

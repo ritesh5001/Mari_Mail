@@ -1821,6 +1821,16 @@ model ApolloSettings {
   // A phone number costs the provider far more than an email and is worth more
   // to the user, so it is priced accordingly. Admin-editable per deployment.
   creditsPerPhoneReveal Int       @default(20)
+  // --- Phone-reveal callback ---
+  // Apollo delivers phone numbers asynchronously to a webhook, so a reveal
+  // cannot even be requested without a publicly reachable URL and a secret to
+  // authenticate the callback with. Both live here, next to the API key they
+  // belong with, so an admin can set them from the panel instead of needing a
+  // redeploy to change an environment variable.
+  /// Public base URL Apollo calls back on, e.g. https://app.example.com/backend
+  webhookBaseUrl        String?
+  /// AES-GCM envelope (see @marimail/utils encryptSecret) — never plaintext.
+  webhookSecret         Json?
   lastTestAt            DateTime?
   lastTestStatus        String?
   lastTestError         String?

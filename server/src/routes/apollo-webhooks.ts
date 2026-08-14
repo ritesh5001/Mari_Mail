@@ -45,7 +45,7 @@ apolloWebhookRouter.post("/phone-webhook", async (req, res, next) => {
   try {
     const apolloId = typeof req.query.id === "string" ? req.query.id : "";
     const token = typeof req.query.token === "string" ? req.query.token : "";
-    if (!apolloId || !verifyPhoneWebhookToken(apolloId, token)) {
+    if (!apolloId || !(await verifyPhoneWebhookToken(apolloId, token))) {
       return sendError(res, 401, "INVALID_TOKEN", "Invalid webhook token");
     }
 

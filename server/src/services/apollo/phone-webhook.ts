@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@marimail/db";
 import { grantCredits } from "../billing.service.js";
+import { decryptJsonSecret } from "../email-account.service.js";
+import { getOrCreateApolloSettings } from "./settings.js";
 
 /**
  * Where Apollo delivers revealed phone numbers.
@@ -10,34 +12,53 @@ import { grantCredits } from "../billing.service.js";
  * to `webhook_url` when it has one — which is why omitting the parameter fails
  * with "Please add a valid 'webhook_url' parameter".
  *
- * The URL has to be reachable from the public internet, so it cannot be
- * derived from the server's own listen address. It comes from configuration,
- * with a sensible default built from APP_URL, since the web app already proxies
- * `/backend/*` through to this API.
+ * Both settings live in the ADMIN PANEL, alongside the Apollo API key, rather
+ * than in environment variables: the rest of the integration is already managed
+ * there, and needing a redeploy to change a callback URL would make the panel a
+ * half-truth. Environment variables are still honoured as a fallback so an
+ * existing deployment keeps working, but the database wins when both are set.
  *
- * When it is NOT configured, phone reveals are refused BEFORE any credit is
- * spent. That is the whole point of having this as a pre-flight check: the
- * alternative — charging 20 credits, calling Apollo, getting a 400 and relying
- * on the refund path — bills the customer for a request that never had a chance
- * of working.
+ * When neither is configured, phone reveals are refused BEFORE any credit is
+ * spent — see the pre-flight check in the reveal route. The alternative,
+ * charging 20 credits for a call Apollo is certain to reject, is not something
+ * to do to a customer when the failure is knowable in advance.
  */
 
 const PATH = "/api/apollo/phone-webhook";
 
-function baseUrl(): string | null {
-  const explicit = process.env.APOLLO_WEBHOOK_BASE_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
-  const app = process.env.APP_URL?.trim();
-  // The Next app rewrites /backend/* to this API (see client/next.config), so
-  // this is the API's public address in a standard deployment.
-  if (app && !app.includes("localhost") && !app.includes("127.0.0.1")) {
-    return `${app.replace(/\/$/, "")}/backend`;
-  }
-  return null;
-}
+type WebhookConfigValues = { baseUrl: string | null; secret: string | null };
 
-function secret(): string | null {
-  return process.env.APOLLO_WEBHOOK_SECRET?.trim() || null;
+async function loadConfig(): Promise<WebhookConfigValues> {
+  let baseUrl: string | null = null;
+  let secret: string | null = null;
+
+  try {
+    const settings = await getOrCreateApolloSettings();
+    baseUrl = settings.webhookBaseUrl?.trim() || null;
+    const stored = decryptJsonSecret<{ secret?: string }>(settings.webhookSecret);
+    secret = stored?.secret?.trim() || null;
+  } catch (error) {
+    // A settings read failing must not take phone reveal down silently — fall
+    // through to the environment and let the caller report what's missing.
+    console.error("[apollo] could not read webhook settings:", error);
+  }
+
+  if (!baseUrl) {
+    const explicit = process.env.APOLLO_WEBHOOK_BASE_URL?.trim();
+    if (explicit) {
+      baseUrl = explicit;
+    } else {
+      // The Next app rewrites /backend/* to this API (see client/next.config),
+      // so this is the API's public address in a standard deployment.
+      const app = process.env.APP_URL?.trim();
+      if (app && !app.includes("localhost") && !app.includes("127.0.0.1")) {
+        baseUrl = `${app.replace(/\/$/, "")}/backend`;
+      }
+    }
+  }
+  if (!secret) secret = process.env.APOLLO_WEBHOOK_SECRET?.trim() || null;
+
+  return { baseUrl: baseUrl ? baseUrl.replace(/\/$/, "") : null, secret };
 }
 
 /**
@@ -45,40 +66,61 @@ function secret(): string | null {
  * forge results for others. HMAC rather than a bare shared secret for the same
  * reason.
  */
-export function phoneWebhookToken(apolloId: string): string | null {
-  const key = secret();
-  if (!key) return null;
-  return createHmac("sha256", key).update(apolloId).digest("hex").slice(0, 32);
+export function signWebhookToken(secret: string, apolloId: string): string {
+  return createHmac("sha256", secret).update(apolloId).digest("hex").slice(0, 32);
 }
 
-export function verifyPhoneWebhookToken(apolloId: string, token: string): boolean {
-  const expected = phoneWebhookToken(apolloId);
-  if (!expected || !token) return false;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(token);
+export async function verifyPhoneWebhookToken(apolloId: string, token: string): Promise<boolean> {
+  const { secret } = await loadConfig();
+  if (!secret || !token) return false;
+  const expected = Buffer.from(signWebhookToken(secret, apolloId));
+  const received = Buffer.from(token);
   // Length check first: timingSafeEqual throws on a length mismatch.
-  return a.length === b.length && timingSafeEqual(a, b);
+  return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
-export type PhoneWebhookConfig = { configured: true; url: string } | { configured: false; reason: string };
+export type PhoneWebhookConfig =
+  | { configured: true; url: string }
+  | { configured: false; reason: string };
 
-export function phoneWebhookFor(apolloId: string): PhoneWebhookConfig {
-  const base = baseUrl();
-  if (!base) {
+export async function phoneWebhookFor(apolloId: string): Promise<PhoneWebhookConfig> {
+  const { baseUrl, secret } = await loadConfig();
+  if (!baseUrl) {
     return {
       configured: false,
       reason:
-        "Phone reveal needs a public webhook URL. Set APOLLO_WEBHOOK_BASE_URL (or APP_URL to a public address) and restart the API.",
+        "An admin needs to set the phone-reveal callback URL under Contact Data Source in the admin panel.",
     };
   }
-  const token = phoneWebhookToken(apolloId);
-  if (!token) {
+  if (!secret) {
     return {
       configured: false,
-      reason: "Phone reveal needs APOLLO_WEBHOOK_SECRET to be set so Apollo's callback can be authenticated.",
+      reason:
+        "An admin needs to set the phone-reveal callback secret under Contact Data Source in the admin panel.",
     };
   }
-  return { configured: true, url: `${base}${PATH}?id=${encodeURIComponent(apolloId)}&token=${token}` };
+  return {
+    configured: true,
+    url: `${baseUrl}${PATH}?id=${encodeURIComponent(apolloId)}&token=${signWebhookToken(secret, apolloId)}`,
+  };
+}
+
+/** Whether phone reveal can run at all — used by the admin panel's status row. */
+export async function phoneWebhookStatus(): Promise<{
+  configured: boolean;
+  baseUrl: string | null;
+  hasSecret: boolean;
+  callbackUrl: string | null;
+}> {
+  const { baseUrl, secret } = await loadConfig();
+  return {
+    configured: Boolean(baseUrl && secret),
+    baseUrl,
+    hasSecret: Boolean(secret),
+    // The path Apollo will call, without a token — enough for an admin to
+    // confirm it points somewhere reachable, without leaking a usable one.
+    callbackUrl: baseUrl ? `${baseUrl}${PATH}` : null,
+  };
 }
 
 /** How long a pending reveal waits before it is written off and refunded. */

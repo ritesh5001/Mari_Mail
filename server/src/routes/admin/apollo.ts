@@ -10,6 +10,7 @@ import {
   APOLLO_SETTINGS_ID,
 } from "../../services/apollo/settings.js";
 import { ApolloError, healthCheck } from "../../services/apollo/client.js";
+import { phoneWebhookStatus } from "../../services/apollo/phone-webhook.js";
 import { getUsageWindow } from "../../services/apollo/usage.js";
 
 export const adminApolloRouter = Router();
@@ -22,12 +23,22 @@ const settingsSchema = z.object({
   maxResultsPerQuery: z.number().int().min(1).max(100).optional(),
   creditsPerEmailReveal: z.number().int().min(0).max(1_000).optional(),
   creditsPerPhoneReveal: z.number().int().min(0).max(1_000).optional(),
+  // Phone-reveal callback. Empty string clears the value; omitted leaves it —
+  // so saving the form without retyping the secret does not wipe it.
+  webhookBaseUrl: z.string().max(500).optional(),
+  webhookSecret: z.string().max(500).optional(),
 });
 
 adminApolloRouter.get("/settings", requireSuperAdmin, async (_req, res, next) => {
   try {
     const settings = await getOrCreateApolloSettings();
-    return sendData(res, sanitizeApolloSettings(settings));
+    return sendData(res, {
+      ...sanitizeApolloSettings(settings),
+      // Resolved state, not just the stored columns: it also reflects the
+      // environment fallback, so the panel tells the truth about whether phone
+      // reveal will actually work right now.
+      phoneWebhook: await phoneWebhookStatus(),
+    });
   } catch (error) {
     return next(error);
   }
@@ -52,12 +63,34 @@ adminApolloRouter.patch("/settings", requireSuperAdmin, async (req, res, next) =
       const trimmed = parsed.data.apiKey.trim();
       data.apiKey = trimmed.length ? encryptJsonSecret({ apiKey: trimmed }) : null;
     }
+    if (parsed.data.webhookBaseUrl !== undefined) {
+      const trimmed = parsed.data.webhookBaseUrl.trim().replace(/\/$/, "");
+      if (trimmed.length && !/^https:\/\//i.test(trimmed)) {
+        // Apollo will not call an http:// or relative URL, and a base that only
+        // works from inside the network fails silently hours later when the
+        // callback never lands. Rejected here instead.
+        return sendError(
+          res,
+          400,
+          "VALIDATION_ERROR",
+          "The callback URL must be a public https:// address Apollo can reach.",
+        );
+      }
+      data.webhookBaseUrl = trimmed.length ? trimmed : null;
+    }
+    if (parsed.data.webhookSecret !== undefined) {
+      const trimmed = parsed.data.webhookSecret.trim();
+      data.webhookSecret = trimmed.length ? encryptJsonSecret({ secret: trimmed }) : null;
+    }
 
     const updated = await prisma.apolloSettings.update({
       where: { id: APOLLO_SETTINGS_ID },
       data,
     });
-    return sendData(res, sanitizeApolloSettings(updated));
+    return sendData(res, {
+      ...sanitizeApolloSettings(updated),
+      phoneWebhook: await phoneWebhookStatus(),
+    });
   } catch (error) {
     return next(error);
   }

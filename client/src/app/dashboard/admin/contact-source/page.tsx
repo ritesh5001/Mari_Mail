@@ -12,6 +12,15 @@ export type ApolloSettingsDTO = {
   maxResultsPerQuery: number;
   creditsPerEmailReveal: number;
   creditsPerPhoneReveal: number;
+  hasWebhookSecret: boolean;
+  webhookBaseUrl: string | null;
+  /** Resolved state — includes the environment-variable fallback. */
+  phoneWebhook: {
+    configured: boolean;
+    baseUrl: string | null;
+    hasSecret: boolean;
+    callbackUrl: string | null;
+  };
   lastTestAt: string | null;
   lastTestStatus: string | null;
   lastTestError: string | null;
@@ -64,7 +73,10 @@ const DEFAULT_SETTINGS: ApolloSettingsDTO = {
   cacheTtlSeconds: 1800,
   maxResultsPerQuery: 25,
   creditsPerEmailReveal: 1,
-  creditsPerPhoneReveal: 1,
+  creditsPerPhoneReveal: 20,
+  hasWebhookSecret: false,
+  webhookBaseUrl: null,
+  phoneWebhook: { configured: false, baseUrl: null, hasSecret: false, callbackUrl: null },
   lastTestAt: null,
   lastTestStatus: null,
   lastTestError: null,
