@@ -8,6 +8,23 @@ const monorepoRoot = path.join(__dirname, "..");
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ["@marimail/db", "@marimail/types", "@marimail/utils", "@marimail/email"],
+  webpack: (config) => {
+    // `@marimail/db` is path-mapped to its TypeScript SOURCE (see
+    // tsconfig.base.json), so webpack compiles that package itself. The package
+    // builds for Node under `moduleResolution: NodeNext`, which REQUIRES a
+    // ".js" suffix on relative imports — a suffix that names a file webpack
+    // cannot find, because on disk it is ".ts".
+    //
+    // This teaches webpack the same rule TypeScript uses: try the .ts source
+    // for a ".js" specifier, and fall back to a real .js file. Without it,
+    // adding any second module to that package breaks the client build, which
+    // is exactly what happened.
+    config.resolve.extensionAlias = {
+      ...config.resolve.extensionAlias,
+      ".js": [".ts", ".tsx", ".js"],
+    };
+    return config;
+  },
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client"],
     outputFileTracingRoot: monorepoRoot,
