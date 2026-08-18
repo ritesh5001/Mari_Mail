@@ -1,4 +1,5 @@
 import { Clock, Mail, Ship } from "lucide-react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import type { CampaignScheduleData, ScheduleStepStatus } from "@/lib/analytics-data";
 
 /** Full UTC timestamp, e.g. "14 Jul 2026, 12:30 UTC". */
@@ -41,12 +42,8 @@ export function CampaignScheduleTable({ schedule }: { schedule: CampaignSchedule
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
         Delivery schedule — who gets which mail, when
+        <InfoHint>{isEta ? "Each step fires relative to the vessel's ETA (times in UTC). Steps whose days-before-ETA window has already passed are skipped." : "Steps send on the campaign's cadence from the moment a contact is enrolled."}</InfoHint>
       </h3>
-      <p className="mt-1 text-xs text-slate-500">
-        {isEta
-          ? "Each step fires relative to the vessel's ETA (times in UTC). Steps whose days-before-ETA window had already passed at launch are marked Skipped."
-          : "Each step sends on the schedule window after launch (times in UTC)."}
-      </p>
 
       {recipients.length === 0 ? (
         <p className="mt-4 rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">

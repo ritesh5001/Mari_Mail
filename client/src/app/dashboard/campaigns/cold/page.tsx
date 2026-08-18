@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { Plus } from "lucide-react";
 import { CampaignCard } from "@/components/campaigns/CampaignBuilder";
 import { NoInboxWarning } from "@/components/campaigns/NoInboxWarning";
@@ -13,7 +14,9 @@ export default async function ColdCampaignsPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Cold campaigns</h1>
+          <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Cold campaigns
+            <InfoHint>Fixed-cadence outreach to contacts in a list. Steps send on the schedule window — no ETA needed.</InfoHint>
+          </h1>
         </div>
         <Link
           href="/dashboard/campaigns/cold/new"

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { Plus } from "lucide-react";
 import { CampaignCard } from "@/components/campaigns/CampaignBuilder";
 import { NoInboxWarning } from "@/components/campaigns/NoInboxWarning";
@@ -13,7 +14,9 @@ export default async function EtaCampaignsPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">ETA-based campaigns</h1>
+          <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">ETA-based campaigns
+            <InfoHint>Triggers every time a vessel in your target list gets an ETA. Pick vessels from the ETA Radar, add them to a list, then bind it here.</InfoHint>
+          </h1>
         </div>
         <Link
           href="/dashboard/campaigns/eta/new"

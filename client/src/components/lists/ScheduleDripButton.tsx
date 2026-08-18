@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { CalendarClock, X } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 
@@ -88,10 +89,8 @@ export function ScheduleDripButton({
               <div>
                 <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
                   Schedule daily reveal
+                  <InfoHint>Saves these filters and adds people to “{listName}” a batch at a time.</InfoHint>
                 </h3>
-                <p className="mt-1 text-[11px] text-slate-500 dark:text-white/50">
-                  Saves these filters and adds people to “{listName}” a batch at a time.
-                </p>
               </div>
               <button
                 type="button"

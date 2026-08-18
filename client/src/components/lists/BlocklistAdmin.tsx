@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { AlertTriangle, Ban, Building2, Loader2, Plus, Trash2, User } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 import { cn } from "@/lib/cn";
@@ -102,6 +103,7 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
         <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-slate-950 dark:text-white">
           <Ban className="h-6 w-6 text-ocean" />
           Blocked
+          <InfoHint>Anyone here is excluded from every campaign in this workspace. Blocking a company covers everyone at its domain — including people not in your contacts yet — and anything already queued for them is stood down.</InfoHint>
         </h1>
       </section>
 

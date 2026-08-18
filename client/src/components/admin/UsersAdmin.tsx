@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import {
   AlertTriangle,
   Ban,
@@ -150,6 +151,7 @@ export function UsersAdmin({ initial, currentUserId }: { initial: AdminUsersList
             <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-slate-950 dark:text-white">
               <Users className="h-6 w-6 text-ocean" />
               All users
+              <InfoHint>Everyone on the platform, what they are paying for, and their credit balance. Granting a subscription or credits here is recorded in the audit log.</InfoHint>
             </h1>
           </div>
           <button
@@ -685,11 +687,11 @@ function SubscriptionSection({
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
           <CreditCard className="h-4 w-4 text-ocean" />
           Grant a subscription manually
+          <InfoHint>
+            Applies the plan&apos;s limits and country allowance to {workspace.name} immediately, as a paid checkout
+            would. Use this for deals closed off-platform.
+          </InfoHint>
         </h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-          Applies the plan&apos;s limits and country allowance to <strong>{workspace.name}</strong> immediately, as a
-          paid checkout would. Use this for deals closed off-platform.
-        </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
@@ -863,11 +865,8 @@ function CreditsSection({
         <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
           <Coins className="h-4 w-4 text-ocean" />
           Adjust credits
+          <InfoHint>Current balance for <strong>{workspace.name}</strong>: {workspace.creditBalance.toLocaleString()} credits. Enter a negative number to deduct.</InfoHint>
         </h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-          Current balance for <strong>{workspace.name}</strong>: {workspace.creditBalance.toLocaleString()} credits.
-          Enter a negative number to deduct.
-        </p>
 
         <div className="mt-3 flex flex-wrap gap-2">
           {[100, 500, 1000, 5000].map((preset) => (
@@ -1091,6 +1090,7 @@ function CountryAccessSection({
       <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
         <Globe className="h-4 w-4 text-ocean" />
         Country access
+        <InfoHint>Which countries&rsquo; arrivals this workspace can see. A workspace with none selected sees no ETAs at all — the scope fails closed rather than showing every country.</InfoHint>
       </h3>
 
       <div className="mt-3 flex flex-wrap items-end gap-3">

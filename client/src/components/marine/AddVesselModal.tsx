@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
@@ -104,10 +105,9 @@ export function AddVesselModal({
       <div className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0F0F11]" onClick={(e) => e.stopPropagation()}>
         <div className="mb-5 flex items-start justify-between px-6 pt-6">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">{editMode ? "Edit vessel" : "Add vessel"}</h2>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">
-              {editMode ? "Update any field in the full vessel schema." : "Manually add a vessel with the full vessel schema."}
-            </p>
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">{editMode ? "Edit vessel" : "Add vessel"}
+              <InfoHint>{editMode ? "Update any field in the full vessel schema." : "Manually add a vessel with the full vessel schema."}</InfoHint>
+            </h2>
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:text-white/40 dark:hover:bg-white/[0.08]"><X className="h-4 w-4" /></button>
         </div>

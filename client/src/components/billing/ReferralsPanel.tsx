@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { InfoHint } from "@/components/ui/InfoHint";
 import { Check, Coins, Copy, Gift, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ReferralRowDTO, ReferralSummaryDTO } from "@/app/dashboard/referrals/page";
@@ -62,12 +63,12 @@ export function ReferralsPanel({ summary }: { summary: ReferralSummaryDTO }) {
         <h1 className="mt-1 flex items-center gap-2 text-2xl font-semibold text-slate-950 dark:text-white">
           <Gift className="h-6 w-6 text-ocean" />
           Invite and earn credits
+          <InfoHint>
+            Share your link. When someone signs up with it and subscribes within {summary.windowDays} days,
+            you get {summary.rewardRatePercent}% of their plan&rsquo;s credits, added straight to this workspace.
+            Their plan and price are unaffected.
+          </InfoHint>
         </h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-          Share your link. When someone signs up with it and subscribes within {summary.windowDays} days, you get{" "}
-          <strong>{summary.rewardRatePercent}% of their plan&rsquo;s credits</strong> — added straight to this
-          workspace. Their plan and price are unaffected.
-        </p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 rounded-lg border border-dashed border-ocean/40 bg-ocean/[0.04] px-4 py-3">
