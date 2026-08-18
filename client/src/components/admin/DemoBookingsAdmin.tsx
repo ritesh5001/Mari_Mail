@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Calendar, Download, Mail, Phone, Power, Save, Trash2, UserPlus } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
+import { DemoBookingCalendar } from "@/components/admin/DemoBookingCalendar";
 
 type BookingStatus = "PENDING" | "CONTACTED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
 
@@ -42,6 +43,16 @@ const statusStyles: Record<BookingStatus, string> = {
   COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
   CANCELLED: "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/60",
 };
+
+/** IST calendar day for an instant, as "YYYY-MM-DD" — see DemoBookingCalendar. */
+function istDayKey(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(iso));
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString(undefined, {
@@ -135,16 +146,24 @@ export function DemoBookingsAdmin({
   const [settings, setSettings] = useState(initialSettings);
   const [summary, setSummary] = useState(initialSummary);
   const [filter, setFilter] = useState<BookingStatus | "ALL">("ALL");
+  // "YYYY-MM-DD" in IST, set by clicking a day in the calendar.
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(initialBookings[0]?.id ?? null);
   const [adminEmail, setAdminEmail] = useState(initialSettings.adminEmail ?? "");
   const [successMessage, setSuccessMessage] = useState(initialSettings.successMessage);
   const [savingSettings, setSavingSettings] = useState(false);
   const [, startTransition] = useTransition();
 
-  const filtered = useMemo(
-    () => (filter === "ALL" ? bookings : bookings.filter((b) => b.status === filter)),
-    [bookings, filter],
-  );
+  const filtered = useMemo(() => {
+    const byStatus = filter === "ALL" ? bookings : bookings.filter((b) => b.status === filter);
+    if (!selectedDay) return byStatus;
+    // Same IST bucketing the calendar uses, so a day that shows three dots
+    // lists exactly those three.
+    return byStatus.filter((b) => {
+      const when = b.scheduledAt ?? b.preferredAt;
+      return when ? istDayKey(when) === selectedDay : false;
+    });
+  }, [bookings, filter, selectedDay]);
 
   const active = bookings.find((b) => b.id === activeId) ?? filtered[0] ?? null;
 
@@ -333,16 +352,38 @@ export function DemoBookingsAdmin({
         </div>
       </section>
 
+      <DemoBookingCalendar
+        bookings={bookings}
+        selectedDay={selectedDay}
+        onSelectDay={setSelectedDay}
+      />
+
       <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 text-sm dark:border-white/[0.06]">
             <span className="font-medium text-slate-700 dark:text-white/80">
               {filtered.length} {filter === "ALL" ? "total" : filter.toLowerCase()}
+              {/* Name the day filter here too. Otherwise a day picked in the
+                  calendar silently shortens this list, and the count looks
+                  wrong rather than filtered. */}
+              {selectedDay ? (
+                <span className="ml-1 text-slate-500 dark:text-white/50">
+                  on{" "}
+                  {new Intl.DateTimeFormat("en-GB", {
+                    timeZone: "Asia/Kolkata",
+                    day: "numeric",
+                    month: "short",
+                  }).format(new Date(`${selectedDay}T06:00:00Z`))}
+                </span>
+              ) : null}
             </span>
-            {filter !== "ALL" ? (
+            {filter !== "ALL" || selectedDay ? (
               <button
                 type="button"
-                onClick={() => setFilter("ALL")}
+                onClick={() => {
+                  setFilter("ALL");
+                  setSelectedDay(null);
+                }}
                 className="text-xs text-sky-600 hover:underline dark:text-accent-300"
               >
                 Clear filter
