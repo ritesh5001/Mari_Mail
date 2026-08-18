@@ -1349,12 +1349,20 @@ export function CampaignByRolePanel({
    */
   async function blockRow(row: ApolloRow, kind: "CONTACT" | "COMPANY") {
     setBlocking(`${row.id}:${kind}`);
+    // A locked row's `email` is a MASKED display string ("••••••@cosco.com"),
+    // not an address. For a person block, send the canonical synthetic address
+    // the app already uses for locked previews, so the block matches them the
+    // moment they land in the workspace. The masked value stays fine for a
+    // company block — it still carries the domain.
+    const personEmail =
+      row.emailLocked && row.externalId ? `apollo-${row.externalId}@unknown.local` : row.email;
+
     const body =
       kind === "CONTACT"
         ? {
             kind: "CONTACT",
-            email: row.email,
-            label: (row.fullName ?? `${row.firstName} ${row.lastName}`).trim() || row.email,
+            email: personEmail,
+            label: (row.fullName ?? `${row.firstName} ${row.lastName}`).trim() || personEmail,
           }
         : {
             kind: "COMPANY",
@@ -2450,7 +2458,7 @@ export function CampaignByRolePanel({
                               <button
                                 type="button"
                                 onClick={() => void blockRow(row, "CONTACT")}
-                                disabled={blocking !== null || !row.email}
+                                disabled={blocking !== null || (!row.email && !row.externalId)}
                                 className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-600 disabled:opacity-40 dark:border-white/10 dark:text-white/60"
                                 title="Never contact this person from this workspace"
                               >

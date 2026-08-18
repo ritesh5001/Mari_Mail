@@ -64,8 +64,16 @@ blocklistRouter.get("/", requireAuth, async (req, res, next) => {
 const createSchema = z
   .object({
     kind: z.enum(["CONTACT", "COMPANY"]),
-    /** CONTACT: the address to block. */
-    email: z.string().email().optional(),
+    /**
+     * CONTACT: the address to block. COMPANY: only used to derive a domain.
+     *
+     * NOT `z.string().email()`. Search results carry a MASKED address for
+     * people whose email is still locked — "••••••@cosco.com" — which is not a
+     * valid address but does carry the company domain. Rejecting it meant every
+     * company block from a locked row failed with "Invalid email", which is
+     * exactly the case a user is most likely to block from.
+     */
+    email: z.string().max(320).optional(),
     /** COMPANY: any of these; the best available becomes the match key. */
     domain: z.string().max(255).optional(),
     website: z.string().max(500).optional(),
@@ -102,6 +110,18 @@ function resolveBlockValue(
 ): { value: string; values: string[] } | { error: { code: string; message: string } } {
   if (kind === "CONTACT") {
     const email = normalizeEmail(input.email as string);
+    // A masked address identifies nobody — storing it would create a block
+    // that can never match. Say what to do instead rather than failing with a
+    // validation error about a field the user never typed.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.includes("•")) {
+      return {
+        error: {
+          code: "EMAIL_LOCKED",
+          message:
+            "This person's email is still hidden, so there is no address to block. Reveal it first, or block their company instead.",
+        },
+      };
+    }
     return { value: email, values: [email] };
   }
 
