@@ -356,6 +356,13 @@ export function DemoBookingsAdmin({
         bookings={bookings}
         selectedDay={selectedDay}
         onSelectDay={setSelectedDay}
+        // Clicking a booking in the calendar opens it in the detail panel. The
+        // status filter is cleared first, or a PENDING row clicked while the
+        // list is filtered to COMPLETED would open nothing.
+        onOpenBooking={(id) => {
+          setFilter("ALL");
+          setActiveId(id);
+        }}
       />
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">

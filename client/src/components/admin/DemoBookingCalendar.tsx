@@ -76,11 +76,14 @@ export function DemoBookingCalendar({
   bookings,
   selectedDay,
   onSelectDay,
+  onOpenBooking,
 }: {
   bookings: CalendarBooking[];
   /** "YYYY-MM-DD" in IST, or null for no day filter. */
   selectedDay: string | null;
   onSelectDay: (day: string | null) => void;
+  /** Open a booking's detail panel from its row in the calendar. */
+  onOpenBooking?: (id: string) => void;
 }) {
   const todayKey = istDayKey(new Date().toISOString());
   const [year, setYear] = useState(() => Number(todayKey.slice(0, 4)));
@@ -115,8 +118,8 @@ export function DemoBookingCalendar({
   // Bookings with no slot AND no requested time can't be placed anywhere. They
   // are the majority of older rows, so the calendar says so rather than
   // implying the month is all there is.
-  const undated = useMemo(
-    () => bookings.filter((b) => !b.scheduledAt && !b.preferredAt).length,
+  const undatedBookings = useMemo(
+    () => bookings.filter((b) => !b.scheduledAt && !b.preferredAt),
     [bookings],
   );
 
@@ -148,14 +151,21 @@ export function DemoBookingCalendar({
           {monthCount} {monthCount === 1 ? "demo" : "demos"}
         </span>
         <span className="text-[11px] text-slate-400 dark:text-white/35">times in IST</span>
-        {undated > 0 ? (
-          <span
-            className="text-[11px] text-slate-400 dark:text-white/35"
-            title="These have no confirmed slot and no requested time, so there is no day to place them on. They are in the list below."
-          >
-            · {undated} undated
-          </span>
-        ) : null}
+        <span className="hidden items-center gap-2 md:flex">
+          {([
+            ["PENDING", "Pending"],
+            ["SCHEDULED", "Scheduled"],
+            ["COMPLETED", "Completed"],
+            ["CANCELLED", "Cancelled"],
+          ] as const).map(([status, label]) => (
+            <span key={status} className="flex items-center gap-1 text-[11px] text-slate-500 dark:text-white/45">
+              <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[status])} />
+              {label}
+            </span>
+          ))}
+        </span>
+
+
 
         <div className="ml-auto flex items-center gap-1">
           <button
@@ -205,70 +215,111 @@ export function DemoBookingCalendar({
             const hasBookings = dayBookings.length > 0;
 
             return (
-              <button
+              <div
                 key={key}
-                type="button"
-                // A day with nothing on it is not a filter worth applying.
-                disabled={!hasBookings}
-                onClick={() => onSelectDay(isSelected ? null : key)}
-                title={
-                  hasBookings
-                    ? dayBookings
-                        .map((b) => `${istTime(b.scheduledAt ?? b.preferredAt ?? "")} — ${b.name}${b.company ? ` (${b.company})` : ""}`)
-                        .join("\n")
-                    : undefined
-                }
                 className={cn(
-                  "flex min-h-[62px] flex-col items-start gap-1 rounded-md border p-1.5 text-left transition",
+                  "flex min-h-[104px] flex-col rounded-md border p-1.5 transition",
                   isSelected
-                    ? "border-ocean bg-ocean/[0.07] dark:border-accent-400/60"
+                    ? "border-ocean bg-ocean/[0.05] dark:border-accent-400/60"
                     : hasBookings
-                      ? "border-slate-200 hover:border-ocean/50 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/[0.04]"
+                      ? "border-slate-200 dark:border-white/10"
                       : "border-transparent",
                 )}
               >
-                <span
-                  className={cn(
-                    "flex h-5 w-5 items-center justify-center rounded-full text-[11px]",
-                    isToday
-                      ? "bg-ocean font-bold text-white"
-                      : hasBookings
-                        ? "font-semibold text-slate-800 dark:text-white/85"
-                        : "text-slate-400 dark:text-white/30",
-                  )}
-                >
-                  {day}
-                </span>
+                <div className="flex items-center justify-between gap-1">
+                  <span
+                    className={cn(
+                      "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px]",
+                      isToday
+                        ? "bg-ocean font-bold text-white"
+                        : hasBookings
+                          ? "font-semibold text-slate-800 dark:text-white/85"
+                          : "text-slate-400 dark:text-white/30",
+                    )}
+                  >
+                    {day}
+                  </span>
+                  {/* Filtering the list is a per-day action, so it lives on the
+                      count — the rows themselves open a booking instead. */}
+                  {hasBookings ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectDay(isSelected ? null : key)}
+                      title={isSelected ? "Show all days" : `Show only ${dayBookings.length} on this day`}
+                      className={cn(
+                        "rounded px-1 text-[10px] font-semibold transition",
+                        isSelected
+                          ? "bg-ocean text-white"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-white/45 dark:hover:bg-white/10",
+                      )}
+                    >
+                      {dayBookings.length}
+                    </button>
+                  ) : null}
+                </div>
 
-                {/* One dot per booking, capped so a busy day stays a cell and
-                    not a wall — the count carries the rest. */}
+                {/* Every booking on the day, not a summary of them. A busy day
+                    scrolls inside its own cell rather than stretching the whole
+                    row — the point is to read the actual names and times here,
+                    without opening anything. */}
                 {hasBookings ? (
-                  <span className="flex flex-wrap items-center gap-0.5">
-                    {dayBookings.slice(0, 4).map((booking) => (
-                      <span
-                        key={booking.id}
-                        className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT[booking.status])}
-                      />
+                  <ul className="scrollbar-thin mt-1 max-h-[78px] space-y-0.5 overflow-y-auto pr-0.5">
+                    {dayBookings.map((booking) => (
+                      <li key={booking.id}>
+                        <button
+                          type="button"
+                          onClick={() => onOpenBooking?.(booking.id)}
+                          title={`${istTime(booking.scheduledAt ?? booking.preferredAt ?? "")} IST — ${booking.name}${booking.company ? ` (${booking.company})` : ""} · ${booking.status.toLowerCase()}`}
+                          className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left transition hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+                        >
+                          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[booking.status])} />
+                          <span className="shrink-0 text-[10px] font-semibold tabular-nums text-slate-600 dark:text-white/60">
+                            {istTime(booking.scheduledAt ?? booking.preferredAt ?? "")}
+                          </span>
+                          <span className="truncate text-[10px] text-slate-700 dark:text-white/75">
+                            {booking.name}
+                          </span>
+                        </button>
+                      </li>
                     ))}
-                    {dayBookings.length > 4 ? (
-                      <span className="text-[10px] font-medium text-slate-500 dark:text-white/45">
-                        +{dayBookings.length - 4}
-                      </span>
-                    ) : null}
-                  </span>
+                  </ul>
                 ) : null}
-
-                {hasBookings ? (
-                  <span className="truncate text-[10px] leading-tight text-slate-500 dark:text-white/45">
-                    {istTime(dayBookings[0].scheduledAt ?? dayBookings[0].preferredAt ?? "")}
-                    {dayBookings.length > 1 ? ` +${dayBookings.length - 1}` : ""}
-                  </span>
-                ) : null}
-              </button>
+              </div>
             );
           })}
         </div>
       </div>
+
+      {/* Bookings with no date at all. They cannot sit in the grid, but leaving
+          them out entirely would make the calendar a partial view of the
+          month — and these are the ones still waiting to be scheduled, so they
+          are the most actionable rows on the page. */}
+      {undatedBookings.length > 0 ? (
+        <details className="group border-t border-slate-100 dark:border-white/[0.06]">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs text-slate-600 dark:text-white/60">
+            <ChevronRight className="h-3.5 w-3.5 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
+            <span className="font-medium">{undatedBookings.length} with no date yet</span>
+            <span className="text-slate-400 dark:text-white/35">— nothing booked, waiting to be scheduled</span>
+          </summary>
+          <ul className="scrollbar-thin max-h-48 space-y-0.5 overflow-y-auto px-3 pb-3">
+            {undatedBookings.map((booking) => (
+              <li key={booking.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpenBooking?.(booking.id)}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1 text-left transition hover:bg-slate-100 dark:hover:bg-white/[0.06]"
+                >
+                  <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[booking.status])} />
+                  <span className="truncate text-xs text-slate-700 dark:text-white/75">{booking.name}</span>
+                  {booking.company ? (
+                    <span className="truncate text-[11px] text-slate-400 dark:text-white/35">{booking.company}</span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {selectedDay ? (
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2 text-xs dark:border-white/[0.06]">
