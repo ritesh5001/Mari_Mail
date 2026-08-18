@@ -16,7 +16,6 @@ export default async function OperatorsPage() {
             <Building2 className="h-6 w-6 text-ocean" />
             <div>
               <h2 className="text-2xl font-semibold text-slate-950">Operator behaviour intelligence</h2>
-              <p className="text-sm text-slate-600">Top engaged companies, dead operators, ETA conversion, recent activity feed.</p>
             </div>
           </div>
           <ExportButtons pdfFilename="marimail-operators" pdfTargetId="operators-export" />
@@ -99,7 +98,6 @@ export default async function OperatorsPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">ETA conversion</h3>
-        <p className="text-xs text-slate-500">Which port × vessel-type × cargo combinations generate the most replies.</p>
         <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">

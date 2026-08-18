@@ -52,10 +52,6 @@ export function SendGapDefaultsForm({
       <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-950 dark:text-white">
         <Timer className="h-4 w-4 text-ocean" /> Default gap between emails
       </h3>
-      <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-        Every new campaign starts with this random gap between outgoing emails. A random wait in the range makes
-        sending look natural and protects your inbox reputation.
-      </p>
 
       <div className="mt-4 flex max-w-sm items-end gap-2">
         <label className="flex-1 text-xs font-medium text-slate-600 dark:text-white/60">

@@ -151,10 +151,6 @@ export function UsersAdmin({ initial, currentUserId }: { initial: AdminUsersList
               <Users className="h-6 w-6 text-ocean" />
               All users
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-              Everyone onboarded on the platform, what they are paying for, and their credit balance. Grant a
-              subscription or top up credits manually from any row — every action is recorded in the audit log.
-            </p>
           </div>
           <button
             type="button"
@@ -1096,10 +1092,6 @@ function CountryAccessSection({
         <Globe className="h-4 w-4 text-ocean" />
         Country access
       </h3>
-      <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-        Which countries&rsquo; arrivals this workspace can see. A workspace with none selected sees no ETAs at all —
-        the scope fails closed rather than showing every country.
-      </p>
 
       <div className="mt-3 flex flex-wrap items-end gap-3">
         <label className="text-sm">

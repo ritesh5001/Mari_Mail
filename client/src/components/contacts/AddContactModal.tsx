@@ -55,7 +55,6 @@ export function AddContactModal({ onClose }: { onClose: () => void }) {
         <div className="mb-5 flex items-start justify-between px-6 pt-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Add contact</h2>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">Manually add a contact with the full contact schema.</p>
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 dark:text-white/40 dark:hover:bg-white/[0.08]"><X className="h-4 w-4" /></button>
         </div>

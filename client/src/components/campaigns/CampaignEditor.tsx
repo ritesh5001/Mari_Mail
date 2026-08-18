@@ -844,9 +844,6 @@ function VesselContactMatchPanel({
       <h3 className="text-base font-semibold text-slate-950 dark:text-white">
         Vessel ↔ contact matching
       </h3>
-      <p className="mt-1 text-sm text-slate-500 dark:text-white/60">
-        When a vessel below gets an ETA, its sequence goes only to the contacts matched to that vessel — each send filled with that vessel&rsquo;s port and date. A contact matched to several vessels gets a send per vessel.
-      </p>
 
       <div className="mt-4 space-y-2">
         {targetVessels.map((vessel) => {
@@ -1096,10 +1093,6 @@ function LeadsTab({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-950 dark:text-white">Add From Lead List</h3>
-              <p className="mt-1 text-sm text-slate-500 dark:text-white/60">
-                Select the lead list you would like to add. Once this campaign is live, vessels or
-                contacts added to the list are staged for your review before anyone is emailed.
-              </p>
             </div>
           </div>
           <div className="mt-4">
@@ -1436,9 +1429,6 @@ function ListPreviewPanel({
           <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
             Contacts in {listName || "the selected list"}
           </h3>
-          <p className="text-xs text-slate-500 dark:text-white/50">
-            Every unlocked contact below is included as a recipient. Save then launch to enroll them.
-          </p>
         </div>
         {state.status === "loaded" ? (
           <span className="rounded-full bg-ocean/10 px-2.5 py-1 text-xs font-semibold text-ocean">

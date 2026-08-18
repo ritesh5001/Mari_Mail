@@ -340,9 +340,6 @@ export default async function DashboardPage({
             <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
               Workspace overview
             </h2>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600 dark:text-white/55">
-              Real-time KPIs across vessels, campaigns, engagement, and ETA-triggered automation.
-            </p>
           </div>
           {/* Range control and the analytics link are separate jobs — the solid
               blue button no longer competes with the control beside it. */}

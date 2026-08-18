@@ -52,10 +52,6 @@ export default async function MarineDbPage({
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-ocean dark:text-accent-300">Marine DB</p>
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white/90">Ships with associated contacts</h2>
-          <p className="mt-1 max-w-3xl text-sm text-slate-600 dark:text-white/60">
-            One row per vessel. Expand a row to see contacts matched by company website, exact email, business email
-            domain, or company name.
-          </p>
         </div>
         {isSuperAdmin ? (
           <Link

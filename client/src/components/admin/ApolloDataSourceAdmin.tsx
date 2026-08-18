@@ -188,10 +188,6 @@ export function ApolloDataSourceAdmin({
               <Database className="h-6 w-6 text-ocean" />
               People Data API
             </h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-              External database of B2B contacts matched by company domain. Email & phone are
-              redacted in search results and unlocked on demand by debiting workspace credits.
-            </p>
             <Link
               href="/dashboard/admin/contact-source/unlocked"
               className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
@@ -224,10 +220,6 @@ export function ApolloDataSourceAdmin({
           <KeyRound className="h-4 w-4" />
           Credentials
         </h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Stored encrypted at rest. Only super-admins can view this page; the key itself is never
-          returned to the browser.
-        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">
@@ -299,9 +291,6 @@ export function ApolloDataSourceAdmin({
             <Zap className="h-4 w-4" />
             Connection
           </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Test connectivity to the provider and record the result.
-          </p>
 
           {settings.lastTestAt ? (
             <div
@@ -354,9 +343,6 @@ export function ApolloDataSourceAdmin({
             <Activity className="h-4 w-4" />
             Usage
           </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Counts of queries, reveals, and cache hits.
-          </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3 dark:border-white/[0.06] dark:bg-white/[0.02]">
@@ -385,10 +371,6 @@ export function ApolloDataSourceAdmin({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-white/60">
           Tuning & Pricing
         </h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Cache aggressiveness, search size, and the credit cost charged to each workspace per
-          reveal.
-        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">
@@ -473,10 +455,6 @@ export function ApolloDataSourceAdmin({
               <Phone className="h-4 w-4 text-ocean" />
               Phone reveal callback
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-              Apollo delivers phone numbers asynchronously. Give it a public https address to call back on and a
-              secret to sign that call with — until both are set, phone reveals are refused and no credits are spent.
-            </p>
           </div>
           <span
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -566,9 +544,6 @@ function ApolloCreditAnalyticsPanel({ analytics }: { analytics: ApolloCreditAnal
             <Coins className="h-4 w-4" />
             Credit consumption
           </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Platform-wide credit spend, refunds, and top consumers.
-          </p>
         </div>
         <span className="text-[11px] text-slate-400 dark:text-white/40">
           Reads from the CreditLedger — precise, not cache-based.

@@ -337,10 +337,6 @@ export default async function CampaignDetailPage({
               <h4 className="text-sm font-semibold text-slate-950">
                 Not enrolled yet ({targetOnlyContacts.length})
               </h4>
-              <p className="mt-0.5 text-xs text-slate-500">
-                Configured targets that haven&rsquo;t been enrolled into a send job, so
-                they don&rsquo;t appear in any step above.
-              </p>
               <div className="mt-2 overflow-hidden rounded-md border border-slate-200">
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">

@@ -80,7 +80,6 @@ export function OnboardingWizard({ defaultName }: { defaultName: string }) {
       {step === 0 ? (
         <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold text-slate-950">Workspace basics</h2>
-          <p className="text-sm text-slate-600">These details power campaign defaults and timezone-sensitive ETA views.</p>
           <Field label="Workspace name">
             <input value={workspaceData.workspaceName} onChange={(e) => setWorkspaceData((d) => ({ ...d, workspaceName: e.target.value }))} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </Field>

@@ -19,9 +19,6 @@ export function UnsubscribeClient({ token }: { token: string }) {
     <main className="min-h-screen bg-slate-50 px-6 py-16">
       <section className="mx-auto max-w-xl rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-2xl font-semibold text-slate-950">Unsubscribe</h1>
-        <p className="mt-3 text-sm text-slate-600">
-          This will stop future MariMail campaign messages for this email address.
-        </p>
         <button
           type="button"
           onClick={unsubscribe}

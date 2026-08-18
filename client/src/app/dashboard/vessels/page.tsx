@@ -47,9 +47,6 @@ export default async function VesselsPage({
               <h2 className="text-2xl font-semibold text-slate-950 dark:text-white">
                 {countLabel}
               </h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-white/55">
-                Search and review the full vessel schema across AIS, capacity, ownership, manager, builder, class, and operator fields.
-              </p>
             </div>
             {isSuperAdmin ? (
               <div className="flex items-center gap-2">

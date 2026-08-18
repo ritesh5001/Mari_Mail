@@ -86,11 +86,6 @@ export function UnlockedApolloContacts({
           <Unlock className="h-6 w-6 text-ocean" />
           Unlocked contacts
         </h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Every person that has been revealed at least once. Any future reveal of these people
-          — from any workspace — is served from here without re-billing the provider. Users still pay 1
-          MariMail credit per reveal.
-        </p>
       </div>
 
       {error ? (

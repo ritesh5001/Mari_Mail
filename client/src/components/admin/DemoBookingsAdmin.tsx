@@ -258,9 +258,6 @@ export function DemoBookingsAdmin({
             <h1 className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">
               Manage incoming demo requests
             </h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-              Submissions from the public <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-white/10">/book-demo</code> page.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -418,10 +415,6 @@ export function DemoBookingsAdmin({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-white/60">
           Notification settings
         </h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          When someone books a demo, an email is sent to this address. Falls back to{" "}
-          <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs dark:bg-white/10">DEMO_ADMIN_EMAIL</code> if unset.
-        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">

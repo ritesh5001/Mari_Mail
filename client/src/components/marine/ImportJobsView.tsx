@@ -131,10 +131,6 @@ export function ImportJobsView() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Import activity</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Live progress for every CSV import in this workspace. Safe to close — imports run on the
-            server.
-          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button

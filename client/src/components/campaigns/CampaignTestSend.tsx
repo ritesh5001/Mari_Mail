@@ -90,11 +90,6 @@ export function CampaignTestSend() {
           <h3 className="text-base font-semibold text-slate-950 dark:text-white">
             Send a test email
           </h3>
-          <p className="mt-1 text-xs text-slate-600 dark:text-white/55">
-            Sends one message through the exact same pipeline a real campaign uses
-            (platform inbox → transport → provider). Use this to confirm sending works
-            before launching a campaign, or to debug why one isn&apos;t firing.
-          </p>
         </div>
       </div>
 

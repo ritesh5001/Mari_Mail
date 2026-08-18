@@ -224,10 +224,6 @@ export function CampaignBuilder({ data }: { data: CampaignDashboardData }) {
               <h2 className="text-2xl font-semibold text-slate-950">
                 Campaigns
               </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Build ETA-triggered sequences, schedule campaigns, and track
-                engagement.
-              </p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
@@ -245,10 +241,6 @@ export function CampaignBuilder({ data }: { data: CampaignDashboardData }) {
             <h3 className="text-lg font-semibold text-slate-950">
               Campaign Creation Wizard
             </h3>
-            <p className="text-sm text-slate-600">
-              ETA campaigns use seven steps. Manual campaigns skip trigger
-              configuration.
-            </p>
           </div>
           <button
             type="button"

@@ -9,9 +9,6 @@ export default function ImportPage() {
       <div className="p-6 sm:p-7">
         <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">CSV Import</p>
         <h2 className="mt-2 text-2xl font-semibold text-slate-950">Import vessels, contacts, and marine data</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Upload a CSV file or paste rows directly. Vessel and contact imports use the full schemas and auto-map common headers.
-        </p>
         {/* The queued-import message used to be the only feedback, and it said
             nothing about progress — so a long import looked identical to a
             stuck one. */}

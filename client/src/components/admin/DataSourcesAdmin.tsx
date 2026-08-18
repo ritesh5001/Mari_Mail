@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { AlertTriangle, Database, ExternalLink, Power, Save, Settings, Zap } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, Power, Settings, Zap } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 import type { DataSourcesDTO } from "@/app/dashboard/admin/data-sources/page";
 
@@ -67,10 +67,6 @@ export function DataSourcesAdmin({
             <Settings className="h-6 w-6 text-ocean" />
             Where contact results come from
           </h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Master switches for each data source. Disabling a source skips its query entirely — search results and the
-            vessel contact-search panel will only contain enabled sources.
-          </p>
         </div>
       </section>
 
@@ -127,11 +123,6 @@ export function DataSourcesAdmin({
             <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-white/60">
               Auto-save contact search results
             </h2>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-              When ON, every person returned from a search is upserted into the internal Contact table (with email
-              still locked). Means future searches for the same person are served from your DB — no provider round-trip,
-              no API quota consumed. Reveals still cost credits.
-            </p>
           </div>
           <Toggle
             enabled={state.persistApolloSearchRows}

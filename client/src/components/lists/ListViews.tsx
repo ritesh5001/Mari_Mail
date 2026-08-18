@@ -434,10 +434,6 @@ export function ContactListDetail({
               </span>
             </div>
             <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{list.name}</h2>
-            <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-              {companies.length} companies · {contacts.length} contacts
-              {isEta ? ` · ${vessels.length} vessels` : ""}
-            </p>
           </div>
           {/* Delete uses inline confirmation instead of a modal — a
               destructive action needs a click-verify step, but a full modal
@@ -576,11 +572,6 @@ export function ContactListDetail({
                 <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
                   {newVessels.length} vessel{newVessels.length === 1 ? "" : "s"} with no contacts yet
                 </p>
-                <p className="mt-0.5 text-xs text-amber-800/80 dark:text-amber-200/70">
-                  Nothing will be emailed for {newVessels.length === 1 ? "this vessel" : "these vessels"} until
-                  someone at {newVessels.length === 1 ? "its" : "their"} owner or manager company is in this
-                  list. Use the role search below to add people — they drop out of this tab once matched.
-                </p>
               </div>
               <CampaignByRolePanel
                 listId={list.id}
@@ -595,9 +586,6 @@ export function ContactListDetail({
         {activity.length > 0 ? (
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
             <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Recent activity</h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-              Additions to this list. Active campaigns targeting the list auto-enroll new matches.
-            </p>
             <ul className="mt-3 divide-y divide-slate-100 dark:divide-white/[0.06]">
               {activity.slice(0, 20).map((entry, idx) => (
                 <li key={`${entry.kind}:${entry.at}:${idx}`} className="flex items-center justify-between py-2 text-sm">
@@ -2156,8 +2144,7 @@ export function CampaignByRolePanel({
                   {" "}
                   of {loaded.apolloTotal.toLocaleString()} total
                 </span>
-              ) : null}{" "}
-              — {summarizeFilter(loaded.filter)}.
+              ) : null}
               {/* Say when the search didn't cover every company. This read
                   "across 50 primary company domains" whether the list had 50 or
                   500, so a truncated search looked complete. */}

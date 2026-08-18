@@ -176,10 +176,6 @@ export function InboxesManager({
                 "YOUR INBOXES" + an h1 that was an instruction ("Connect a
                 mailbox to send from") which stayed wrong once you had five. */}
             <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Inboxes</h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-              MariMail sends campaigns from the mailboxes you connect here, rotating between them
-              and warming them up to protect deliverability.
-            </p>
           </div>
           {/* Hidden while the list is empty — the empty state below already
               carries the one call to action, and two identical buttons a few

@@ -25,9 +25,6 @@ export default async function BillingPage() {
     <div className="space-y-6">
       <header>
         <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Plan &amp; billing</h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Your membership, what you&rsquo;re using it for, and every payment on record.
-        </p>
       </header>
 
       <MembershipStatus membership={membership} gracePeriodDays={GRACE_PERIOD_DAYS} />
@@ -59,10 +56,6 @@ export default async function BillingPage() {
 
       <section id="plans" className="scroll-mt-6">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Plans</h2>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">
-          Each payment covers 30 days. Renewing early adds to the time you already have — you never
-          lose unused days.
-        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {PLAN_CATALOG.map((plan) => {
@@ -136,9 +129,6 @@ export default async function BillingPage() {
 
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Credit top-ups</h2>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-white/50">
-          Your plan replenishes credits every paid month. Top-ups are one-off and never expire.
-        </p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {CREDIT_PACKS.map((pack) => (
             <article

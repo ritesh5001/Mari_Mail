@@ -76,9 +76,6 @@ export function CreateListModal({
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Create list</h2>
-            <p className="mt-1 text-xs text-slate-500 dark:text-white/60">
-              Pick what this list will hold. You can't switch the kind later.
-            </p>
           </div>
           <button
             type="button"

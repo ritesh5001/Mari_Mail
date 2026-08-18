@@ -99,10 +99,6 @@ export function AccountsPanel({ initial }: { initial: ApolloAccountDTO[] }) {
     <div className="space-y-5">
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.02]">
         <h2 className="text-sm font-semibold text-slate-950 dark:text-white">Connect a provider account</h2>
-        <p className="mt-1 text-xs text-slate-500 dark:text-white/50">
-          Uses your own provider plan for this workspace&rsquo;s searches and reveals. Because you pay
-          the provider directly, reveals made through your key don&rsquo;t spend platform credits.
-        </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block text-[11px] font-medium text-slate-600 dark:text-white/60">

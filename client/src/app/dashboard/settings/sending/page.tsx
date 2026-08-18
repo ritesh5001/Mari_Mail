@@ -32,10 +32,6 @@ export default async function SendingSettingsPage() {
       <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
         <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
         <h2 className="text-2xl font-semibold text-slate-950 dark:text-white">Sending defaults</h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Workspace-wide defaults applied to every new campaign. You can still override the gap per campaign
-          from the campaign&apos;s Options step.
-        </p>
         <p className="mt-1 text-xs text-slate-400">
           <Link className="text-ocean hover:underline" href="/dashboard/settings">← Back to settings</Link>
         </p>

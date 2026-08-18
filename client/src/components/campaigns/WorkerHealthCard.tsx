@@ -65,9 +65,6 @@ export function WorkerHealthCard() {
             <h3 className="text-base font-semibold text-slate-950 dark:text-white">
               Worker &amp; queue health
             </h3>
-            <p className="mt-1 text-xs text-slate-600 dark:text-white/55">
-              If <span className="font-mono">delayed</span> grows but <span className="font-mono">completed</span> doesn&apos;t, the worker process isn&apos;t reading the queue — scheduled campaign mails will never fire.
-            </p>
           </div>
         </div>
         <button

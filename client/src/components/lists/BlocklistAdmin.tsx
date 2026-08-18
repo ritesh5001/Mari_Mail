@@ -103,11 +103,6 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
           <Ban className="h-6 w-6 text-ocean" />
           Blocked
         </h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/60">
-          Anyone here is excluded from every campaign in this workspace — they can&rsquo;t be added to a campaign, and
-          anything already queued for them is stood down. Blocking a company covers everyone at its domain, including
-          people who aren&rsquo;t in your contacts yet.
-        </p>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">

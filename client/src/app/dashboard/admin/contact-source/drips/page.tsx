@@ -43,11 +43,6 @@ export default async function AdminApolloDripsPage() {
         <h1 className="mt-1 text-lg font-semibold text-slate-950 dark:text-white">
           Scheduled reveals
         </h1>
-        <p className="mt-1 max-w-3xl text-xs text-slate-500 dark:text-white/50">
-          Each drip stores a search filter and reveals a fixed number of people from it every day at
-          07:00 UTC, appending them to a contact list and resuming where it stopped. A drip spends one
-          credit per person per day until it is paused or its result set runs out.
-        </p>
       </div>
 
       {loadError ? (

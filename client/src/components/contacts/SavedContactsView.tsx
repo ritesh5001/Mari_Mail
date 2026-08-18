@@ -29,9 +29,6 @@ export function SavedContactsView({ contacts }: { contacts: ContactModel[] }) {
       <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white py-16 text-center dark:border-white/10 dark:bg-white/[0.02]">
         <Bookmark className="mb-4 h-10 w-10 text-slate-300 dark:text-white/20" />
         <h3 className="text-base font-semibold text-slate-900 dark:text-white">No revealed contacts yet</h3>
-        <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-white/50">
-          Reveal a contact&rsquo;s email from any list and it shows up here.
-        </p>
         <Link href="/dashboard/lists" className="mt-5 rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-ocean dark:bg-accent-600 dark:hover:bg-accent-500">
           Go to lists
         </Link>

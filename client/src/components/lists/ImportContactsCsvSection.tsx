@@ -253,9 +253,6 @@ export function ImportContactsCsvSection({ listId }: { listId: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Import contacts from CSV</h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-white/60">
-            Upload a CSV with your contacts. The template shows the exact columns we accept.
-          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

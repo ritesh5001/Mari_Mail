@@ -73,9 +73,6 @@ function GuideUnavailable() {
           <h3 id="workflow-guide-title" className="font-semibold text-slate-950 dark:text-white">
             Your MariMail journey
           </h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-white/50">
-            Progress is temporarily unavailable. Your campaign data and saved work are unaffected.
-          </p>
         </div>
       </div>
     </section>
@@ -196,9 +193,6 @@ function ItineraryList({ steps }: { steps: CampaignItineraryStep[] }) {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h4 className="text-sm font-semibold text-slate-950 dark:text-white">Your itinerary</h4>
-          <p className="mt-0.5 text-xs text-slate-500 dark:text-white/45">
-            Completed · current · coming next
-          </p>
         </div>
         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500 dark:bg-white/[0.06] dark:text-white/50">
           Auto-saved

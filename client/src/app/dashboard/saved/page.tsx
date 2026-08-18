@@ -14,9 +14,6 @@ export default async function SavedPage() {
           <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
             {contacts.length.toLocaleString("en")} revealed {contacts.length === 1 ? "contact" : "contacts"}
           </h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-white/55">
-            Every contact your workspace has revealed, across all lists.
-          </p>
         </div>
       </section>
 

@@ -15,10 +15,6 @@ export default async function CargoRulesPage() {
       <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
         <h2 className="text-2xl font-semibold text-slate-950">Cargo Change Trigger Rules</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Fire a campaign when a vessel&apos;s previous cargo and next cargo combination matches. Leave previous cargo empty to
-          match any → next cargo (e.g. ANY → GRAIN).
-        </p>
         <p className="mt-1 text-xs text-slate-400">
           <Link className="text-ocean hover:underline" href="/dashboard/settings/port-rules">Port campaign rules →</Link>
         </p>

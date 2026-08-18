@@ -28,9 +28,6 @@ export default function SettingsPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-shell">
         <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Workspace Settings</p>
         <h2 className="mt-1 text-2xl font-semibold text-slate-950">Configure ETA automation</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Port and cargo rules drive which campaigns are auto-suggested when a new VesselETA is created.
-        </p>
       </section>
       <section className="grid gap-4 md:grid-cols-2">
         {settingsLinks.map((link) => {
@@ -50,9 +47,6 @@ export default function SettingsPage() {
       </section>
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Coming soon</h3>
-        <p className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-          <Anchor className="h-4 w-4 text-slate-400" /> Team management — invite members and assign roles to your workspace.
-        </p>
       </section>
     </div>
   );

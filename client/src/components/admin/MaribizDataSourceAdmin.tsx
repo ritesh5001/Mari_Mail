@@ -98,10 +98,6 @@ export function MaribizDataSourceAdmin({
               <Database className="h-6 w-6 text-ocean" />
               Maribiz Persons API
             </h1>
-            <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-              External database of 600k+ marine industry contacts. When enabled, contact searches
-              merge results from this source into the normal results table.
-            </p>
           </div>
 
           <label className="inline-flex cursor-pointer select-none items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-800 shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80">
@@ -152,9 +148,6 @@ export function MaribizDataSourceAdmin({
             <Zap className="h-4 w-4" />
             Connection
           </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Test connectivity to the secondary database and record the result.
-          </p>
 
           {settings.lastTestAt ? (
             <div
@@ -213,9 +206,6 @@ export function MaribizDataSourceAdmin({
             <Activity className="h-4 w-4" />
             Usage
           </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-            Counts of Maribiz queries and cache hits.
-          </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3 dark:border-white/[0.06] dark:bg-white/[0.02]">
@@ -242,9 +232,6 @@ export function MaribizDataSourceAdmin({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-white/60">
           Tuning
         </h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-white/60">
-          Adjust how aggressively MariMail queries and caches the secondary database.
-        </p>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="block text-sm">

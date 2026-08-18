@@ -12,11 +12,6 @@ export default function EtaCsvUploadPage() {
         <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">
           Update vessel ETAs from a CSV
         </h1>
-        <p className="mt-2 text-sm text-slate-600 dark:text-white/60">
-          Upload a CSV with one row per vessel. We match each row to a vessel by IMO number, then
-          update its latest ETA. Matching includes vessels visible from the global vessel database;
-          unknown IMOs are skipped — no new ships are created.
-        </p>
         <ul className="mt-4 space-y-1.5 text-sm text-slate-600 dark:text-white/60">
           <li>
             <span className="font-medium text-slate-900 dark:text-white">IMO</span> — 7-digit IMO

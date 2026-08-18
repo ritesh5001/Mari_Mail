@@ -1738,9 +1738,6 @@ function FilterModalShell({
               </span>
               <div className="min-w-0">
                 <h2 className="text-[15px] font-semibold tracking-tight text-slate-900 dark:text-white">Filters</h2>
-                <p className="text-[11px] text-slate-500 dark:text-white/45">
-                  Searching arrivals in the countries your plan covers
-                </p>
               </div>
               {active > 0 ? (
                 <span className="ml-1 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-500 px-1.5 text-[10px] font-bold text-white">

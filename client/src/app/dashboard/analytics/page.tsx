@@ -22,7 +22,6 @@ export default async function AnalyticsHome() {
           <BarChart3 className="h-6 w-6 text-ocean" />
           <div>
             <h2 className="text-2xl font-semibold text-slate-950">Analytics</h2>
-            <p className="text-sm text-slate-600">Funnel performance, port heat maps, operator behaviour intelligence, exportable reports.</p>
           </div>
         </div>
       </section>

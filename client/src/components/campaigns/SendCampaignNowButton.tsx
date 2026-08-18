@@ -151,11 +151,6 @@ export function SendCampaignNowButton({
                 <h3 className="text-lg font-semibold text-slate-950 dark:text-white">
                   Send now
                 </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-white/55">
-                  Pick the recipients who should receive Step 1 right now. Bypasses the
-                  scheduled send window and uses the same provider pipeline a campaign
-                  send uses.
-                </p>
               </div>
               <button
                 type="button"

@@ -21,7 +21,6 @@ export default async function PortAnalyticsPage() {
             <MapIcon className="h-6 w-6 text-ocean" />
             <div>
               <h2 className="text-2xl font-semibold text-slate-950">Port performance</h2>
-              <p className="text-sm text-slate-600">Reply rate by port, Day-N timing, and port × vessel-type heat map.</p>
             </div>
           </div>
           <ExportButtons pdfFilename="marimail-port-performance" pdfTargetId="port-analytics-export" csvHref={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/api/analytics/ports.csv`} />
@@ -50,7 +49,6 @@ export default async function PortAnalyticsPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Best Day-N timing</h3>
-          <p className="text-xs text-slate-500">Where each step in the IPC sequence converts best</p>
         </div>
         <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
           <table className="min-w-full text-sm">

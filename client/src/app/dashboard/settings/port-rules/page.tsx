@@ -18,10 +18,6 @@ export default async function PortRulesPage() {
       <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
         <h2 className="text-2xl font-semibold text-slate-950">Port Campaign Rules</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Auto-assign an ETA-triggered campaign when a vessel of a given type arrives at a specific port. Rules are scored by
-          priority — lowest fires first.
-        </p>
         <p className="mt-1 text-xs text-slate-400"><Link className="text-ocean hover:underline" href="/dashboard/settings/cargo-rules">Cargo change rules →</Link></p>
       </header>
       <PortRuleManager rules={rules.map((rule) => ({
