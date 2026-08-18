@@ -373,7 +373,35 @@ export function VesselFilterPanel({
   orientation?: "vertical" | "horizontal" | "modal";
 }) {
   const router = useRouter();
-  const [state, setState] = useState<FilterState>(() => searchParamsToState(searchParams));
+
+  /**
+   * APPLIED vs DRAFT.
+   *
+   * `applied` is derived from the URL, so it is by definition what the table
+   * below is showing. `state` is the draft the user is editing in the modal.
+   *
+   * They used to be the same object, which meant closing the modal without
+   * pressing Apply left the chips and the count describing a filter that had
+   * never run — the toolbar confidently listing three countries over an
+   * unfiltered table. Everything the toolbar renders now reads `applied`;
+   * only the modal's own rail and footer read the draft.
+   *
+   * Deriving from the URL also fixes browser back/forward for free: the old
+   * lazy `useState` initialiser ran once, so navigating back changed the
+   * results and left the panel showing the previous filter.
+   */
+  // Keyed on a serialisation of the params so `applied` stays referentially
+  // stable between renders — the effect below depends on it.
+  const appliedKey = JSON.stringify(searchParams);
+  const applied = useMemo(() => searchParamsToState(searchParams), [appliedKey]);
+  const [state, setState] = useState<FilterState>(applied);
+
+  // Re-seed the draft whenever the URL moves under it (apply, back/forward, a
+  // saved set being run). Without this the draft would win over a navigation
+  // the user just made.
+  useEffect(() => {
+    setState(applied);
+  }, [applied]);
   // Two hundred countries is a scroll, not a chooser. Both lists get a filter
   // box so a known destination is two keystrokes away rather than a hunt.
   const [countryQuery, setCountryQuery] = useState("");
@@ -430,7 +458,12 @@ export function VesselFilterPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countriesKey]);
 
+  // The DRAFT's count: what the modal's own rail and footer describe.
   const active = countActive(state);
+  // The APPLIED count, for the toolbar. Counted per value so it agrees with
+  // the chips beside it — the badge used to count facet groups, so it said
+  // "3" next to twelve chips.
+  const appliedActive = countActive(applied);
   const typeCount = state.vesselType.length;
 
   function patch(part: Partial<FilterState>) {
@@ -533,12 +566,14 @@ export function VesselFilterPanel({
   /**
    * Apply a change immediately, without waiting for the Search button.
    *
-   * Used by the chip ×: `apply()` reads from `state`, and React state updates
-   * are asynchronous, so patching and then applying in the same handler would
-   * navigate with the value the user just removed still in the URL.
+   * Used by the chip × and by running a saved set. Built from `applied` rather
+   * than the draft, because a chip is an undo of something already in the
+   * results — and because React state updates are asynchronous, so patching
+   * then calling `apply()` would navigate with the value the user just removed
+   * still in the URL.
    */
   function applyWith(part: Partial<FilterState>) {
-    const next = { ...state, ...part };
+    const next = { ...applied, ...part };
     setState(next);
     const params = stateToParams(next);
     const pageSize = searchParams.pageSize;
@@ -557,6 +592,14 @@ export function VesselFilterPanel({
    */
   const savedFilterConfig = Object.fromEntries(stateToParams(state).entries());
 
+  /**
+   * Run a saved set.
+   *
+   * Loading used to fill the form and stop there, so picking "Tankers · Brazil"
+   * changed nothing the user could see until they also found the Search button
+   * — which reads as the feature being broken. A saved set is a destination,
+   * not a starting point, so it navigates straight away.
+   */
   function loadSavedFilter(config: unknown) {
     const raw = (config ?? {}) as Record<string, unknown>;
     const params: SearchParams = {};
@@ -564,7 +607,10 @@ export function VesselFilterPanel({
       if (typeof value === "string") params[key] = value;
       else if (Array.isArray(value)) params[key] = value.filter((v): v is string => typeof v === "string");
     }
-    setState(searchParamsToState(params));
+    const next = searchParamsToState(params);
+    setState(next);
+    const qs = stateToParams(next).toString();
+    router.push(qs ? `${basePath}?${qs}` : basePath);
   }
 
   function reset() {
@@ -1143,7 +1189,7 @@ export function VesselFilterPanel({
     activeChips.push({ key, label, section, onRemove: () => applyWith(part) });
   };
   const pushText = (field: keyof FilterState, prefix: string, section: string) => {
-    const raw = state[field];
+    const raw = applied[field];
     if (typeof raw === "string" && raw.trim()) {
       pushChip(String(field), `${prefix}: ${raw.trim()}`, section, { [field]: "" } as Partial<FilterState>);
     }
@@ -1154,8 +1200,8 @@ export function VesselFilterPanel({
     label: string,
     section: string,
   ) => {
-    const min = String(state[minField] ?? "").trim();
-    const max = String(state[maxField] ?? "").trim();
+    const min = String(applied[minField] ?? "").trim();
+    const max = String(applied[maxField] ?? "").trim();
     if (!min && !max) return;
     pushChip(`${String(minField)}-range`, `${label} ${min || "…"}–${max || "…"}`, section, {
       [minField]: "",
@@ -1168,17 +1214,17 @@ export function VesselFilterPanel({
     section: string,
     format: (value: string) => string = (v) => v,
   ) => {
-    for (const item of state[field]) {
+    for (const item of applied[field]) {
       pushChip(`${field}:${item}`, `${prefix}: ${format(item)}`, section, {
-        [field]: state[field].filter((v) => v !== item),
+        [field]: applied[field].filter((v) => v !== item),
       } as Partial<FilterState>);
     }
   };
 
-  if (state.hasEta) pushChip("hasEta", "Has an ETA", "eta", { hasEta: false });
-  if (state.noCampaign) pushChip("noCampaign", "No campaign attached", "eta", { noCampaign: false });
-  if (state.etaFrom || state.etaTo) {
-    pushChip("etaWindow", `ETA ${state.etaFrom || "any"} → ${state.etaTo || "any"}`, "eta", {
+  if (applied.hasEta) pushChip("hasEta", "Has an ETA", "eta", { hasEta: false });
+  if (applied.noCampaign) pushChip("noCampaign", "No campaign attached", "eta", { noCampaign: false });
+  if (applied.etaFrom || applied.etaTo) {
+    pushChip("etaWindow", `ETA ${applied.etaFrom || "any"} → ${applied.etaTo || "any"}`, "eta", {
       etaFrom: "",
       etaTo: "",
     });
@@ -1213,9 +1259,9 @@ export function VesselFilterPanel({
   pushText("globalArea", "Area", "eta");
   pushText("navStatus", "Nav status", "eta");
   pushText("currentPortCountry", "Currently in", "eta");
-  if (state.verified) pushChip("verified", "Verified only", "type", { verified: false });
-  if (state.hasMmsi) pushChip("hasMmsi", "AIS active", "type", { hasMmsi: false });
-  if (state.hasEmail) pushChip("hasEmail", "Has contact email", "type", { hasEmail: false });
+  if (applied.verified) pushChip("verified", "Verified only", "type", { verified: false });
+  if (applied.hasMmsi) pushChip("hasMmsi", "AIS active", "type", { hasMmsi: false });
+  if (applied.hasEmail) pushChip("hasEmail", "Has contact email", "type", { hasEmail: false });
 
   const searchRow = (
     <div className="flex min-w-0 gap-2">
@@ -1240,13 +1286,29 @@ export function VesselFilterPanel({
     return (
       <FilterModalShell
         active={active}
+        appliedActive={appliedActive}
         searchRow={searchRow}
         sections={sectionList}
         onApply={apply}
         onReset={reset}
+        // Seed the draft from what is applied when the modal opens, and throw
+        // the draft away when it is cancelled — the two halves of "Cancel
+        // discards, Apply commits".
+        onOpen={() => setState(applied)}
+        onCancel={() => setState(applied)}
         chips={activeChips}
         savedSets={
           <SavedFilterSets
+            mode="picker"
+            entityType="ETA"
+            value={savedFilterConfig}
+            hasFilter={appliedActive > 0}
+            onLoad={loadSavedFilter}
+          />
+        }
+        saveControl={
+          <SavedFilterSets
+            mode="save"
             entityType="ETA"
             value={savedFilterConfig}
             hasFilter={active > 0}
@@ -1562,38 +1624,60 @@ type FilterSectionMeta = {
  */
 function FilterModalShell({
   active,
+  appliedActive,
   searchRow,
   sections,
   onApply,
   onReset,
+  onOpen,
+  onCancel,
   chips,
   savedSets,
+  saveControl,
 }: {
+  /** Count of the DRAFT — what the rail and footer describe. */
   active: number;
+  /** Count of what is APPLIED — what the toolbar describes. */
+  appliedActive: number;
   searchRow: React.ReactNode;
   sections: FilterSectionMeta[];
   onApply: () => void;
   onReset: () => void;
+  /** Seed the draft from the applied filter. */
+  onOpen: () => void;
+  /** Throw the draft away. */
+  onCancel: () => void;
   chips: Array<{ key: string; label: string; section: string; onRemove: () => void }>;
   savedSets: React.ReactNode;
+  saveControl: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
   const [activeKey, setActiveKey] = useState(sections[0]?.key ?? "");
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   function open() {
     if (closeTimer.current) {
       clearTimeout(closeTimer.current);
       closeTimer.current = null;
     }
+    onOpen();
     setMounted(true);
     // Next frame — mount first so the DOM lands with the "hidden" classes,
     // then flip `visible` to trigger the transition.
     requestAnimationFrame(() => setVisible(true));
   }
 
+  /** Close WITHOUT committing — discards the draft. */
   function close() {
+    onCancel();
+    setVisible(false);
+    closeTimer.current = setTimeout(() => setMounted(false), 220);
+  }
+
+  /** Close after the draft has already been committed by `handleApply`. */
+  function dismiss() {
     setVisible(false);
     closeTimer.current = setTimeout(() => setMounted(false), 220);
   }
@@ -1618,17 +1702,49 @@ function FilterModalShell({
   useEffect(() => {
     if (!mounted) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        close();
+        return;
+      }
+      // Trap Tab inside the dialog. Without this the focus ring walks out into
+      // the page behind the backdrop, where nothing is visible and Enter can
+      // fire a control the user cannot see.
+      if (e.key !== "Tab") return;
+      const root = dialogRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [mounted]);
 
+  // Move focus into the dialog once it is on screen, so a keyboard user starts
+  // inside it rather than wherever they were on the page behind.
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => {
+      dialogRef.current?.querySelector<HTMLElement>("nav button")?.focus();
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
   const activeSection = sections.find((s) => s.key === activeKey) ?? sections[0];
 
   function handleApply() {
     onApply();
-    close();
+    dismiss();
   }
 
   return (
@@ -1647,9 +1763,9 @@ function FilterModalShell({
         >
           <Filter className="h-3.5 w-3.5 text-accent-500" />
           Filters
-          {active ? (
+          {chips.length ? (
             <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
-              {active}
+              {chips.length}
             </span>
           ) : null}
         </button>
@@ -1691,7 +1807,7 @@ function FilterModalShell({
           )}
         </div>
 
-        {active ? (
+        {appliedActive ? (
           <button
             type="button"
             onClick={onReset}
@@ -1727,6 +1843,7 @@ function FilterModalShell({
               flat vh so it stays comfortable on a laptop and doesn't become a
               full-height sheet on a tall monitor; the pane scrolls inside it. */}
           <div
+            ref={dialogRef}
             className={`flex h-[clamp(480px,72vh,660px)] max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_32px_80px_rgba(15,23,42,0.28)] transition-all duration-200 ease-out dark:border-white/10 dark:bg-[#0C0C0F] ${
               visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-3 scale-[0.98] opacity-0"
             }`}
@@ -1819,18 +1936,28 @@ function FilterModalShell({
             {/* Footer — states what the filter currently does, then Done (keep
                 the selection, close) and Apply & search (run it). */}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 dark:border-white/[0.06] dark:bg-white/[0.02]">
-              <p className="text-[12px] text-slate-500 dark:text-white/45">
-                {active === 0
-                  ? "No filters — every arrival in scope will be returned."
-                  : `${active} filter${active === 1 ? "" : "s"} applied.`}
-              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-[12px] text-slate-500 dark:text-white/45">
+                  {active === 0
+                    ? "No filters — every arrival in scope will be returned."
+                    : `${active} filter${active === 1 ? "" : "s"} selected.`}
+                </p>
+                {/* Saving lives with the thing being saved. It used to sit in
+                    the toolbar, so building a filter and keeping it meant
+                    closing the modal first and trusting it had captured what
+                    you did. Saves the DRAFT — what is on screen. */}
+                {saveControl}
+              </div>
               <div className="flex items-center gap-2">
                 {active > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
+                      // Reset COMMITS an empty filter, so it dismisses rather
+                      // than cancelling — `close()` would restore the draft it
+                      // just cleared.
                       onReset();
-                      close();
+                      dismiss();
                     }}
                     className="rounded-lg px-3 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-red-50 hover:text-red-600 dark:text-white/55 dark:hover:bg-red-500/10 dark:hover:text-red-300"
                   >
@@ -1842,7 +1969,7 @@ function FilterModalShell({
                   onClick={close}
                   className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80"
                 >
-                  Done
+                  Cancel
                 </button>
                 <button
                   type="button"

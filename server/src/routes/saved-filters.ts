@@ -55,6 +55,50 @@ savedFilterRouter.post("/", requireAuth, async (req, res, next) => {
   }
 });
 
+const updateSchema = z.object({
+  name: z.string().trim().min(2).optional(),
+  filterConfig: z.unknown().optional(),
+});
+
+/**
+ * Update a saved filter in place.
+ *
+ * Renaming and overwriting used to be done client-side as DELETE + POST, which
+ * has a hole in the middle: if the create failed — offline, validation, a 500 —
+ * the set was already gone and there was nothing to undo with. One statement
+ * removes the window entirely.
+ */
+savedFilterRouter.patch("/:id", requireAuth, async (req, res, next) => {
+  try {
+    const input = updateSchema.safeParse(req.body);
+    if (!input.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", input.error.issues[0]?.message ?? "Invalid input");
+    }
+    const { workspaceId } = (req as AuthedRequest).auth;
+
+    // Scoped the same way as DELETE, so one workspace cannot rewrite another's
+    // saved filters by guessing an id.
+    const existing = await prisma.savedFilter.findFirst({
+      where: { AND: [{ id: req.params.id }, workspaceScope(workspaceId)] },
+      select: { id: true },
+    });
+    if (!existing) return sendError(res, 404, "NOT_FOUND", "Saved filter not found");
+
+    const filter = await prisma.savedFilter.update({
+      where: { id: existing.id },
+      data: {
+        ...(input.data.name !== undefined ? { name: input.data.name } : {}),
+        ...(input.data.filterConfig !== undefined
+          ? { filterConfig: input.data.filterConfig as Prisma.InputJsonValue }
+          : {}),
+      },
+    });
+    return sendData(res, filter);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 savedFilterRouter.delete("/:id", requireAuth, async (req, res, next) => {
   try {
     const { workspaceId } = (req as AuthedRequest).auth;

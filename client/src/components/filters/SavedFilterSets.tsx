@@ -30,6 +30,7 @@ export function SavedFilterSets({
   onLoad,
   disabled,
   namePlaceholder = "e.g. My saved filter",
+  mode = "both",
 }: {
   entityType: SavedFilterEntityType;
   /** The JSON to persist when the user saves. */
@@ -40,6 +41,18 @@ export function SavedFilterSets({
   onLoad: (filterConfig: unknown) => void;
   disabled?: boolean;
   namePlaceholder?: string;
+  /**
+   * Which halves to render.
+   *
+   * Saving belongs next to the filter being saved — inside the modal — while
+   * loading belongs in the toolbar, where recalling a set should not cost a
+   * trip through the modal first. Splitting one component rather than writing
+   * two keeps the fetch, the outside-click handling and the naming popover in
+   * a single place.
+   *
+   * "both" is the original toolbar control, still used by the contact filter.
+   */
+  mode?: "both" | "picker" | "save";
 }) {
   const [sets, setSets] = useState<SavedSet[]>([]);
   const [open, setOpen] = useState(false);
@@ -47,6 +60,7 @@ export function SavedFilterSets({
   const [naming, setNaming] = useState<null | { mode: "create" } | { mode: "rename"; id: string }>(null);
   const [name, setName] = useState("");
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -88,32 +102,55 @@ export function SavedFilterSets({
     return () => document.removeEventListener("mousedown", onDoc, true);
   }, [open, naming]);
 
-  async function save() {
+  /**
+   * Create a set, or update one in place.
+   *
+   * Updating goes through PATCH. It used to be DELETE followed by POST, which
+   * left a window where a failed create had already destroyed the set with
+   * nothing to undo from — losing a filter someone spent minutes building
+   * because a request timed out is not a trade worth making for one route.
+   */
+  async function save(target?: { id: string; keepName?: boolean }) {
     const trimmed = name.trim();
-    if (trimmed.length < 2 || !naming) return;
+    if (!target && trimmed.length < 2) return;
     setSaving(true);
+    setError(null);
     try {
-      if (naming.mode === "rename") {
-        // Overwrite = delete + re-create. The saved-filters route has no PATCH,
-        // and this stays one click for the user either way.
-        await apiFetch(`/api/saved-filters/${naming.id}`, { method: "DELETE" });
+      const res = target
+        ? await apiFetch(`/api/saved-filters/${target.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...(target.keepName ? {} : { name: trimmed }),
+              filterConfig: value,
+            }),
+          })
+        : await apiFetch("/api/saved-filters", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: trimmed, entityType, filterConfig: value }),
+          });
+
+      if (!res.ok) {
+        setError("Could not save that set.");
+        return;
       }
-      const res = await apiFetch("/api/saved-filters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: trimmed, entityType, filterConfig: value }),
-      });
-      if (res.ok) {
-        const payload = (await res.json()) as { data?: { id?: string } };
-        setName("");
-        setNaming(null);
-        if (payload.data?.id) setLoadedId(payload.data.id);
-        await load();
-      }
+      const payload = (await res.json()) as { data?: { id?: string } };
+      setName("");
+      setNaming(null);
+      if (payload.data?.id) setLoadedId(payload.data.id);
+      await load();
+    } catch {
+      setError("Could not reach the server.");
     } finally {
       setSaving(false);
     }
   }
+
+  /** A set already using the typed name — the overwrite candidate. */
+  const nameClash = sets.find(
+    (set) => set.name.trim().toLowerCase() === name.trim().toLowerCase() && naming?.mode === "create",
+  );
 
   async function remove(id: string) {
     const res = await apiFetch(`/api/saved-filters/${id}`, { method: "DELETE" });
@@ -127,6 +164,7 @@ export function SavedFilterSets({
 
   return (
     <div ref={boxRef} className="relative flex items-center gap-2">
+      {mode !== "save" ? (
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -141,8 +179,10 @@ export function SavedFilterSets({
           className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/40 ${open ? "rotate-180" : ""}`}
         />
       </button>
+      ) : null}
 
       {/* Gated on `hasFilter` so empty presets never reach the dropdown. */}
+      {mode !== "picker" ? (
       <button
         type="button"
         onClick={() => {
@@ -155,8 +195,9 @@ export function SavedFilterSets({
         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-accent-500/25 bg-accent-500/10 px-2.5 py-2 text-[12px] font-semibold text-accent-600 shadow-sm transition hover:bg-accent-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent-500/10 disabled:hover:text-accent-600 dark:text-accent-200 dark:disabled:hover:text-accent-200"
       >
         <BookmarkPlus className="h-3.5 w-3.5" />
-        Save
+        {mode === "save" ? "Save set" : "Save"}
       </button>
+      ) : null}
 
       {naming ? (
         <div className="absolute right-0 top-full z-[70] mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
@@ -169,7 +210,9 @@ export function SavedFilterSets({
               value={name}
               onChange={(event) => setName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void save();
+                if (event.key === "Enter") {
+                  void save(naming.mode === "rename" ? { id: naming.id } : undefined);
+                }
                 if (event.key === "Escape") {
                   setNaming(null);
                   setName("");
@@ -180,8 +223,8 @@ export function SavedFilterSets({
             />
             <button
               type="button"
-              onClick={() => void save()}
-              disabled={saving || name.trim().length < 2}
+              onClick={() => void save(naming.mode === "rename" ? { id: naming.id } : undefined)}
+              disabled={saving || name.trim().length < 2 || Boolean(nameClash)}
               className="inline-flex items-center gap-1 rounded-md bg-accent-500 px-2.5 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-600 disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
@@ -199,6 +242,38 @@ export function SavedFilterSets({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
+
+          {/* A name that is already taken used to create a second set with the
+              same label, leaving two indistinguishable rows in the dropdown.
+              Offer the two things the user could actually mean instead. */}
+          {nameClash ? (
+            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 dark:border-amber-500/30 dark:bg-amber-500/10">
+              <p className="text-[11px] text-amber-900 dark:text-amber-200">
+                &ldquo;{nameClash.name}&rdquo; already exists.
+              </p>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void save({ id: nameClash.id, keepName: true })}
+                  disabled={saving}
+                  className="rounded-md bg-amber-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+                >
+                  Update it
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setName(`${name.trim()} (copy)`)}
+                  className="rounded-md border border-amber-300 px-2 py-1 text-[11px] font-medium text-amber-900 transition hover:bg-amber-100 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-500/15"
+                >
+                  Save as new
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {error ? (
+            <p className="mt-2 text-[11px] text-rose-600 dark:text-rose-300">{error}</p>
+          ) : null}
         </div>
       ) : null}
 
