@@ -468,11 +468,16 @@ export function ContactListDetail({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-red-600 hover:border-red-200 hover:bg-red-50 dark:border-white/10 dark:text-red-300 dark:hover:bg-red-500/10"
+              /* Quiet by default. A destructive, rarely-wanted action was the
+                 loudest control on the page — bordered, coloured, top-right,
+                 where the eye lands first. It stays one click away and still
+                 asks for confirmation; it just stops competing with the work
+                 the page is actually for. */
+              className="inline-flex items-center gap-1.5 rounded-md p-2 text-sm font-medium text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:text-white/35 dark:hover:bg-red-500/10 dark:hover:text-red-300"
               title="Delete this list — contacts, vessels, and companies stay in the DB"
+              aria-label="Delete list"
             >
               <Trash2 className="h-4 w-4" />
-              Delete list
             </button>
           )}
         </section>
@@ -939,22 +944,42 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
     contacts: (v) => v.contactCount,
     added: (v) => (v.addedAt ? new Date(v.addedAt) : null),
   });
+  /**
+   * Columns where EVERY row is empty are dropped.
+   *
+   * Flag, current port and operator are blank for most imported fleets, so the
+   * table was 1100px wide — forcing a horizontal scroll — to show three columns
+   * of "—". Hiding a column that holds nothing costs the user nothing and buys
+   * back the width the populated columns need.
+   *
+   * Keyed off the rows actually rendered, so a column returns the moment any
+   * vessel has a value for it.
+   */
+  const has = {
+    flag: rows.some((v) => v.flag),
+    currentPort: rows.some((v) => v.currentPortUnlocode),
+    commercialManager: rows.some((v) => v.commercialManagerName ?? v.commercialManagerCompany?.companyName),
+    ismManager: rows.some((v) => v.ismManagerName ?? v.ismManagerCompany?.companyName),
+    operator: rows.some((v) => v.operatorName),
+    dwt: rows.some((v) => v.capacityDwt ?? v.dwt),
+  };
+
   if (rows.length === 0) {
     return <p className="px-4 py-10 text-center text-sm text-slate-500">No vessels in this list yet.</p>;
   }
   return (
-    <table className="min-w-[1100px] divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
+    <table className="min-w-[820px] divide-y divide-slate-200 text-sm dark:divide-white/[0.06]">
       <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-white/[0.02] dark:text-white/60 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
         <tr>
           <SortableHeader label="Vessel" sortKey="vessel" sort={sort} onSort={toggle} />
           <SortableHeader label="IMO" sortKey="imo" sort={sort} onSort={toggle} />
           <SortableHeader label="Type" sortKey="type" sort={sort} onSort={toggle} />
-          <SortableHeader label="Flag" sortKey="flag" sort={sort} onSort={toggle} />
-          <SortableHeader label="Capacity - Dwt" sortKey="dwt" sort={sort} onSort={toggle} />
-          <SortableHeader label="Current Port Unlocode" sortKey="currentPort" sort={sort} onSort={toggle} />
-          <SortableHeader label="Commercial Manager" sortKey="commercialManager" sort={sort} onSort={toggle} />
-          <SortableHeader label="Ism Manager" sortKey="ismManager" sort={sort} onSort={toggle} />
-          <SortableHeader label="Operator" sortKey="operator" sort={sort} onSort={toggle} />
+          {has.flag ? <SortableHeader label="Flag" sortKey="flag" sort={sort} onSort={toggle} /> : null}
+          {has.dwt ? <SortableHeader label="Capacity - Dwt" sortKey="dwt" sort={sort} onSort={toggle} /> : null}
+          {has.currentPort ? <SortableHeader label="Current Port Unlocode" sortKey="currentPort" sort={sort} onSort={toggle} /> : null}
+          {has.commercialManager ? <SortableHeader label="Commercial Manager" sortKey="commercialManager" sort={sort} onSort={toggle} /> : null}
+          {has.ismManager ? <SortableHeader label="Ism Manager" sortKey="ismManager" sort={sort} onSort={toggle} /> : null}
+          {has.operator ? <SortableHeader label="Operator" sortKey="operator" sort={sort} onSort={toggle} /> : null}
           <SortableHeader label="Next ETA" sortKey="nextEta" sort={sort} onSort={toggle} />
           <SortableHeader label="Contacts" sortKey="contacts" sort={sort} onSort={toggle} />
           <SortableHeader label="Added" sortKey="added" sort={sort} onSort={toggle} />
@@ -971,12 +996,12 @@ function VesselsTable({ rows, onRemove }: { rows: ListVesselRow[]; onRemove: (id
             </td>
             <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.imoNumber}</td>
             <td className="px-4 py-3 text-slate-600 dark:text-white/60">{formatEnum(vessel.vesselType)}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.flag ?? "—"}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.capacityDwt?.toLocaleString() ?? vessel.dwt?.toLocaleString() ?? "—"}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.currentPortUnlocode ?? "—"}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.commercialManagerName ?? vessel.commercialManagerCompany?.companyName ?? "—"}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.ismManagerName ?? vessel.ismManagerCompany?.companyName ?? "—"}</td>
-            <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.operatorName ?? "—"}</td>
+            {has.flag ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.flag ?? "—"}</td> : null}
+            {has.dwt ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.capacityDwt?.toLocaleString() ?? vessel.dwt?.toLocaleString() ?? "—"}</td> : null}
+            {has.currentPort ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.currentPortUnlocode ?? "—"}</td> : null}
+            {has.commercialManager ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.commercialManagerName ?? vessel.commercialManagerCompany?.companyName ?? "—"}</td> : null}
+            {has.ismManager ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.ismManagerName ?? vessel.ismManagerCompany?.companyName ?? "—"}</td> : null}
+            {has.operator ? <td className="px-4 py-3 text-slate-600 dark:text-white/60">{vessel.operatorName ?? "—"}</td> : null}
             <td className="whitespace-nowrap px-4 py-3">
               <VesselNextEtaBadge nextEta={vessel.nextEta} nextEtaPort={vessel.nextEtaPort} />
             </td>

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Loader2, Upload } from "lucide-react";
+import { ChevronRight, Download, Loader2, Upload } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 
 const TEMPLATE_HEADERS = [
@@ -249,11 +249,17 @@ export function ImportContactsCsvSection({ listId }: { listId: string }) {
   const busy = status.kind === "parsing" || status.kind === "uploading";
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Import contacts from CSV</h3>
-        </div>
+    /* Collapsed by default. A one-off setup action was holding the second-most
+       prominent slot on a page people open every day to work the list — and it
+       is admin-only, so most sessions never touch it. Progressive disclosure:
+       it stays one click away, without costing everyone the vertical space. */
+    <details className="group rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-3">
+        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-90 dark:text-white/35" />
+        <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Import contacts from CSV</h3>
+      </summary>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-t border-slate-100 px-5 py-4 dark:border-white/[0.06]">
+        <div />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -288,22 +294,22 @@ export function ImportContactsCsvSection({ listId }: { listId: string }) {
       </div>
 
       {status.kind === "error" ? (
-        <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-xs font-medium text-red-700">
+        <p className="mx-5 mb-4 rounded-md border border-red-200 bg-red-50 p-2 text-xs font-medium text-red-700">
           {status.message}
         </p>
       ) : null}
       {status.kind === "uploading" ? (
-        <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
+        <p className="mx-5 mb-4 rounded-md border border-slate-200 bg-slate-50 p-2 text-xs text-slate-700">
           Uploading {status.count} rows…
         </p>
       ) : null}
       {status.kind === "done" ? (
-        <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs font-medium text-emerald-800">
+        <p className="mx-5 mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs font-medium text-emerald-800">
           Imported {status.linked} of {status.totalRows} rows into this list ({status.created} new
           contact{status.created === 1 ? "" : "s"} created
           {status.skipped > 0 ? `, ${status.skipped} skipped for missing/invalid email` : ""}).
         </p>
       ) : null}
-    </section>
+    </details>
   );
 }
