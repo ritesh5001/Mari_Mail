@@ -422,7 +422,13 @@ export function ContactListDetail({
         <section className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.06] dark:bg-[#0A0A0C]">
           <div>
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold uppercase tracking-wide text-ocean">{formatEnum(list.type)} List</p>
+              {/* Only SMART is worth naming. Nearly every list is STATIC, so
+                  the word was on screen for everyone while telling almost
+                  nobody anything; a self-updating list is the case that
+                  actually changes how you use it. */}
+              {list.type === "SMART" ? (
+                <p className="text-sm font-semibold uppercase tracking-wide text-ocean">Smart list</p>
+              ) : null}
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                   isEta
@@ -568,11 +574,6 @@ export function ContactListDetail({
           )}
           {tab === "newVessels" && isEta && (
             <div className="space-y-4">
-              <div className="mx-4 mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/[0.06]">
-                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
-                  {newVessels.length} vessel{newVessels.length === 1 ? "" : "s"} with no contacts yet
-                </p>
-              </div>
               <CampaignByRolePanel
                 listId={list.id}
                 listName={list.name}
@@ -2079,37 +2080,6 @@ export function CampaignByRolePanel({
 
   return (
     <div className="space-y-4">
-      {/* Credit balance strip. Rendered above the filter so the user can
-          see how many reveals they can afford before they select rows. Only
-          shows once we have a real number from /api/billing/me — no
-          skeleton flicker if the fetch is still in flight.
-
-          The pricing sentence that used to sit on the left is now the row's
-          tooltip: it is the same text on every list, so after the first read
-          it is pure furniture. */}
-      {creditBalance !== null ? (
-        <div
-          className="flex items-center justify-end gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-xs dark:border-white/10 dark:bg-white/[0.02]"
-          title={`An email reveal spends ${revealPricing.email} credit${revealPricing.email === 1 ? "" : "s"}; a phone number spends ${revealPricing.phone}. Adding contacts to this list reveals their emails first — locked previews aren’t added.`}
-        >
-          <span className="text-slate-500 dark:text-white/50">
-            {revealPricing.email} / email · {revealPricing.phone} / phone
-          </span>
-          <span
-            className={`ml-3 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
-              creditBalance <= 0
-                ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200"
-                : creditBalance < 50
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200"
-                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
-            }`}
-            title="Workspace credit balance"
-          >
-            {creditBalance.toLocaleString()} credits left
-          </span>
-        </div>
-      ) : null}
-
       {/* Filter toolbar on top, results beneath it at FULL width.
 
           This was a 300px sticky rail beside the table. The rail was

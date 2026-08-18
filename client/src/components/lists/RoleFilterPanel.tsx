@@ -518,6 +518,22 @@ export function RoleFilterPanel({
     setOpen(true);
   }
 
+  // Every facet, not just titles and companies — an earlier version dropped
+  // locations, employee ranges and keywords, so a loaded preset silently
+  // un-checked those fields.
+  const savedConfig = {
+    includeTitles: value.includeTitles,
+    excludeTitles: value.excludeTitles,
+    includeCompanies: value.includeCompanies,
+    excludeCompanies: value.excludeCompanies,
+    seniorities: value.seniorities,
+    personLocations: value.personLocations,
+    companyLocations: value.companyLocations,
+    employeeRanges: value.employeeRanges,
+    keywords: value.keywords,
+    emailStatus: value.emailStatus,
+  };
+
   const searchLabel = disabled ? "Searching…" : "Search";
 
   return (
@@ -600,27 +616,16 @@ export function RoleFilterPanel({
           ) : null}
 
           <div className="shrink-0">
-            {/* Saves EVERY facet, not just titles/companies — an earlier
-                version dropped locations, employee ranges and keywords, so a
-                loaded preset silently un-checked those fields. */}
+            {/* Loading stays in the toolbar so recalling a set is one click.
+                Saving moved into the modal footer, next to the filter being
+                saved. */}
             <SavedFilterSets
+              mode="picker"
               entityType="CONTACT"
-              value={{
-                includeTitles: value.includeTitles,
-                excludeTitles: value.excludeTitles,
-                includeCompanies: value.includeCompanies,
-                excludeCompanies: value.excludeCompanies,
-                seniorities: value.seniorities,
-                personLocations: value.personLocations,
-                companyLocations: value.companyLocations,
-                employeeRanges: value.employeeRanges,
-                keywords: value.keywords,
-                emailStatus: value.emailStatus,
-              }}
+              value={savedConfig}
               hasFilter={totalActive > 0}
               onLoad={(config) => onChange(normalizeRoleFilter(config))}
               disabled={disabled}
-              namePlaceholder="e.g. Fleet Managers · India"
             />
           </div>
 
@@ -669,9 +674,6 @@ export function RoleFilterPanel({
                 </option>
               ))}
             </select>
-            <span className="ml-auto pr-1 text-[10px] text-slate-400 dark:text-white/35">
-              Applies instantly to the {resultCount} loaded rows
-            </span>
           </div>
         ) : null}
       </div>
@@ -1039,11 +1041,22 @@ export function RoleFilterPanel({
 
                 {/* Footer */}
                 <div className="flex shrink-0 items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-5 py-3 dark:border-white/[0.06] dark:bg-white/[0.015]">
-                  <p className="min-w-0 flex-1 truncate text-[11px] text-slate-500 dark:text-white/45">
+                  <p className="min-w-0 truncate text-[11px] text-slate-500 dark:text-white/45">
                     {totalActive === 0
                       ? "No filters — everyone in scope will be returned."
-                      : `${totalActive} filter${totalActive === 1 ? "" : "s"} active · searching is free`}
+                      : `${totalActive} filter${totalActive === 1 ? "" : "s"} active`}
                   </p>
+                  {/* Saving belongs with the filter you just built, not in the
+                      toolbar behind the modal. Saves what is on screen. */}
+                  <SavedFilterSets
+                    mode="save"
+                    entityType="CONTACT"
+                    value={savedConfig}
+                    hasFilter={totalActive > 0}
+                    onLoad={(config) => onChange(normalizeRoleFilter(config))}
+                    namePlaceholder="e.g. Fleet Managers · India"
+                  />
+                  <div className="flex-1" />
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
