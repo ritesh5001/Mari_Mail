@@ -99,9 +99,10 @@ type BlockInput = {
 function resolveBlockValue(
   kind: BlockKind,
   input: BlockInput,
-): { value: string } | { error: { code: string; message: string } } {
+): { value: string; values: string[] } | { error: { code: string; message: string } } {
   if (kind === "CONTACT") {
-    return { value: normalizeEmail(input.email as string) };
+    const email = normalizeEmail(input.email as string);
+    return { value: email, values: [email] };
   }
 
   // A free-mail domain identifies a mailbox provider, not a company. Blocking
@@ -117,8 +118,27 @@ function resolveBlockValue(
     };
   }
 
-  const value = companyBlockValue(input);
-  if (!value) {
+  // Record EVERY identifier the company is known by, not just the best one.
+  //
+  // Provider rows are inconsistent: one person at COSCO arrives with
+  // `cosco.com`, the next with only "COSCO SHIPPING" and a placeholder email.
+  // A block stored under the domain alone could not match the second row, so
+  // blocking a company left some of its people in the results — which is
+  // exactly the bug this is fixing. Storing both keys makes any row shape
+  // match, and the unique index keeps repeats idempotent.
+  const keys = new Set<string>();
+  const domain = companyBlockValue({ domain: input.domain, website: input.website, email: input.email });
+  if (domain && domain.includes(".")) keys.add(domain);
+  const name = normalizeCompanyName(input.companyName);
+  if (name) keys.add(name);
+  // Fall back to whatever the general resolver finds (e.g. a name-derived key
+  // when there is no usable domain).
+  if (keys.size === 0) {
+    const fallback = companyBlockValue(input);
+    if (fallback) keys.add(fallback);
+  }
+
+  if (keys.size === 0) {
     return {
       error: {
         code: "VALIDATION_ERROR",
@@ -126,7 +146,7 @@ function resolveBlockValue(
       },
     };
   }
-  return { value };
+  return { value: Array.from(keys)[0], values: Array.from(keys) };
 }
 
 /** Contacts a block with this key would cover. */
@@ -167,28 +187,42 @@ blocklistRouter.post("/", requireAuth, async (req, res, next) => {
       input.label ??
       (kind === "CONTACT" ? (input.email as string) : (input.companyName ?? value));
 
-    const block = await prisma.workspaceBlock.upsert({
-      where: { workspaceId_kind_value: { workspaceId, kind, value } },
-      update: {
-        // Re-blocking refreshes the note and label rather than erroring.
-        label,
-        reason: input.reason ?? null,
-        createdById: userId,
-      },
-      create: {
-        workspaceId,
-        kind,
-        value,
-        label,
-        contactId: input.contactId ?? null,
-        reason: input.reason ?? null,
-        createdById: userId,
-      },
-    });
+    // One row per identifier — a company known by both a domain and a name
+    // gets both, so no row shape can slip past the match.
+    const blocks = [];
+    for (const key of resolved.values) {
+      blocks.push(
+        await prisma.workspaceBlock.upsert({
+          where: { workspaceId_kind_value: { workspaceId, kind, value: key } },
+          update: {
+            // Re-blocking refreshes the note and label rather than erroring.
+            label,
+            reason: input.reason ?? null,
+            createdById: userId,
+          },
+          create: {
+            workspaceId,
+            kind,
+            value: key,
+            label,
+            contactId: input.contactId ?? null,
+            reason: input.reason ?? null,
+            createdById: userId,
+          },
+        }),
+      );
+    }
 
-    const impact = await applyBlockRetroactively(workspaceId, kind, value);
+    // Each key can cover different people, so the impact is the union.
+    const impact = { contacts: 0, lists: 0, cancelledSends: 0 };
+    for (const key of resolved.values) {
+      const one = await applyBlockRetroactively(workspaceId, kind, key);
+      impact.contacts += one.contacts;
+      impact.lists += one.lists;
+      impact.cancelledSends += one.cancelledSends;
+    }
 
-    return sendData(res, { block, impact }, 201);
+    return sendData(res, { block: blocks[0], blocks, impact }, 201);
   } catch (error) {
     return next(error);
   }

@@ -1336,7 +1336,6 @@ export function CampaignByRolePanel({
 
   // Rows blocked from this panel, so the table can grey them out immediately
   // instead of waiting for a re-search to drop them.
-  const [blockedRows, setBlockedRows] = useState<Map<string, "CONTACT" | "COMPANY">>(new Map());
   const [blocking, setBlocking] = useState<string | null>(null);
 
   /**
@@ -1376,31 +1375,40 @@ export function CampaignByRolePanel({
         setToast(payload?.error?.message ?? "Could not block that.");
         return;
       }
-      setBlockedRows((prev) => {
-        const next = new Map(prev);
-        if (kind === "CONTACT") {
-          next.set(row.id, "CONTACT");
-        } else {
-          // A company block covers every row from that company on screen.
-          const key = (row.companyName || row.companyDomain || "").toLowerCase();
-          if (state.status === "loaded") {
-            for (const other of state.allRows) {
-              const otherKey = (other.companyName || other.companyDomain || "").toLowerCase();
-              if (key && otherKey === key) next.set(other.id, "COMPANY");
-            }
-          }
-          next.set(row.id, "COMPANY");
-        }
-        return next;
+      // Blocked people LEAVE the results. They used to stay on screen struck
+      // through, which read as "still here, just crossed out" — and the server
+      // omits them from the very next search anyway, so the row was a ghost
+      // that vanished on refresh with no explanation. Removing them now makes
+      // the screen agree with what the search will return.
+      const companyKey = (row.companyName || row.companyDomain || "").toLowerCase();
+      const covers = (candidate: ApolloRow) =>
+        kind === "CONTACT"
+          ? candidate.id === row.id
+          : Boolean(companyKey) &&
+            (candidate.companyName || candidate.companyDomain || "").toLowerCase() === companyKey;
+
+      let removed = 0;
+      setState((prev) => {
+        if (prev.status !== "loaded") return prev;
+        const kept = prev.allRows.filter((candidate) => !covers(candidate));
+        removed = prev.allRows.length - kept.length;
+        return { ...prev, allRows: kept };
       });
-      // Blocked rows must not stay selected — adding them to the list would be
+      // Nothing removed may still be selected — adding it to the list would be
       // an instruction the server is now bound to refuse.
       setSelected((prev) => {
         const next = new Set(prev);
-        next.delete(row.id);
+        for (const id of prev) {
+          const candidate = state.status === "loaded" ? state.allRows.find((r) => r.id === id) : undefined;
+          if (candidate && covers(candidate)) next.delete(id);
+        }
         return next;
       });
-      setToast(kind === "CONTACT" ? "Contact blocked." : "Company blocked — nobody there will be contacted.");
+      setToast(
+        kind === "CONTACT"
+          ? "Contact blocked and removed."
+          : `Company blocked — ${removed} ${removed === 1 ? "person" : "people"} removed from these results.`,
+      );
     } finally {
       setBlocking(null);
     }
@@ -2324,13 +2332,10 @@ export function CampaignByRolePanel({
                       "(no name)";
                     const emailKey = `${row.id}:email`;
                     const phoneKey = `${row.id}:phone`;
-                    const blockedAs = blockedRows.get(row.id);
                     return (
                       <tr
                         key={row.id}
-                        className={`hover:bg-slate-50 dark:hover:bg-white/[0.02] ${selected.has(row.id) ? "bg-ocean/5" : ""} ${
-                          blockedAs ? "opacity-50 line-through" : ""
-                        }`}
+                        className={`hover:bg-slate-50 dark:hover:bg-white/[0.02] ${selected.has(row.id) ? "bg-ocean/5" : ""}`}
                       >
                         <td className="px-3 py-2">
                           <input
@@ -2439,12 +2444,8 @@ export function CampaignByRolePanel({
                           )}
                         </td>
                         <td className="px-3 py-2 text-slate-600 dark:text-white/70">{row.country ?? "—"}</td>
-                        <td className="whitespace-nowrap px-3 py-2 no-underline">
-                          {blockedAs ? (
-                            <span className="text-[11px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-300">
-                              {blockedAs === "COMPANY" ? "Company blocked" : "Blocked"}
-                            </span>
-                          ) : (
+                        <td className="whitespace-nowrap px-3 py-2">
+                          {(
                             <div className="flex items-center gap-1">
                               <button
                                 type="button"
