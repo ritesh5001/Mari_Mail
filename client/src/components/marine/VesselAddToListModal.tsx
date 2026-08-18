@@ -9,6 +9,8 @@ type ContactList = {
   name: string;
   color: string;
   contactCount: number;
+  /** The kind marker lives in filterConfig — see the list create route. */
+  filterConfig?: { kind?: string } | null;
 };
 
 type Props = {
@@ -30,7 +32,17 @@ export function VesselAddToListModal({ vesselIds, onClose, onDone }: Props) {
     apiFetch(`/api/lists?scope=my`)
       .then((r) => (r.ok ? r.json() : null))
       .then((payload: { data?: { lists?: ContactList[] } } | null) => {
-        setLists(payload?.data?.lists ?? []);
+        // Only lists that can hold vessels. A CONTACT list holds people and
+        // companies and nothing else, so offering one here promised something
+        // the list could not deliver.
+        //
+        // Excluding CONTACT rather than requiring ETA on purpose: most lists
+        // predate the kind marker entirely, and the great majority of those
+        // already hold vessels. Requiring an explicit ETA marker would have
+        // hidden nearly every list the user actually works with.
+        setLists(
+          (payload?.data?.lists ?? []).filter((list) => list.filterConfig?.kind !== "CONTACT"),
+        );
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -44,7 +56,16 @@ export function VesselAddToListModal({ vesselIds, onClose, onDone }: Props) {
       const r = await apiFetch(`/api/lists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newListName.trim(), type: "STATIC" }),
+        // Created from the vessel screen, so it is an ETA list — same kind,
+        // colour and icon the Lists page would give it. Without the marker a
+        // new list would be born untyped and the ambiguity would spread.
+        body: JSON.stringify({
+          name: newListName.trim(),
+          type: "STATIC",
+          kind: "ETA",
+          color: "#4F6DFF",
+          icon: "ship",
+        }),
       });
       const payload = (await r.json()) as { data?: ContactList; error?: { message?: string } };
       if (!r.ok) throw new Error(payload.error?.message ?? "Failed to create list");
