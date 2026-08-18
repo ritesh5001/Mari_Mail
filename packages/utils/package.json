@@ -30,6 +30,10 @@
     "./plans": {
       "types": "./dist/plans.d.ts",
       "default": "./dist/plans.js"
+    },
+    "./blocklist": {
+      "types": "./dist/blocklist.d.ts",
+      "default": "./dist/blocklist.js"
     }
   }
 }

@@ -31,3 +31,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export * from "@prisma/client";
+
+// Exported last: `blocklist.ts` imports `prisma` from this module, so the
+// client must be assigned before that module is evaluated.
+export * from "./blocklist.js";

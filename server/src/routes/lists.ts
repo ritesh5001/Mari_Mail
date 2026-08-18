@@ -6,6 +6,7 @@ import { requireAuth, type AuthedRequest } from "../auth/middleware.js";
 import { sendData, sendError } from "../lib/http.js";
 import { workspaceScope } from "../services/workspace-scope.js";
 import { companyExists, resolveListMembers } from "../services/lists.service.js";
+import { isBlocked, loadBlockIndex } from "../services/blocklist.service.js";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
 
 export const listRouter = Router();
@@ -402,10 +403,24 @@ listRouter.post("/:id/contacts", requireAuth, async (req, res, next) => {
       return sendError(res, 404, "LIST_NOT_FOUND", "List not found");
     }
 
-    const result = await prisma.listContact.createMany({
-      data: input.data.contactIds.map((contactId) => ({ listId: list.id, contactId })),
-      skipDuplicates: true,
+    // A blocked person cannot be added to anything. Silently dropping them
+    // would be worse than refusing: the user would see "3 added" and find two.
+    const candidates = await prisma.contact.findMany({
+      where: { id: { in: input.data.contactIds } },
+      select: { id: true, email: true, companyName: true, website: true },
     });
+    const blockIndex = await loadBlockIndex(workspaceId);
+    const allowedIds = blockIndex.isEmpty
+      ? input.data.contactIds
+      : candidates.filter((c) => !isBlocked(blockIndex, c)).map((c) => c.id);
+    const skippedBlocked = input.data.contactIds.length - allowedIds.length;
+
+    const result = allowedIds.length
+      ? await prisma.listContact.createMany({
+          data: allowedIds.map((contactId) => ({ listId: list.id, contactId })),
+          skipDuplicates: true,
+        })
+      : { count: 0 };
 
     await prisma.contactList.update({
       where: { id: list.id },
@@ -416,7 +431,7 @@ listRouter.post("/:id/contacts", requireAuth, async (req, res, next) => {
       void reconcileCampaignsForList(list.id);
     }
 
-    return sendData(res, { added: result.count });
+    return sendData(res, { added: result.count, skippedBlocked });
   } catch (error) {
     return next(error);
   }

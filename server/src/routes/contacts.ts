@@ -45,6 +45,7 @@ import {
   type EmailWaterfallMatch,
 } from "../services/email-waterfall.service.js";
 import { phoneWebhookFor } from "../services/apollo/phone-webhook.js";
+import { isBlocked, loadBlockIndex } from "../services/blocklist.service.js";
 import { getOrCreateDataSourceSettings } from "../services/data-sources/settings.js";
 import { reconcileCampaignsForList } from "../services/campaign-list-reconciler.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -1054,8 +1055,25 @@ const externalByListHandler = async (req: Request, res: Response, next: NextFunc
       };
     });
 
+    // Blocked people are removed HERE, on the server, not greyed out in the
+    // browser. The client used to hide them with component state, so the next
+    // search or a page refresh brought every one of them straight back — which
+    // is the whole reason blocking felt like it did nothing.
+    const blockIndex = await loadBlockIndex(workspaceId);
+    const visibleRows = blockIndex.isEmpty
+      ? rowsWithVessels
+      : rowsWithVessels.filter(
+          (row) =>
+            !isBlocked(blockIndex, {
+              email: row.email,
+              companyName: row.companyName,
+              website: row.website,
+              companyDomain: row.companyDomain,
+            }),
+        );
+
     return sendData(res, {
-      rows: rowsWithVessels,
+      rows: visibleRows,
       titleHistogram,
       totalContacts: apolloRows.length,
       // Searched vs available, so the UI can say when it didn't cover
@@ -1240,8 +1258,22 @@ contactRouter.post("/apollo/search", requireAuth, async (req, res, next) => {
       });
       if (cacheHit) await recordApolloCacheHit();
 
+      const blockIndex = await loadBlockIndex(searchWorkspaceId);
+      const rows = result.rows.map(apolloPersonToContactRow);
+      const visibleRows = blockIndex.isEmpty
+        ? rows
+        : rows.filter(
+            (row) =>
+              !isBlocked(blockIndex, {
+                email: row.email,
+                companyName: row.companyName,
+                website: row.website,
+                companyDomain: row.companyDomain,
+              }),
+          );
+
       return sendData(res, {
-        rows: result.rows.map(apolloPersonToContactRow),
+        rows: visibleRows,
         total: result.total,
         page,
         nextPage: result.nextPage,
@@ -1680,6 +1712,36 @@ export async function revealApolloPerson(
   const price =
     field === "email" ? settings.creditsPerEmailReveal : settings.creditsPerPhoneReveal;
   const reason = field === "email" ? "REVEAL_EMAIL" : "REVEAL_PHONE";
+
+  // Refuse before any credit moves. Revealing a blocked person buys a contact
+  // detail that can never be used — at 20 credits for a phone number, that is
+  // real money spent on someone the user has already said they will never
+  // contact. Matched on the cached row when we have one, since a locked Apollo
+  // preview carries a placeholder address that no block could match.
+  const blockIndexForReveal = await loadBlockIndex(workspaceId);
+  if (!blockIndexForReveal.isEmpty) {
+    const known = await prisma.apolloRevealCache.findUnique({
+      where: { apolloId: externalId },
+      select: { email: true, companyName: true, companyDomain: true, companyWebsite: true },
+    });
+    const localContact = await prisma.contact.findFirst({
+      where: { workspaceId, email: { endsWith: `${externalId}@unknown.local` } },
+      select: { email: true, companyName: true, website: true },
+    });
+    const candidate = {
+      email: known?.email ?? null,
+      companyName: known?.companyName ?? localContact?.companyName ?? null,
+      website: known?.companyWebsite ?? localContact?.website ?? null,
+      companyDomain: known?.companyDomain ?? null,
+    };
+    if (isBlocked(blockIndexForReveal, candidate)) {
+      return {
+        status: 409 as const,
+        code: "CONTACT_BLOCKED" as const,
+        message: "This contact is on your blocked list — no credits were spent. Unblock them first.",
+      };
+    }
+  }
 
   // Cross-workspace cache: if any workspace has already paid Apollo for this
   // person's email/phone, serve the cached value. The user is still charged 1

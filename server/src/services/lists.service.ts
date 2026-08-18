@@ -1,4 +1,4 @@
-import { Prisma, prisma, type CompanyKind } from "@marimail/db";
+import { Prisma, prisma, blockedContactWhere, type CompanyKind } from "@marimail/db";
 import { filterConfigToWhereClause } from "@marimail/utils";
 import { workspaceScope } from "./workspace-scope.js";
 import { serializeContact, serializeVessel, vesselInclude } from "./serializers.js";
@@ -88,6 +88,12 @@ export async function resolveListMembers(workspaceId: string, userId: string, li
 
   const companyLinks = list.companies.map((c) => ({ companyId: c.companyId, companyKind: c.companyKind }));
 
+  // Blocked people are not members of anything. Applied as a where clause on
+  // both queries below rather than filtered afterwards, so the list's counts
+  // and the rows shown agree.
+  const blockExclusion = await blockedContactWhere(workspaceId);
+  const notBlocked: Prisma.ContactWhereInput[] = blockExclusion ? [blockExclusion] : [];
+
   // SMART lists resolve contacts via the saved filter; STATIC lists via the join table.
   // Explicit ListCompany memberships always add their employees on top, regardless of list type.
   const baseContacts =
@@ -97,6 +103,7 @@ export async function resolveListMembers(workspaceId: string, userId: string, li
             AND: [
               workspaceScope(workspaceId),
               filterConfigToWhereClause(list.filterConfig as never) as Prisma.ContactWhereInput,
+              ...notBlocked,
             ],
           },
           orderBy: { engagementScore: "desc" },
@@ -106,7 +113,7 @@ export async function resolveListMembers(workspaceId: string, userId: string, li
           // The list itself is already ownership-scoped, so if the user added
           // a cross-workspace contact via "Add to list", they should still
           // see it here.
-          where: { listMemberships: { some: { listId: list.id } } },
+          where: { AND: [{ listMemberships: { some: { listId: list.id } } }, ...notBlocked] },
           orderBy: { engagementScore: "desc" },
         });
 
@@ -117,6 +124,7 @@ export async function resolveListMembers(workspaceId: string, userId: string, li
             AND: [
               workspaceScope(workspaceId),
               { OR: companyLinks.map((c) => ({ companyId: c.companyId, companyKind: c.companyKind })) },
+              ...notBlocked,
             ],
           },
           orderBy: { engagementScore: "desc" },

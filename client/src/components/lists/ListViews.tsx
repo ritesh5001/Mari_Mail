@@ -733,6 +733,77 @@ function isEmailLocked(contact: ContactRow) {
   return /^apollo-[^@]+@unknown\.local$/i.test(contact.email ?? "");
 }
 
+/**
+ * Block this person, or their whole company, from a contact row.
+ *
+ * Calls the same endpoint as the search results and then asks the caller to
+ * drop the row, because the server has already removed them from every list —
+ * leaving them on screen until the next refresh would contradict that.
+ */
+function BlockContactButtons({
+  contact,
+  onBlocked,
+}: {
+  contact: ContactRow;
+  onBlocked: () => void;
+}) {
+  const [busy, setBusy] = useState<"CONTACT" | "COMPANY" | null>(null);
+
+  async function block(kind: "CONTACT" | "COMPANY") {
+    setBusy(kind);
+    try {
+      const body =
+        kind === "CONTACT"
+          ? {
+              kind: "CONTACT",
+              email: contact.email,
+              label: `${contact.firstName} ${contact.lastName}`.trim() || contact.email,
+              contactId: contact.id,
+            }
+          : {
+              kind: "COMPANY",
+              companyName: contact.companyName || undefined,
+              website: contact.website || undefined,
+              email: contact.email || undefined,
+              label: contact.companyName || undefined,
+            };
+      const res = await apiFetch(`/api/blocklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) onBlocked();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => void block("CONTACT")}
+        disabled={busy !== null || !contact.email}
+        title="Never contact this person"
+        aria-label="Block this person"
+        className="rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 dark:hover:bg-rose-500/10"
+      >
+        {busy === "CONTACT" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={() => void block("COMPANY")}
+        disabled={busy !== null || !contact.companyName}
+        title="Never contact anyone at this company"
+        aria-label="Block this company"
+        className="rounded-md p-1 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40 dark:hover:bg-rose-500/10"
+      >
+        {busy === "COMPANY" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
+      </button>
+    </span>
+  );
+}
+
 function ContactsTable({
   rows,
   onRemove,
@@ -834,7 +905,11 @@ function ContactsTable({
               {contact.addedAt ? formatRelative(contact.addedAt) : "—"}
             </td>
             <td className="px-4 py-3 text-right">
-              <button onClick={() => onRemove(contact.id)} className="rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove from list">
+              {/* Blocking belongs where you notice the problem. Spotting a
+                  customer you already serve happens here, in the list, far more
+                  often than on the search screen this action used to live on. */}
+              <BlockContactButtons contact={contact} onBlocked={() => onRemove(contact.id)} />
+              <button onClick={() => onRemove(contact.id)} className="ml-1 rounded-md p-1 text-slate-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove from list">
                 <Trash2 className="h-4 w-4" />
               </button>
             </td>

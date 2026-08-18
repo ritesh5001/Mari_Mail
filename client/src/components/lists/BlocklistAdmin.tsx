@@ -26,6 +26,7 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
   const [removing, setRemoving] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [reason, setReason] = useState("");
+  const [search, setSearch] = useState("");
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/api/blocklist`);
@@ -34,50 +35,88 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
     setData(payload.data);
   }, []);
 
+  /** Turns one typed line into the request body for its tab. */
+  function bodyFor(value: string) {
+    // One field, two meanings: on the Contacts tab it is an email address; on
+    // the Companies tab it is a domain or a company name. Anything with an @
+    // on the company tab is read as "the company behind this address".
+    return tab === "CONTACT"
+      ? { kind: "CONTACT", email: value, reason: reason.trim() || undefined }
+      : {
+          kind: "COMPANY",
+          ...(value.includes("@")
+            ? { email: value }
+            : value.includes(".")
+              ? { domain: value }
+              : { companyName: value }),
+          label: value,
+          reason: reason.trim() || undefined,
+        };
+  }
+
   async function add() {
-    const value = input.trim();
-    if (!value) return;
+    // Accept a pasted list — one per line or comma-separated. Blocking a
+    // competitor's twelve domains was twelve trips through this form.
+    const values = Array.from(
+      new Set(
+        input
+          .split(/[\n,;]+/)
+          .map((line) => line.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (values.length === 0) return;
     setSaving(true);
     setError(null);
     setNotice(null);
 
-    // One field, two meanings: on the Contacts tab it is an email address; on
-    // the Companies tab it is a domain or a company name. Anything with an @
-    // on the company tab is read as "the company behind this address".
-    const body =
-      tab === "CONTACT"
-        ? { kind: "CONTACT", email: value, reason: reason.trim() || undefined }
-        : {
-            kind: "COMPANY",
-            ...(value.includes("@")
-              ? { email: value }
-              : value.includes(".")
-                ? { domain: value }
-                : { companyName: value }),
-            label: value,
-            reason: reason.trim() || undefined,
-          };
+    const impact = { contacts: 0, lists: 0, cancelledSends: 0 };
+    const failures: string[] = [];
 
-    const res = await apiFetch(`/api/blocklist`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    for (const value of values) {
+      const res = await apiFetch(`/api/blocklist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyFor(value)),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        failures.push(`${value}: ${payload?.error?.message ?? "could not be blocked"}`);
+        continue;
+      }
+      const payload = (await res.json()) as {
+        data: { impact?: { contacts: number; lists: number; cancelledSends: number } };
+      };
+      impact.contacts += payload.data.impact?.contacts ?? 0;
+      impact.lists += payload.data.impact?.lists ?? 0;
+      impact.cancelledSends += payload.data.impact?.cancelledSends ?? 0;
+    }
+
     setSaving(false);
-
-    if (!res.ok) {
-      const payload = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      setError(payload?.error?.message ?? "Could not add that block.");
+    if (failures.length === values.length) {
+      setError(failures[0]);
       return;
     }
-    const payload = (await res.json()) as { data: { cancelledSends: number } };
+    if (failures.length > 0) setError(`${failures.length} could not be blocked — ${failures[0]}`);
+
     setInput("");
     setReason("");
-    setNotice(
-      payload.data.cancelledSends > 0
-        ? `Blocked. ${payload.data.cancelledSends} queued send${payload.data.cancelledSends === 1 ? "" : "s"} stood down.`
-        : "Blocked. They will not be added to any campaign.",
-    );
+    // Say what actually happened. "Blocked." on its own gave no sign that a
+    // company block had just pulled twelve people out of four lists, which is
+    // why the feature felt like it did nothing.
+    const parts: string[] = [];
+    const blocked = values.length - failures.length;
+    parts.push(`Blocked ${blocked} ${tab === "CONTACT" ? "contact" : "company"}${blocked === 1 ? "" : "s"}.`);
+    if (impact.contacts > 0) {
+      parts.push(
+        `Removed ${impact.contacts} contact${impact.contacts === 1 ? "" : "s"} from ${impact.lists} list${impact.lists === 1 ? "" : "s"}.`,
+      );
+    }
+    if (impact.cancelledSends > 0) {
+      parts.push(`${impact.cancelledSends} queued send${impact.cancelledSends === 1 ? "" : "s"} stood down.`);
+    }
+    if (impact.contacts === 0) parts.push("They will not appear in searches or lists.");
+    setNotice(parts.join(" "));
     await reload();
   }
 
@@ -94,7 +133,15 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
     await reload();
   }
 
-  const rows = data.blocks.filter((block) => block.kind === tab);
+  const needle = search.trim().toLowerCase();
+  const rows = data.blocks
+    .filter((block) => block.kind === tab)
+    .filter(
+      (block) =>
+        !needle ||
+        block.value.toLowerCase().includes(needle) ||
+        (block.label ?? "").toLowerCase().includes(needle),
+    );
 
   return (
     <div className="space-y-6">
@@ -140,14 +187,22 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
             <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-white/50">
               {tab === "CONTACT" ? "Email address" : "Company domain or name"}
             </span>
-            <input
+            {/* A textarea, not an input: several can be pasted at once, one per
+                line. Enter still submits; Shift+Enter starts a new line. */}
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void add();
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void add();
+                }
               }}
-              placeholder={tab === "CONTACT" ? "captain@example.com" : "example.com"}
-              className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+              rows={input.includes("\n") ? 4 : 1}
+              placeholder={
+                tab === "CONTACT" ? "captain@example.com" : "example.com — or paste several, one per line"
+              }
+              className="mt-1 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
             />
           </label>
           <label className="min-w-[200px] flex-1 text-sm">
@@ -186,6 +241,17 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
           </div>
         )}
 
+        {data.blocks.filter((block) => block.kind === tab).length > 5 ? (
+          <div className="border-t border-slate-100 px-4 py-2 dark:border-white/[0.06]">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${tab === "CONTACT" ? "blocked contacts" : "blocked companies"}…`}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-ocean dark:border-white/10 dark:bg-white/[0.03] dark:text-white"
+            />
+          </div>
+        ) : null}
+
         <ul className="divide-y divide-slate-100 dark:divide-white/[0.06]">
           {rows.length === 0 ? (
             <li className="px-4 py-10 text-center text-sm text-slate-500 dark:text-white/50">
@@ -199,7 +265,9 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
                     {block.label ?? block.value}
                   </p>
                   <p className="truncate text-xs text-slate-500 dark:text-white/50">
-                    {block.value}
+                    {block.kind === "COMPANY" && block.label && block.label !== block.value
+                      ? `matches ${block.value}`
+                      : block.value}
                     {block.reason ? ` · ${block.reason}` : ""}
                     {" · "}
                     {new Date(block.createdAt).toLocaleDateString(undefined, {

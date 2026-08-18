@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Prisma, prisma } from "@marimail/db";
+import { Prisma, prisma, blockedContactWhere, withoutBlockedContacts } from "@marimail/db";
 import { filterConfigToWhereClause } from "@marimail/utils";
 import type { FilterConfig } from "@marimail/types";
 import { getServerSession } from "@/lib/api";
@@ -115,9 +115,13 @@ export async function listContacts(searchParams: Record<string, string | string[
   };
 
   try {
+    // Blocked people are hidden everywhere, not just kept out of campaigns.
+    // Applied to the count as well as the rows — a total that includes people
+    // the page refuses to show is just a wrong number.
+    const visible = await withoutBlockedContacts(workspaceId, where);
     const [contacts, count, savedFilters] = await Promise.all([
-      prisma.contact.findMany({ where, orderBy: { engagementScore: "desc" }, take: 100 }),
-      prisma.contact.count({ where }),
+      prisma.contact.findMany({ where: visible, orderBy: { engagementScore: "desc" }, take: 100 }),
+      prisma.contact.count({ where: visible }),
       prisma.savedFilter.findMany({
         where: { AND: [scope(workspaceId), { entityType: "CONTACT" }] },
         orderBy: { createdAt: "desc" },
@@ -165,7 +169,12 @@ export async function listSavedContacts(): Promise<ContactModel[]> {
   const { workspaceId, userId } = await requireContactWorkspaceId();
   try {
     const saved = await prisma.savedContact.findMany({
-      where: { userId, workspaceId },
+      where: {
+        userId,
+        workspaceId,
+        // Reached through the join, so the exclusion nests under `contact`.
+        contact: (await blockedContactWhere(workspaceId)) ?? undefined,
+      },
       include: { contact: true },
       orderBy: { createdAt: "desc" },
     });
@@ -185,7 +194,10 @@ export async function listRevealedContacts(): Promise<ContactModel[]> {
   const { workspaceId } = await requireContactWorkspaceId();
   try {
     return await prisma.contact.findMany({
-      where: { workspaceId, emailStatus: { not: "UNKNOWN" } },
+      where: await withoutBlockedContacts(workspaceId, {
+        workspaceId,
+        emailStatus: { not: "UNKNOWN" },
+      }),
       orderBy: { updatedAt: "desc" },
       take: 1000,
     });

@@ -139,9 +139,9 @@ blocklistRouter.post("/", requireAuth, async (req, res, next) => {
       },
     });
 
-    const standDown = await standDownQueuedSends(workspaceId, kind, value);
+    const impact = await applyBlockRetroactively(workspaceId, kind, value);
 
-    return sendData(res, { block, cancelledSends: standDown }, 201);
+    return sendData(res, { block, impact }, 201);
   } catch (error) {
     return next(error);
   }
@@ -164,14 +164,15 @@ blocklistRouter.delete("/:id", requireAuth, async (req, res, next) => {
 });
 
 /**
- * Stops anything already queued for the people a new block covers.
+ * Makes a new block retroactive.
  *
- * Only touches rows that have not been sent yet — PENDING / SCHEDULED /
- * STAGED. A SENT or REPLIED row is history and must stay readable in the
- * campaign's reporting; rewriting it would corrupt the numbers to no purpose,
- * since a sent email cannot be recalled.
+ * Blocking means "I never want to see these people again", so it is not enough
+ * to filter them out of future reads: they are removed from every list in the
+ * workspace and anything already queued for them is stood down. Returns what
+ * it did, so the UI can report it — a company block that silently changed
+ * nothing visible was the reason blocking felt broken.
  */
-async function standDownQueuedSends(workspaceId: string, kind: BlockKind, value: string) {
+async function applyBlockRetroactively(workspaceId: string, kind: BlockKind, value: string) {
   const contactWhere: Prisma.ContactWhereInput =
     kind === "CONTACT"
       ? { email: { equals: value, mode: "insensitive" } }
@@ -191,15 +192,49 @@ async function standDownQueuedSends(workspaceId: string, kind: BlockKind, value:
     select: { id: true },
     take: 5_000,
   });
-  if (contacts.length === 0) return 0;
+  if (contacts.length === 0) return { contacts: 0, lists: 0, cancelledSends: 0 };
 
-  const result = await prisma.campaignContact.updateMany({
+  const contactIds = contacts.map((contact) => contact.id);
+
+  // Which of the workspace's own lists they sit in — read before the delete,
+  // because afterwards there is nothing left to count.
+  const memberships = await prisma.listContact.findMany({
+    where: { contactId: { in: contactIds }, list: { workspaceId } },
+    select: { listId: true },
+  });
+  const perList = new Map<string, number>();
+  for (const row of memberships) perList.set(row.listId, (perList.get(row.listId) ?? 0) + 1);
+
+  if (perList.size > 0) {
+    await prisma.$transaction([
+      prisma.listContact.deleteMany({
+        where: { contactId: { in: contactIds }, list: { workspaceId } },
+      }),
+      // `contactCount` is a denormalised column, so it has to be adjusted by
+      // hand or the list header keeps counting people who are no longer there.
+      ...Array.from(perList.entries()).map(([listId, removed]) =>
+        prisma.contactList.update({
+          where: { id: listId },
+          data: { contactCount: { decrement: removed } },
+        }),
+      ),
+    ]);
+  }
+
+  // Stand down anything queued. SENT and REPLIED rows are left alone — they are
+  // history, and a sent email cannot be recalled by editing a row.
+  const stoodDown = await prisma.campaignContact.updateMany({
     where: {
       workspaceId,
-      contactId: { in: contacts.map((contact) => contact.id) },
+      contactId: { in: contactIds },
       status: { in: ["PENDING", "SCHEDULED", "STAGED"] },
     },
     data: { status: "PAUSED", nextSendAt: null },
   });
-  return result.count;
+
+  return {
+    contacts: contactIds.length,
+    lists: perList.size,
+    cancelledSends: stoodDown.count,
+  };
 }
