@@ -83,6 +83,70 @@ const createSchema = z
     path: ["companyName"],
   });
 
+type BlockInput = {
+  email?: string;
+  domain?: string;
+  website?: string;
+  companyName?: string;
+};
+
+/**
+ * The stored match key for a block, or why it can't be worked out.
+ *
+ * Shared by create and preview so the preview can never describe a different
+ * block from the one that would actually be saved.
+ */
+function resolveBlockValue(
+  kind: BlockKind,
+  input: BlockInput,
+): { value: string } | { error: { code: string; message: string } } {
+  if (kind === "CONTACT") {
+    return { value: normalizeEmail(input.email as string) };
+  }
+
+  // A free-mail domain identifies a mailbox provider, not a company. Blocking
+  // gmail.com would silently mute a third of most address books, so it is
+  // refused rather than quietly widened.
+  const asDomain = normalizeDomain(input.domain ?? input.website) ?? emailDomain(input.email);
+  if (asDomain && isPublicEmailDomain(asDomain) && !normalizeCompanyName(input.companyName)) {
+    return {
+      error: {
+        code: "PUBLIC_DOMAIN",
+        message: `${asDomain} is a public email provider, not a company. Block the individual contact instead.`,
+      },
+    };
+  }
+
+  const value = companyBlockValue(input);
+  if (!value) {
+    return {
+      error: {
+        code: "VALIDATION_ERROR",
+        message: "Could not work out what to block from that input.",
+      },
+    };
+  }
+  return { value };
+}
+
+/** Contacts a block with this key would cover. */
+function coveredContactWhere(kind: BlockKind, value: string): Prisma.ContactWhereInput {
+  return kind === "CONTACT"
+    ? { email: { equals: value, mode: "insensitive" } }
+    : {
+        OR: [
+          // Domain form: the address ends with "@domain".
+          { email: { endsWith: `@${value}`, mode: "insensitive" } },
+          // `website` is nullable and this clause is used positively here, but
+          // the null check keeps it identical to the read-side exclusion.
+          { AND: [{ website: { not: null } }, { website: { contains: value, mode: "insensitive" } }] },
+          // Name form: the stored name still carries the suffixes we strip,
+          // so match on containment rather than equality.
+          { companyName: { contains: value, mode: "insensitive" } },
+        ],
+      };
+}
+
 blocklistRouter.post("/", requireAuth, async (req, res, next) => {
   try {
     const parsed = createSchema.safeParse(req.body);
@@ -93,28 +157,11 @@ blocklistRouter.post("/", requireAuth, async (req, res, next) => {
     const input = parsed.data;
     const kind = input.kind as BlockKind;
 
-    let value: string | null;
-    if (kind === "CONTACT") {
-      value = normalizeEmail(input.email as string);
-    } else {
-      value = companyBlockValue(input);
-      // A free-mail domain identifies a mailbox provider, not a company.
-      // Blocking gmail.com would silently mute a third of most address books,
-      // so it is refused rather than quietly widened.
-      const asDomain = normalizeDomain(input.domain ?? input.website) ?? emailDomain(input.email);
-      if (asDomain && isPublicEmailDomain(asDomain) && !normalizeCompanyName(input.companyName)) {
-        return sendError(
-          res,
-          400,
-          "PUBLIC_DOMAIN",
-          `${asDomain} is a public email provider, not a company. Block the individual contact instead.`,
-        );
-      }
+    const resolved = resolveBlockValue(kind, input);
+    if ("error" in resolved) {
+      return sendError(res, 400, resolved.error.code, resolved.error.message);
     }
-
-    if (!value) {
-      return sendError(res, 400, "VALIDATION_ERROR", "Could not work out what to block from that input.");
-    }
+    const value = resolved.value;
 
     const label =
       input.label ??
@@ -147,17 +194,117 @@ blocklistRouter.post("/", requireAuth, async (req, res, next) => {
   }
 });
 
+const previewSchema = z.object({
+  kind: z.enum(["CONTACT", "COMPANY"]),
+  email: z.string().optional(),
+  domain: z.string().max(255).optional(),
+  website: z.string().max(500).optional(),
+  companyName: z.string().max(255).optional(),
+});
+
+/**
+ * What blocking this would do, without doing it.
+ *
+ * Blocking a company removes its people from every list, and that cannot be
+ * undone by unblocking — the memberships are gone. Reporting "removed 12
+ * contacts from 4 lists" afterwards is too late to be a choice, so the UI asks
+ * first whenever the number is not zero.
+ */
+blocklistRouter.post("/preview", requireAuth, async (req, res, next) => {
+  try {
+    const parsed = previewSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return sendError(res, 400, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Invalid input");
+    }
+    const { workspaceId } = (req as AuthedRequest).auth;
+    const kind = parsed.data.kind as BlockKind;
+
+    const resolved = resolveBlockValue(kind, parsed.data);
+    if ("error" in resolved) {
+      return sendError(res, 400, resolved.error.code, resolved.error.message);
+    }
+
+    const contacts = await prisma.contact.findMany({
+      where: {
+        AND: [{ OR: [{ workspaceId }, { workspaceId: null }] }, coveredContactWhere(kind, resolved.value)],
+      },
+      select: { id: true },
+      take: 5_000,
+    });
+
+    if (contacts.length === 0) {
+      return sendData(res, { value: resolved.value, contacts: 0, lists: 0, queuedSends: 0 });
+    }
+    const contactIds = contacts.map((contact) => contact.id);
+
+    const [memberships, queuedSends] = await Promise.all([
+      prisma.listContact.findMany({
+        where: { contactId: { in: contactIds }, list: { workspaceId } },
+        select: { listId: true },
+      }),
+      prisma.campaignContact.count({
+        where: {
+          workspaceId,
+          contactId: { in: contactIds },
+          status: { in: ["PENDING", "SCHEDULED", "STAGED"] },
+        },
+      }),
+    ]);
+
+    return sendData(res, {
+      value: resolved.value,
+      contacts: contactIds.length,
+      lists: new Set(memberships.map((row) => row.listId)).size,
+      queuedSends,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 blocklistRouter.delete("/:id", requireAuth, async (req, res, next) => {
   try {
     const { workspaceId } = (req as AuthedRequest).auth;
     const existing = await prisma.workspaceBlock.findFirst({
       where: { id: req.params.id, workspaceId },
-      select: { id: true },
+      select: { id: true, kind: true, value: true },
     });
     if (!existing) return sendError(res, 404, "NOT_FOUND", "Block not found");
 
     await prisma.workspaceBlock.delete({ where: { id: existing.id } });
-    return sendData(res, { id: existing.id });
+
+    // Put back what the block paused.
+    //
+    // Blocking parked queued sends at PAUSED; without this they stay parked
+    // forever, so unblocking looked like it had worked while the campaign
+    // quietly never resumed. List memberships are NOT restored — those rows
+    // were deleted, and inventing them again would be guessing at which lists
+    // the user meant.
+    const covered = await prisma.contact.findMany({
+      where: {
+        AND: [
+          { OR: [{ workspaceId }, { workspaceId: null }] },
+          coveredContactWhere(existing.kind, existing.value),
+        ],
+      },
+      select: { id: true },
+      take: 5_000,
+    });
+
+    let resumedSends = 0;
+    if (covered.length > 0) {
+      const resumed = await prisma.campaignContact.updateMany({
+        where: {
+          workspaceId,
+          contactId: { in: covered.map((contact) => contact.id) },
+          status: "PAUSED",
+        },
+        data: { status: "PENDING" },
+      });
+      resumedSends = resumed.count;
+    }
+
+    return sendData(res, { id: existing.id, resumedSends });
   } catch (error) {
     return next(error);
   }
@@ -173,19 +320,7 @@ blocklistRouter.delete("/:id", requireAuth, async (req, res, next) => {
  * nothing visible was the reason blocking felt broken.
  */
 async function applyBlockRetroactively(workspaceId: string, kind: BlockKind, value: string) {
-  const contactWhere: Prisma.ContactWhereInput =
-    kind === "CONTACT"
-      ? { email: { equals: value, mode: "insensitive" } }
-      : {
-          OR: [
-            // Domain form: the address ends with "@domain".
-            { email: { endsWith: `@${value}`, mode: "insensitive" } },
-            { website: { contains: value, mode: "insensitive" } },
-            // Name form: the stored name still carries the suffixes we strip,
-            // so match on containment rather than equality.
-            { companyName: { contains: value, mode: "insensitive" } },
-          ],
-        };
+  const contactWhere = coveredContactWhere(kind, value);
 
   const contacts = await prisma.contact.findMany({
     where: { AND: [{ OR: [{ workspaceId }, { workspaceId: null }] }, contactWhere] },

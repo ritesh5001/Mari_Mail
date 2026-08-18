@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import { Prisma, prisma } from "@marimail/db";
+import { Prisma, prisma, blockedContactWhere } from "@marimail/db";
 import type { ContactModel } from "@/lib/contact-data";
 import type { AssociatedVesselView } from "@/lib/marine-row-views";
 import {
@@ -178,8 +178,14 @@ export async function listContactsForVessels(
   }
   if (or.length === 0) return [];
 
+  // Blocked people are excluded here too. This powers the vessel contact
+  // picker, which is one of the easiest places to accidentally re-add someone
+  // you blocked — the whole point of the block is that they stop turning up.
+  const blockExclusion = await blockedContactWhere(workspaceId);
   return prisma.contact.findMany({
-    where: { AND: [workspaceScope(workspaceId), { OR: or }] },
+    where: {
+      AND: [workspaceScope(workspaceId), { OR: or }, ...(blockExclusion ? [blockExclusion] : [])],
+    },
     orderBy: [{ companyName: "asc" }, { lastName: "asc" }, { firstName: "asc" }],
     take: ASSOCIATION_RESULT_CAP,
   });

@@ -27,6 +27,10 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
   const [input, setInput] = useState("");
   const [reason, setReason] = useState("");
   const [search, setSearch] = useState("");
+  // A block that is waiting for the user to confirm its impact.
+  const [pending, setPending] = useState<
+    null | { values: string[]; contacts: number; lists: number; queuedSends: number }
+  >(null);
 
   const reload = useCallback(async () => {
     const res = await apiFetch(`/api/blocklist`);
@@ -54,10 +58,48 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
         };
   }
 
+  /**
+   * Ask what this block would do before doing it.
+   *
+   * Removing people from lists cannot be undone by unblocking, so a company
+   * block that quietly empties four lists has to be a decision, not a
+   * discovery. Blocks that touch nothing skip the prompt entirely — most do.
+   */
   async function add() {
+    const values = parseValues();
+    if (values.length === 0) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+
+    const impact = { contacts: 0, lists: 0, queuedSends: 0 };
+    for (const value of values) {
+      const res = await apiFetch(`/api/blocklist/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyFor(value)),
+      });
+      if (!res.ok) continue; // a bad entry surfaces properly during commit
+      const payload = (await res.json()) as {
+        data: { contacts: number; lists: number; queuedSends: number };
+      };
+      impact.contacts += payload.data.contacts;
+      impact.lists += payload.data.lists;
+      impact.queuedSends += payload.data.queuedSends;
+    }
+    setSaving(false);
+
+    if (impact.contacts === 0) {
+      await commit(values);
+      return;
+    }
+    setPending({ values, ...impact });
+  }
+
+  function parseValues() {
     // Accept a pasted list — one per line or comma-separated. Blocking a
     // competitor's twelve domains was twelve trips through this form.
-    const values = Array.from(
+    return Array.from(
       new Set(
         input
           .split(/[\n,;]+/)
@@ -65,7 +107,10 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
           .filter(Boolean),
       ),
     );
-    if (values.length === 0) return;
+  }
+
+  async function commit(values: string[]) {
+    setPending(null);
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -130,6 +175,18 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
       setError("Could not remove that block.");
       return;
     }
+    const payload = (await res.json().catch(() => null)) as
+      | { data?: { resumedSends?: number } }
+      | null;
+    const resumed = payload?.data?.resumedSends ?? 0;
+    // Say what unblocking did and, just as importantly, what it did not do —
+    // the list memberships are gone for good, and finding that out later would
+    // be a nasty surprise.
+    setNotice(
+      resumed > 0
+        ? `Unblocked. ${resumed} paused send${resumed === 1 ? "" : "s"} resumed. They are not added back to any list.`
+        : "Unblocked. They can be contacted again, but are not added back to any list.",
+    );
     await reload();
   }
 
@@ -226,6 +283,43 @@ export function BlocklistAdmin({ initial }: { initial: BlocklistDTO }) {
             Block
           </button>
         </div>
+
+        {/* Impact confirmation. Only appears when the block would actually
+            take people out of lists — the common case (a company nobody has
+            contacts for yet) blocks immediately with no extra click. */}
+        {pending ? (
+          <div className="mx-4 mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+            <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4" />
+              This removes {pending.contacts} contact{pending.contacts === 1 ? "" : "s"} from{" "}
+              {pending.lists} list{pending.lists === 1 ? "" : "s"}
+            </p>
+            <p className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/80">
+              {pending.queuedSends > 0
+                ? `${pending.queuedSends} queued send${pending.queuedSends === 1 ? "" : "s"} will be stood down. `
+                : ""}
+              Unblocking later lets you contact them again, but does not put them back in those lists.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void commit(pending.values)}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                Block anyway
+              </button>
+              <button
+                type="button"
+                onClick={() => setPending(null)}
+                className="rounded-md border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 transition hover:bg-amber-100 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-500/15"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {(error || notice) && (
           <div

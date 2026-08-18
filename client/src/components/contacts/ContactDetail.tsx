@@ -4,6 +4,7 @@ import type { ContactModel } from "@/lib/contact-data";
 import { formatEnum } from "@/lib/contact-data";
 import { CONTACT_SCHEMA_FIELDS, contactFieldValue } from "@/lib/contact-schema";
 import type { AssociatedVesselView } from "@/lib/marine-row-views";
+import { BlockContactActions } from "@/components/contacts/BlockContactActions";
 
 export function ContactDetail({ contact, vessels }: { contact: ContactModel; vessels: AssociatedVesselView[] }) {
   const schemaGroups = ["Identity", "Company", "Communication", "Digital", "CRM"];
@@ -24,7 +25,16 @@ export function ContactDetail({ contact, vessels }: { contact: ContactModel; ves
               {contact.secondaryEmail ? <p className="mt-2 text-sm text-slate-500">Secondary: {contact.secondaryEmail}</p> : null}
             </div>
           </div>
-          <span className="w-fit rounded-md bg-gold/10 px-3 py-2 text-sm font-semibold text-navy">Score {contact.engagementScore}</span>
+          <div className="flex w-fit flex-col items-end gap-3">
+            <span className="rounded-md bg-gold/10 px-3 py-2 text-sm font-semibold text-navy">Score {contact.engagementScore}</span>
+            <BlockContactActions
+              contactId={contact.id}
+              email={contact.email}
+              name={`${contact.firstName} ${contact.lastName}`.trim()}
+              companyName={contact.companyName}
+              website={contact.website}
+            />
+          </div>
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <Info icon={<Smartphone className="h-4 w-4" />} label="Mobile" value={contact.mobilePhone} />
