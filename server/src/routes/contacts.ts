@@ -345,6 +345,38 @@ function classifyApolloFailure(error: unknown): ApolloFailureReason {
   return "unknown";
 }
 
+/**
+ * Customer-facing text for a failed reveal.
+ *
+ * Never name the upstream data provider in anything a customer can read:
+ * which vendor sits behind a reveal is our commercial business, not theirs,
+ * and it ties our copy to a supplier we may swap. Passing the provider's own
+ * error string through is doubly wrong — "Apollo 401: invalid api key" both
+ * names the vendor and reads as if the customer misconfigured something.
+ *
+ * So the classified reason is mapped to copy written for the person reading
+ * it. The raw provider error is still logged and still recorded against the
+ * account health record, so operators lose no diagnostic detail.
+ *
+ * Every branch says "you were not charged" because the caller has already
+ * issued the refund before returning.
+ */
+function revealFailureMessage(reason: ApolloFailureReason): string {
+  switch (reason) {
+    case "rate_limited":
+      return "Too many reveals at once — wait a moment and try again. You were not charged.";
+    case "timeout":
+      return "The lookup timed out — you were not charged. Try again in a moment.";
+    // Both mean OUR account is misconfigured or dry. Never surface that as the
+    // customer's fault, and never as something retrying will fix.
+    case "unauthorized":
+    case "out_of_credits":
+      return "Contact reveal is temporarily unavailable — you were not charged. Our team has been notified.";
+    default:
+      return "Contact reveal failed — you were not charged. Try again in a moment.";
+  }
+}
+
 /** The most common reason in a batch — what to tell the user about. */
 function dominantReason(reasons: ApolloFailureReason[]): ApolloFailureReason {
   if (reasons.length === 0) return "unknown";
@@ -1706,7 +1738,11 @@ export async function revealApolloPerson(
 ) {
   const settings = await getOrCreateApolloSettings();
   if (!settings.enabled || !settings.apiKey) {
-    return { status: 403 as const, code: "APOLLO_DISABLED", message: "Apollo integration is disabled" };
+    return {
+      status: 403 as const,
+      code: "APOLLO_DISABLED",
+      message: "Contact reveal is unavailable right now — you were not charged.",
+    };
   }
 
   const price =
@@ -1821,7 +1857,11 @@ export async function revealApolloPerson(
   // platform credits on top would bill them twice for one lookup.
   const creds = await resolveApolloCredentials(workspaceId);
   if (!creds) {
-    return { status: 403 as const, code: "APOLLO_DISABLED", message: "Apollo integration is disabled" };
+    return {
+      status: 403 as const,
+      code: "APOLLO_DISABLED",
+      message: "Contact reveal is unavailable right now — you were not charged.",
+    };
   }
   const apolloConfig = { baseUrl: creds.apiBaseUrl.replace(/\/$/, ""), apiKey: creds.apiKey };
 
@@ -1887,8 +1927,16 @@ export async function revealApolloPerson(
         console.error("[apollo] refund failed:", refundErr);
       },
     );
-    const message = error instanceof ApolloError ? error.message : (error as Error).message;
-    return { status: 502 as const, code: "APOLLO_UNAVAILABLE", message };
+    // Logged and recorded against account health above; the customer gets
+    // copy written for them, never the provider's own error string.
+    console.warn(
+      `[reveal-apollo] ${field} reveal failed apollo=${externalId}: ${(error as Error).message}`,
+    );
+    return {
+      status: 502 as const,
+      code: "APOLLO_UNAVAILABLE",
+      message: revealFailureMessage(classifyApolloFailure(error)),
+    };
   }
 
   if (field === "email") {
@@ -1913,7 +1961,7 @@ export async function revealApolloPerson(
     return {
       status: 422 as const,
       code: "NO_EMAIL",
-      message: "Apollo has no email on file for this contact — you were not charged.",
+      message: "No email on file for this contact — you were not charged.",
     };
   }
   if (field === "phone" && !realPhone) {
@@ -1937,7 +1985,7 @@ export async function revealApolloPerson(
     return {
       status: 202 as const,
       code: "PHONE_PENDING" as const,
-      message: "Apollo is fetching this number — it'll appear here shortly. Refresh in a moment.",
+      message: "We're fetching this number — it'll appear here shortly. Refresh in a moment.",
       balance,
     };
   }

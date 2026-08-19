@@ -370,12 +370,13 @@ export function ContactListDetail({
             ? `Waterfall completed with no email found. ${result.charged} credits spent.`
             : result.message,
       );
-      setWaterfallContact(null);
       router.refresh();
     } catch (error) {
       showError((error as Error).message || "Waterfall search failed — no credits were charged.");
     } finally {
       setWaterfallBusy(false);
+      // Closes on every outcome, not just success — see confirmWaterfall.
+      setWaterfallContact(null);
     }
   }
 
@@ -1541,13 +1542,18 @@ export function CampaignByRolePanel({
       ].filter(Boolean);
       setToast(`Waterfall complete — ${parts.join(" · ")}.`);
       setTimeout(() => setToast(null), 7000);
-      setWaterfallPrompt([]);
       if (found > 0) router.refresh();
     } catch (error) {
       setToast((error as Error).message || "Waterfall search failed — no credits were charged.");
       setTimeout(() => setToast(null), 6000);
     } finally {
       setWaterfallBusy(false);
+      // Confirming is a one-shot decision, so the dialog closes on every
+      // outcome — found, not-found, insufficient credits, provider failure.
+      // It used to close only on the success path, so an error left the modal
+      // sitting open on top of the toast that explained what went wrong, and
+      // the click read as "nothing happened".
+      setWaterfallPrompt([]);
     }
   }
 
