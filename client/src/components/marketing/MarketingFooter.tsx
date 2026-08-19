@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { WhatsAppLink } from "./WhatsAppButton";
 
 const columns: { title: string; links: { label: string; href: string }[] }[] = [
   {
@@ -47,12 +48,17 @@ export function MarketingFooter() {
               Marine intelligence + ETA-triggered campaigns. Self-hosted, vessel-aware, built for the
               way ships actually move.
             </p>
-            <a
-              href="mailto:info@maribiz.ai"
-              className="mt-5 inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-            >
-              info@maribiz.ai
-            </a>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <a
+                href="mailto:info@maribiz.ai"
+                className="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-ocean hover:text-ocean dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+              >
+                info@maribiz.ai
+              </a>
+              {/* Same link and same opening message as the floating button —
+                  both come from lib/whatsapp so they cannot drift apart. */}
+              <WhatsAppLink className="inline-flex items-center gap-2 rounded-full border border-[#25D366]/40 bg-white px-4 py-2 text-xs font-semibold text-[#1ebe5b] transition-colors hover:border-[#25D366] dark:border-[#25D366]/30 dark:bg-white/5" />
+            </div>
           </div>
 
           {columns.map((col) => (

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Calendar, ShieldCheck } from "lucide-react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 import { BookDemoForm } from "@/components/marketing/BookDemoForm";
 import { apiUrl } from "@/lib/api";
 
@@ -113,6 +114,7 @@ export default async function BookDemoPage() {
       </section>
 
       <MarketingFooter />
+      <WhatsAppButton />
     </main>
   );
 }

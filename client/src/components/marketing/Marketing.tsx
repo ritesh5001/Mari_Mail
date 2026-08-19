@@ -7,6 +7,7 @@ import { PricingCard } from "@/components/ui/pricing-card";
 import { FaqTabs } from "@/components/ui/faq-tabs";
 import { FinalCta } from "./FinalCta";
 import { MarketingFooter } from "./MarketingFooter";
+import { WhatsAppButton } from "./WhatsAppButton";
 import { Testimonials } from "@/components/ui/testimonial-v2";
 
 export function Marketing() {
@@ -25,6 +26,7 @@ export function Marketing() {
       <FaqTabs />
       <FinalCta />
       <MarketingFooter />
+      <WhatsAppButton />
     </main>
   );
 }
