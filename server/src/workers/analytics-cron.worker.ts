@@ -4,12 +4,13 @@ import { recomputeEngagementScores } from "../services/engagement-scoring.servic
 import { sendWeeklyDigests } from "../services/digest.service.js";
 import { sweepMemberships } from "../services/membership-sweep.service.js";
 import { refundStalePhoneReveals } from "../services/apollo/phone-webhook.js";
+import { sweepDemoReminders } from "../services/demo-emails.service.js";
 import { runAllApolloDrips } from "../services/apollo-drip.service.js";
 import { workerOptionsFor } from "./shared-worker-options.js";
 
 const QUEUE_NAME = "analytics-cron";
 
-type CronJobName = "engagement-score" | "weekly-digest" | "membership-sweep" | "apollo-drip";
+type CronJobName = "engagement-score" | "weekly-digest" | "membership-sweep" | "apollo-drip" | "demo-reminders";
 
 export async function registerAnalyticsCrons(connection: Redis) {
   const queue = new Queue<Record<string, never>, void, CronJobName>(QUEUE_NAME, { connection });
@@ -51,6 +52,23 @@ export async function registerAnalyticsCrons(connection: Redis) {
     },
   );
 
+  // Demo reminders: the 24h and 1h nudges before a booked demo.
+  //
+  // Every five minutes, not hourly like the sweep above. The one-hour reminder
+  // has to land inside a one-hour window, and an hourly job would fire it
+  // anywhere from 1h59m to 59m before the call — early enough to be useless,
+  // or late enough to arrive after it started.
+  await queue.add(
+    "demo-reminders",
+    {},
+    {
+      jobId: "demo-reminders",
+      repeat: { pattern: "*/5 * * * *" },
+      removeOnComplete: true,
+      removeOnFail: false,
+    },
+  );
+
   // Apollo drips: reveal the next `dailyLimit` people from each saved filter
   // and append them to its list. 07:00 UTC so a day's contacts are in place
   // before anyone starts a campaign against the list. One run per day is the
@@ -83,6 +101,10 @@ export function startAnalyticsCronWorker(connection: Redis) {
       }
       if (job.name === "engagement-score") {
         const result = await recomputeEngagementScores();
+        return { ok: true, detail: result };
+      }
+      if (job.name === "demo-reminders") {
+        const result = await sweepDemoReminders();
         return { ok: true, detail: result };
       }
       if (job.name === "apollo-drip") {

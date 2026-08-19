@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { Prisma, prisma, DemoBookingStatus } from "@marimail/db";
 import { sendTransactionalEmail } from "@marimail/email";
+import { sendDemoEmail } from "../services/demo-emails.service.js";
 import { requireSuperAdmin } from "../auth/middleware.js";
 import { sendData, sendError } from "../lib/http.js";
 import {
@@ -281,6 +282,20 @@ demoRouter.post("/", async (req, res, next) => {
     } else {
       console.info(`[demo] no admin recipient configured; booking ${booking.id} stored without notification`);
     }
+
+    // The attendee's confirmation. Awaited so a hard failure is visible in the
+    // logs next to the booking that caused it, but never allowed to fail the
+    // request: the slot is already theirs, and telling them the booking failed
+    // would be worse than a missing email. The reminder sweep does not retry
+    // this one — it is only about the two reminders — so a failure here clears
+    // its own stamp and the confirmation is simply absent.
+    await sendDemoEmail(booking.id, "confirmation").catch((error) => {
+      console.warn(
+        "[demo] failed to send attendee confirmation:",
+        error instanceof Error ? error.message : error,
+      );
+      return false;
+    });
 
     return sendData(
       res,

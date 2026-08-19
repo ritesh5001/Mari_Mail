@@ -1730,6 +1730,17 @@ model DemoBooking {
   /// while still letting a CANCELLED booking release it.
   scheduledAt DateTime?
   timezone    String?
+  // --- Attendee email stamps ---
+  // One column per message, set the moment it is sent. They make each email
+  // exactly-once: the reminder sweep runs every few minutes and would
+  // otherwise re-send on every pass through the window. Nullable because a
+  // booking that predates this, or one whose slot is too near for a given
+  // reminder, simply never gets that message.
+  confirmationSentAt DateTime?
+  /// The "tomorrow" nudge, sent ~24h before the slot.
+  reminderDaySentAt  DateTime?
+  /// The "starting soon" nudge, sent ~1h before the slot.
+  reminderHourSentAt DateTime?
   status      DemoBookingStatus @default(PENDING)
   notes       String?
   source      String?
