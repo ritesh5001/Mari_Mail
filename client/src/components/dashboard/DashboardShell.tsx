@@ -174,13 +174,17 @@ function NavGroupLabel({ label }: { label: string }) {
   return (
     <motion.p
       animate={{
-        // Collapsed, the rail is ~28px — no room for a word. The divider below
-        // keeps the grouping legible without it.
-        height: animate ? (open ? "auto" : 0) : "auto",
+        // ONLY opacity. Animating height (0 → auto) made the whole rail grow
+        // taller the moment it was hovered — five headings appearing at once
+        // pushed every row down and the sidebar visibly jumped. The row keeps
+        // its height in both states, so expanding changes the width and
+        // nothing else; collapsed, the reserved strip reads as the gap above
+        // a divider.
         opacity: animate ? (open ? 1 : 0) : 1,
-        marginTop: animate ? (open ? 16 : 8) : 16,
       }}
-      className="overflow-hidden whitespace-pre px-[15px] pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30"
+      // Fixed height, not padding-driven: `h-5` plus the group's own border and
+      // top padding is what holds the space steady between the two states.
+      className="mt-3 flex h-5 items-end overflow-hidden whitespace-pre px-[15px] text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30"
     >
       {label}
     </motion.p>
