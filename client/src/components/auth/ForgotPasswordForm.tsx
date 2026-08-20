@@ -33,7 +33,7 @@ export function ForgotPasswordForm() {
         Email
         <input name="email" type="email" className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2" required />
       </label>
-      {sent ? <p className="rounded-md bg-blue-50 px-3 py-2 text-sm text-ocean">If the account exists, a reset link has been sent.</p> : null}
+      {sent ? <p className="rounded-md bg-accent-50 px-3 py-2 text-sm text-accent-700 dark:bg-accent-500/12 dark:text-accent-300">If the account exists, a reset link has been sent.</p> : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
       <button className="w-full rounded-md bg-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-ocean">
         Send reset link

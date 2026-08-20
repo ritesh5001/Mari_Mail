@@ -89,8 +89,8 @@ export default async function BookDemoPage() {
               form column took 1022px of a 1440px viewport and squeezed the headline
               column down to 195px — one word per line. */}
           <div className="relative min-w-0">
-            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent-500/40 via-sky-500/20 to-transparent opacity-50 blur-2xl" aria-hidden />
-            <div className="relative rounded-2xl border border-sky-100 bg-white p-6 shadow-[0_24px_80px_rgba(79,70,229,0.16)] backdrop-blur dark:border-white/10 dark:bg-[#0a0a0c]/90 dark:shadow-[0_20px_80px_rgba(0,0,0,0.5)]">
+            <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-accent-500/40 via-accent-500/20 to-transparent opacity-50 blur-2xl" aria-hidden />
+            <div className="relative rounded-2xl border border-accent-100 bg-white p-6 shadow-[0_24px_80px_rgba(79,70,229,0.16)] backdrop-blur dark:border-white/10 dark:bg-[#0a0a0c]/90 dark:shadow-[0_20px_80px_rgba(0,0,0,0.5)]">
               {settings.enabled ? (
                 <BookDemoForm successMessage={settings.successMessage} />
               ) : (
@@ -101,7 +101,7 @@ export default async function BookDemoPage() {
                   <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Demo bookings paused</h2>
                   <p className="mt-2 text-sm text-slate-600 dark:text-white/60">
                     We&rsquo;re temporarily not accepting new demo requests. Please email{" "}
-                    <Link href="mailto:info@maribiz.ai" className="text-sky-700 hover:text-sky-600 dark:text-accent-300 dark:hover:text-accent-200">
+                    <Link href="mailto:info@maribiz.ai" className="text-accent-700 hover:text-accent-600 dark:text-accent-300 dark:hover:text-accent-200">
                       info@maribiz.ai
                     </Link>{" "}
                     and we&rsquo;ll get back to you.

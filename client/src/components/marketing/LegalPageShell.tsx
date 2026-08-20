@@ -33,7 +33,7 @@ export function LegalPageShell({
         </h1>
         <p className="mt-4 text-base leading-7 text-slate-300">{intro}</p>
 
-        <article className="mt-10 space-y-8 text-[15px] leading-7 text-slate-300 [&_h2]:mt-10 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-white [&_h3]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-white [&_a]:text-sky-300 [&_a]:underline [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_p]:mt-3">
+        <article className="mt-10 space-y-8 text-[15px] leading-7 text-slate-300 [&_h2]:mt-10 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:text-white [&_h3]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-white [&_a]:text-accent-300 [&_a]:underline [&_ul]:mt-3 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-6 [&_p]:mt-3">
           {children}
         </article>
       </section>

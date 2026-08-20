@@ -38,8 +38,8 @@ const statusOrder: BookingStatus[] = ["PENDING", "CONTACTED", "SCHEDULED", "COMP
 
 const statusStyles: Record<BookingStatus, string> = {
   PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300",
-  CONTACTED: "bg-sky-100 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300",
-  SCHEDULED: "bg-sky-100 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300",
+  CONTACTED: "bg-accent-100 text-accent-800 dark:bg-accent-500/10 dark:text-accent-300",
+  SCHEDULED: "bg-accent-100 text-accent-800 dark:bg-accent-500/10 dark:text-accent-300",
   COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300",
   CANCELLED: "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/60",
 };
@@ -339,7 +339,7 @@ export function DemoBookingsAdmin({
               onClick={() => setFilter((current) => (current === status ? "ALL" : status))}
               className={`rounded-lg border px-3 py-2 text-left transition ${
                 filter === status
-                  ? "border-sky-400 bg-sky-50 dark:border-accent-400/60 dark:bg-accent-500/10"
+                  ? "border-accent-400 bg-accent-50 dark:border-accent-400/60 dark:bg-accent-500/10"
                   : "border-slate-200 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-white/20"
               }`}
             >
@@ -391,7 +391,7 @@ export function DemoBookingsAdmin({
                   setFilter("ALL");
                   setSelectedDay(null);
                 }}
-                className="text-xs text-sky-600 hover:underline dark:text-accent-300"
+                className="text-xs text-accent-600 hover:underline dark:text-accent-300"
               >
                 Clear filter
               </button>
@@ -413,7 +413,7 @@ export function DemoBookingsAdmin({
                       onClick={() => setActiveId(booking.id)}
                       className={`flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition ${
                         isActive
-                          ? "bg-sky-50 dark:bg-accent-500/10"
+                          ? "bg-accent-50 dark:bg-accent-500/10"
                           : "hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                       }`}
                     >
@@ -539,18 +539,18 @@ function DetailPanel({
       </div>
 
       <div className="space-y-2 text-sm">
-        <a href={`mailto:${booking.email}`} className="flex items-center gap-2 text-slate-700 hover:text-sky-700 dark:text-white/80 dark:hover:text-accent-300">
+        <a href={`mailto:${booking.email}`} className="flex items-center gap-2 text-slate-700 hover:text-accent-700 dark:text-white/80 dark:hover:text-accent-300">
           <Mail className="h-4 w-4 text-slate-400" />
           {booking.email}
         </a>
         {booking.phone ? (
-          <a href={`tel:${booking.phone}`} className="flex items-center gap-2 text-slate-700 hover:text-sky-700 dark:text-white/80 dark:hover:text-accent-300">
+          <a href={`tel:${booking.phone}`} className="flex items-center gap-2 text-slate-700 hover:text-accent-700 dark:text-white/80 dark:hover:text-accent-300">
             <Phone className="h-4 w-4 text-slate-400" />
             {booking.phone}
           </a>
         ) : null}
         {booking.scheduledAt ? (
-          <div className="flex items-center gap-2 font-semibold text-sky-800 dark:text-sky-300">
+          <div className="flex items-center gap-2 font-semibold text-accent-800 dark:text-accent-300">
             <Calendar className="h-4 w-4" />
             {formatIstSlot(booking.scheduledAt)}
           </div>
@@ -591,7 +591,7 @@ function DetailPanel({
                 onClick={() => onStatusChange(status)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition ${
                   active
-                    ? statusStyles[status] + " ring-2 ring-sky-300 dark:ring-accent-400/40"
+                    ? statusStyles[status] + " ring-2 ring-accent-300 dark:ring-accent-400/40"
                     : "border border-slate-200 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:text-white/65 dark:hover:bg-white/[0.05]"
                 }`}
               >

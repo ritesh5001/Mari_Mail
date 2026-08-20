@@ -184,6 +184,125 @@ async function getOverviewImpl(
 
 export type AnalyticsOverview = Awaited<ReturnType<typeof getOverview>>;
 
+/**
+ * The daily worklist behind the workflow guide.
+ *
+ * The guide's post-onboarding panel used to be three static cards describing
+ * the routine in prose ("Check new vessels", "Update the same list", …). It
+ * said the same thing on the busiest day and the emptiest one, so there was
+ * nothing to act on and nothing to finish.
+ *
+ * A row earns its place only if it is *finishable* and *specific*. That rules
+ * out the obvious fourth row, "vessels arriving that aren't on a list yet":
+ * measured against production it reads 262 of 262 for a week's window and 77
+ * for a single day, because triage happens in bulk from Port Radar's filters,
+ * not ship by ship. A number nobody can drive to zero is a mood, not a task —
+ * and the ETA and missed-opportunity cards further down the page already
+ * carry the "what's arriving" signal, the second of them scoped to the 48h
+ * window that actually is urgent.
+ *
+ * What's left is the middle of the funnel, which nothing else on the page
+ * reports: lists that stalled half-built. Both counts are small integers and
+ * both link to the exact list when only one qualifies.
+ */
+export type WorklistRow = {
+  /** Stable id so the UI can key rows and pick an icon. */
+  key: "needs-contacts" | "ready-to-launch";
+  count: number;
+  href: string;
+};
+
+export type Worklist = {
+  rows: WorklistRow[];
+  /** Name of the single list a row points at, when a row resolves to exactly one. */
+  listNames: Partial<Record<WorklistRow["key"], string>>;
+};
+
+async function getWorklistImpl(workspaceId: string): Promise<Worklist> {
+  try {
+    const [needsContacts, readyToLaunch] = await Promise.all([
+      // Lists holding vessels but nobody to email. `contactCount` is
+      // a persisted column on ContactList, so this stays a single indexed
+      // read; deriving it per-vessel would mean running the contact↔vessel
+      // matcher across the whole workspace.
+      //
+      // Unbounded on purpose: a workspace has tens of lists, not thousands,
+      // and the row has to report the true total. Capping the fetch would cap
+      // the number the user reads.
+      prisma.contactList.findMany({
+        where: {
+          workspaceId,
+          isArchived: false,
+          contactCount: 0,
+          vessels: { some: {} },
+        },
+        select: { id: true, name: true },
+        orderBy: { updatedAt: "desc" },
+      }),
+
+      // Lists with contacts where not one of them has ever been
+      // enrolled in a campaign, i.e. ready to launch and never launched.
+      // A list that is partly enrolled is mid-flight, not pending, so the
+      // HAVING clause requires zero enrolments rather than "fewer than all".
+      prisma.$queryRaw<Array<{ id: string; name: string }>>`
+        SELECT cl.id, cl.name
+        FROM "ContactList" cl
+        JOIN "ListContact" lc ON lc."listId" = cl.id
+        LEFT JOIN "CampaignContact" cc
+          ON cc."contactId" = lc."contactId"
+         AND cc."workspaceId" = cl."workspaceId"
+        WHERE cl."workspaceId" = ${workspaceId}
+          AND cl."isArchived" = false
+        GROUP BY cl.id, cl.name
+        HAVING COUNT(cc.id) = 0
+        ORDER BY COUNT(DISTINCT lc."contactId") DESC
+      `,
+    ]);
+
+    const rows: WorklistRow[] = [];
+    const listNames: Worklist["listNames"] = {};
+
+    // A zero row is hidden rather than rendered as "0" — a quiet day should
+    // look quiet, not like a set of unfinished jobs.
+    if (needsContacts.length > 0) {
+      // One list → link straight to it. More than one → the index, since we
+      // can't know which they meant.
+      const only = needsContacts.length === 1 ? needsContacts[0] : null;
+      if (only) listNames["needs-contacts"] = only.name;
+      rows.push({
+        key: "needs-contacts",
+        count: needsContacts.length,
+        href: only ? `/dashboard/lists/${only.id}` : "/dashboard/lists",
+      });
+    }
+    if (readyToLaunch.length > 0) {
+      const only = readyToLaunch.length === 1 ? readyToLaunch[0] : null;
+      if (only) listNames["ready-to-launch"] = only.name;
+      rows.push({
+        key: "ready-to-launch",
+        count: readyToLaunch.length,
+        href: only ? `/dashboard/lists/${only.id}` : "/dashboard/lists",
+      });
+    }
+
+    return { rows, listNames };
+  } catch (err) {
+    // Same posture as getOverview: the guide is decoration on a working app,
+    // so a failed aggregate degrades to "nothing to show" rather than taking
+    // the dashboard down with it.
+    console.error("[analytics] getWorklist failed:", err);
+    return { rows: [], listNames: {} };
+  }
+}
+
+// No country argument: both rows count ContactList rows, which belong to the
+// workspace outright. The grant scopes ETA reads, and there are none here.
+export const getWorklist = unstable_cache(
+  (workspaceId: string) => getWorklistImpl(workspaceId),
+  ["dashboard-worklist"],
+  { revalidate: 60, tags: ["analytics"] },
+);
+
 export async function getPortAnalytics(workspaceId: string) {
   try {
   const rows = await prisma.$queryRaw<Array<{ portCode: string; portName: string | null; sent: bigint; opened: bigint; replied: bigint; campaigns: bigint }>>`

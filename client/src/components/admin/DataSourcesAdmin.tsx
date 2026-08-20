@@ -82,7 +82,7 @@ export function DataSourcesAdmin({
       />
 
       <Row
-        icon={<Database className="h-5 w-5 text-sky-600" />}
+        icon={<Database className="h-5 w-5 text-accent-600" />}
         title="Maribiz (secondary marine DB)"
         description="External read-only marine industry database. Query results merge into the first search page."
         enabled={state.maribiz.enabled}
@@ -100,7 +100,7 @@ export function DataSourcesAdmin({
       />
 
       <Row
-        icon={<Zap className="h-5 w-5 text-sky-600" />}
+        icon={<Zap className="h-5 w-5 text-accent-600" />}
         title="Contact Data Source"
         description="People search by company domain. Email & phone reveals cost workspace credits."
         enabled={state.apollo.enabled}

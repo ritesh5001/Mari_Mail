@@ -8,7 +8,7 @@ import { apiUrl } from "@/lib/client-api";
 import { DemoSlotPicker } from "@/components/marketing/DemoSlotPicker";
 
 const inputCls =
-  "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:shadow-none dark:placeholder:text-white/30 dark:focus:border-accent-400/60 dark:focus:bg-white/[0.06] dark:focus:ring-0";
+  "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-accent-400 focus:ring-4 focus:ring-accent-100 dark:border-white/10 dark:bg-white/[0.04] dark:text-white dark:shadow-none dark:placeholder:text-white/30 dark:focus:border-accent-400/60 dark:focus:bg-white/[0.06] dark:focus:ring-0";
 const labelCls = "block text-xs font-semibold text-slate-600 dark:text-white/70";
 
 /** Red asterisk marking a required field. */
@@ -115,7 +115,7 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
         </div>
         <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Demo booked</h2>
         {slotLabel ? (
-          <p className="mx-auto mt-3 max-w-sm rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+          <p className="mx-auto mt-3 max-w-sm rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-sm font-semibold text-accent-900 dark:border-accent-500/30 dark:bg-accent-500/10 dark:text-accent-200">
             {slotLabel}
           </p>
         ) : null}
@@ -204,7 +204,7 @@ export function BookDemoForm({ successMessage }: { successMessage: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-sky-700 to-blue-700 text-sm font-semibold text-white shadow-[0_16px_42px_rgba(2, 132, 199,0.24)] transition hover:from-sky-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#F8FAFC] dark:bg-none dark:text-black dark:shadow-none dark:hover:bg-[#EDEDF0]"
+        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-accent-700 to-accent-500 text-sm font-semibold text-white shadow-[0_16px_42px_rgba(79,109,255,0.24)] transition hover:from-accent-600 hover:to-accent-400 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[#F8FAFC] dark:bg-none dark:text-black dark:shadow-none dark:hover:bg-[#EDEDF0]"
       >
         {pending ? (
           <>

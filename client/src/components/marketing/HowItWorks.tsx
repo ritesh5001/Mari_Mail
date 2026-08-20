@@ -128,7 +128,7 @@ function VesselList({ rows }: { rows: VesselRow[] }) {
 function InboxProviders({ rows }: { rows: InboxRow[] }) {
   const badge: Record<InboxRow["provider"], string> = {
     Gmail: "bg-red-500/15 text-red-300",
-    Outlook: "bg-sky-500/15 text-sky-300",
+    Outlook: "bg-accent-500/15 text-accent-300",
     "IMAP/SMTP": "bg-white/10 text-white/70",
   };
   return (
@@ -212,7 +212,7 @@ function ActivityTimeline({ events }: { events: TimelineEvent[] }) {
   const meta: Record<TimelineEvent["kind"], { icon: typeof Reply; tint: string; label: string }> = {
     reply: { icon: Reply, tint: "text-emerald-300 bg-emerald-500/15", label: "Replied" },
     open: { icon: Mail, tint: "text-accent-300 bg-accent-500/15", label: "Opened" },
-    click: { icon: MousePointerClick, tint: "text-sky-300 bg-sky-500/15", label: "Clicked" },
+    click: { icon: MousePointerClick, tint: "text-accent-300 bg-accent-500/15", label: "Clicked" },
     bounce: { icon: AlertTriangle, tint: "text-amber-300 bg-amber-500/15", label: "Bounced" },
     unsub: { icon: Ban, tint: "text-rose-300 bg-rose-500/15", label: "Unsub" },
   };

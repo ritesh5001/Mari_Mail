@@ -153,11 +153,11 @@ export function DemoSlotPicker({
       {/* The timezone is stated once, prominently, and repeated on every slot
           button's label — a visitor should never have to guess whose clock
           these times belong to. */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
-        <p className="text-xs font-medium text-sky-900 dark:text-sky-200">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 dark:border-accent-500/30 dark:bg-accent-500/10">
+        <p className="text-xs font-medium text-accent-900 dark:text-accent-200">
           All times shown in <strong>{data.timezone}</strong> — our team&rsquo;s working hours
         </p>
-        <p className="text-[11px] text-sky-800/80 dark:text-sky-200/70">
+        <p className="text-[11px] text-accent-800/80 dark:text-accent-200/70">
           Mon–Fri, {String(data.businessHours.start).padStart(2, "0")}:00–{data.businessHours.end}:00
         </p>
       </div>
@@ -177,8 +177,8 @@ export function DemoSlotPicker({
                 aria-pressed={active}
                 className={`w-[4.75rem] shrink-0 snap-start rounded-lg border px-2 py-2 text-center transition ${
                   active
-                    ? "border-sky-500 bg-sky-600 text-white shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-sky-400/40"
+                    ? "border-accent-500 bg-accent-600 text-white shadow-sm"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-accent-400/40"
                 }`}
               >
                 <span className="block text-[11px] font-medium opacity-80">{d.weekdayShort}</span>
@@ -210,8 +210,8 @@ export function DemoSlotPicker({
                   aria-label={`${slot.istTime} to ${slot.istEndTime} ${data.timezone}${local ? `, ${local} your time` : ""}`}
                   className={`rounded-lg border px-2 py-2 text-center transition ${
                     active
-                      ? "border-sky-500 bg-sky-600 text-white shadow-sm"
-                      : "border-slate-200 bg-white text-slate-800 hover:border-sky-300 hover:bg-sky-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 dark:hover:border-sky-400/40"
+                      ? "border-accent-500 bg-accent-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-800 hover:border-accent-300 hover:bg-accent-50 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/85 dark:hover:border-accent-400/40"
                   }`}
                 >
                   <span className="block text-sm font-semibold tabular-nums">{slot.istTime}</span>

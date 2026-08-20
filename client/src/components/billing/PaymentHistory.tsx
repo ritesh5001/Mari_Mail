@@ -25,22 +25,26 @@ type LedgerRow = {
 };
 
 /**
- * Payments and the credit ledger.
+ * Payments, and optionally the credit ledger beside them.
  *
  * Failed and abandoned attempts are shown, not just successes. A customer whose
  * card was declined needs to see that it was declined and why — silently
  * omitting the row leaves them staring at an unchanged plan with no explanation,
  * and reaching for support.
+ *
+ * `ledger` is optional because credit history has its own tab now, with paging
+ * and a price list. Omitting it here lets the payments list use the full width
+ * instead of sitting next to a truncated copy of a better view.
  */
 export function PaymentHistory({
   payments,
   ledger,
 }: {
   payments: PaymentRow[];
-  ledger: LedgerRow[];
+  ledger?: LedgerRow[];
 }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className={ledger ? "grid gap-4 xl:grid-cols-2" : ""}>
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Payments</h2>
         {payments.length === 0 ? (
@@ -77,6 +81,7 @@ export function PaymentHistory({
         )}
       </section>
 
+      {!ledger ? null : (
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Credit activity</h2>
         {ledger.length === 0 ? (
@@ -114,6 +119,7 @@ export function PaymentHistory({
           </ul>
         )}
       </section>
+      )}
     </div>
   );
 }
@@ -137,7 +143,7 @@ function StatusPill({ status }: { status: string }) {
       : status === "FAILED"
         ? "text-red-600 dark:text-red-400"
         : status === "REFUNDED"
-          ? "text-sky-600 dark:text-sky-400"
+          ? "text-accent-600 dark:text-accent-400"
           : "text-slate-400 dark:text-white/35";
   const label =
     status === "CREATED" ? "Not completed" : status.charAt(0) + status.slice(1).toLowerCase();

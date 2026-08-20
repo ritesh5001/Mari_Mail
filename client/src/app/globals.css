@@ -336,28 +336,32 @@ html.dark .hover\:bg-slate-50\/70:hover,
 html.dark .hover\:bg-slate-200:hover,
 html.dark .hover\:bg-slate-100:hover { background-color: rgba(255,255,255,0.03); }
 
-/* Status tints. `bg-emerald-50`/`bg-red-50`/`bg-amber-50`/`bg-sky-50` are
-   near-white by design, so in dark mode every success/error/warning banner and
-   pill rendered as a bright white block punched into the dark UI. Re-express
-   them as low-alpha washes of their own hue, and lift the paired text/border to
-   the light end of the ramp so contrast survives. ~220 usages app-wide. */
+/* Status tints. `bg-emerald-50`/`bg-red-50`/`bg-amber-50` are near-white by
+   design, so in dark mode every success/error/warning banner and pill rendered
+   as a bright white block punched into the dark UI. Re-express them as
+   low-alpha washes of their own hue, and lift the paired text/border to the
+   light end of the ramp so contrast survives. ~220 usages app-wide.
+
+   These rules are unlayered, so they beat Tailwind's layered utilities —
+   including a component's own `dark:` variant. That is tolerable for the
+   status hues, which have no competing dark treatment.
+
+   The brand accent is deliberately NOT in this block. `accent-*` has ~450
+   usages and 86 of them already state an explicit dark colour
+   (`dark:text-accent-300`, `dark:bg-accent-500/15`, …); a blanket rule here
+   would silently flatten every one of them to a single value. Accent sites
+   carry their own `dark:` variant instead. */
 html.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.12); }
 html.dark .bg-red-50     { background-color: rgba(239, 68, 68, 0.12); }
 html.dark .bg-amber-50   { background-color: rgba(245, 158, 11, 0.12); }
-html.dark .bg-sky-50     { background-color: rgba(14, 165, 233, 0.12); }
-html.dark .bg-cyan-50    { background-color: rgba(6, 182, 212, 0.12); }
 
 html.dark .text-emerald-800, html.dark .text-emerald-700, html.dark .text-emerald-600 { color: #6EE7B7; }
 html.dark .text-red-800,     html.dark .text-red-700,     html.dark .text-red-600     { color: #FCA5A5; }
 html.dark .text-amber-800,   html.dark .text-amber-700,   html.dark .text-amber-600   { color: #FCD34D; }
-html.dark .text-sky-800,     html.dark .text-sky-700,     html.dark .text-sky-600     { color: #7DD3FC; }
-html.dark .text-cyan-700 { color: #67E8F9; }
 
 html.dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.30); }
 html.dark .border-red-200     { border-color: rgba(239, 68, 68, 0.30); }
 html.dark .border-amber-200   { border-color: rgba(245, 158, 11, 0.30); }
-html.dark .border-sky-200     { border-color: rgba(14, 165, 233, 0.30); }
-html.dark .border-cyan-200    { border-color: rgba(6, 182, 212, 0.30); }
 
 /* Brand tokens. `--navy` is #0A0A0C in dark mode, so `text-navy` rendered
    near-black on the near-black card surface (~1.03:1 contrast) — every KPI

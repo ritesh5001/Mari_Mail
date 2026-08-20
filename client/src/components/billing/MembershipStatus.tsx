@@ -68,7 +68,7 @@ function toneFor(membership: MembershipView) {
     return {
       icon: Clock,
       className:
-        "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-200",
+        "border-accent-200 bg-accent-50 text-accent-900 dark:border-accent-400/20 dark:bg-accent-500/10 dark:text-accent-200",
     };
   }
   return {

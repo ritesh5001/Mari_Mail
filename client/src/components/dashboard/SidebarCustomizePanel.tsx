@@ -95,7 +95,7 @@ export function SidebarCustomizePanel({
                       checked={!isHidden}
                       disabled={pending === item.href}
                       onChange={() => toggle(item.href)}
-                      className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:border-white/20"
+                      className="h-4 w-4 rounded border-slate-300 text-accent-600 focus:ring-accent-500 dark:border-white/20"
                     />
                   </label>
                 );

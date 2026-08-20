@@ -331,7 +331,7 @@ export function CsvImportForm() {
         <select
           value={importType}
           onChange={(event) => updateImportType(event.target.value as ImportType)}
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
         >
           <option value="MARINE_DATA_ROWS">Marine data rows</option>
           <option value="VESSELS">Vessels</option>
@@ -352,7 +352,7 @@ export function CsvImportForm() {
           <select
             value={country}
             onChange={(event) => setCountry(event.target.value)}
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
           >
             <option value="">All / not specified</option>
             {countries.map((option) => (
@@ -379,9 +379,9 @@ export function CsvImportForm() {
         </div>
       ) : null}
 
-      <label className="block rounded-lg border border-dashed border-sky-200/80 bg-sky-50/40 px-4 py-5 text-sm text-slate-700 shadow-sm transition-colors hover:border-sky-400 hover:bg-sky-50">
+      <label className="block rounded-lg border border-dashed border-accent-200/80 bg-accent-50/40 px-4 py-5 text-sm text-slate-700 shadow-sm transition-colors hover:border-accent-400 hover:bg-accent-50">
         <span className="flex items-center gap-2 font-semibold text-slate-900">
-          <Upload className="h-4 w-4 text-sky-700" />
+          <Upload className="h-4 w-4 text-accent-700" />
           Upload CSV file
         </span>
         <span className="mt-1 block text-xs leading-5 text-slate-500">
@@ -390,7 +390,7 @@ export function CsvImportForm() {
         <input
           type="file"
           accept=".csv,text/csv"
-          className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-sky-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-sky-600"
+          className="mt-3 block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-accent-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-accent-600"
           onChange={(event) => void readCsvFile(event.target.files?.[0])}
         />
         {fileName ? (
@@ -413,7 +413,7 @@ export function CsvImportForm() {
             setSchemaFieldSearch("");
           }}
           rows={12}
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 shadow-sm outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
           placeholder={`${VESSEL_TEMPLATE_CSV}\n${CONTACT_SCHEMA_HEADERS.join(",")}\nElena,Pappas,Fleet Manager,Oceanic Technical Management,elena@example.com,Operations;Technical,Ritesh,+30 210 000 0100,+30 690 000 0101,+30 210 000 0102,+30 210 000 0103,https://linkedin.com/in/elena,https://example.com,https://linkedin.com/company/oceanic,Greece,Parent Shipping Ltd.,elena.secondary@example.com,SF-001`}
           required
         />
@@ -424,7 +424,7 @@ export function CsvImportForm() {
           type="button"
           disabled={!csv.trim() || pendingPreview}
           onClick={() => void requestPreview()}
-          className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCw className={`h-4 w-4 ${pendingPreview ? "animate-spin" : ""}`} />
           {pendingPreview ? "Reviewing..." : "Review headers"}
@@ -433,7 +433,7 @@ export function CsvImportForm() {
           type="button"
           disabled={!canStartImport}
           onClick={() => void importCsv()}
-          className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-sky-700 to-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(2, 132, 199,0.24)] transition-all hover:-translate-y-0.5 hover:from-sky-600 hover:to-blue-600 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-none disabled:bg-slate-300 disabled:text-white disabled:shadow-none"
+          className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-accent-700 to-accent-500 px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(79,109,255,0.24)] transition-all hover:-translate-y-0.5 hover:from-accent-600 hover:to-accent-400 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-none disabled:bg-slate-300 disabled:text-white disabled:shadow-none"
         >
           <Upload className="h-4 w-4" />
           {pendingImport ? "Submitting..." : "Start background import"}
@@ -444,7 +444,7 @@ export function CsvImportForm() {
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
       {importJob ? (
-        <div className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+        <div className="rounded-md bg-accent-50 px-3 py-2 text-sm text-accent-800">
           Background import job {importJob.jobId} is {importJob.status}
           {importJob.rowCount ? ` for ${importJob.rowCount.toLocaleString("en")} rows` : ""}.
           {importJob.status === "completed" ? " Import completed." : " You can leave this page after the job is queued; the server worker will continue."}
@@ -466,7 +466,7 @@ export function CsvImportForm() {
       ) : null}
 
       {preview ? (
-        <section className="space-y-4 rounded-lg border border-sky-100 bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.06)]">
+        <section className="space-y-4 rounded-lg border border-accent-100 bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,0.06)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-slate-950">Header review</p>
@@ -518,7 +518,7 @@ export function CsvImportForm() {
           ) : null}
 
           {priorityVesselFields.length > 0 ? (
-            <div className="rounded-md border border-sky-100 bg-sky-50/35 px-3 py-2">
+            <div className="rounded-md border border-accent-100 bg-accent-50/35 px-3 py-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Available vessel fields</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {priorityVesselFields.map((field) => (
@@ -542,7 +542,7 @@ export function CsvImportForm() {
               <input
                 value={schemaFieldSearch}
                 onChange={(event) => setSchemaFieldSearch(event.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
                 placeholder="Find ETA, Ship Owner Phone, Commercial Manager Website..."
               />
             </label>
@@ -571,7 +571,7 @@ export function CsvImportForm() {
                         <select
                           value={selectedValue}
                           onChange={(event) => setHeaderMapping(header, event.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-100"
                         >
                           <option value="">Unmapped</option>
                           <option value={IGNORE_FIELD}>Ignore</option>

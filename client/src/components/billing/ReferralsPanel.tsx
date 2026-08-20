@@ -9,7 +9,7 @@ import type { ReferralRowDTO, ReferralSummaryDTO } from "@/app/dashboard/referra
 const STATUS_STYLE: Record<ReferralRowDTO["status"], { label: string; className: string }> = {
   PENDING: {
     label: "Trial in progress",
-    className: "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200",
+    className: "bg-accent-100 text-accent-800 dark:bg-accent-950/50 dark:text-accent-200",
   },
   REWARDED: {
     label: "Paid",

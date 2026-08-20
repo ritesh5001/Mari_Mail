@@ -17,9 +17,17 @@ type Props = {
   vesselIds: string[];
   onClose: () => void;
   onDone: (listName: string, count: number, listId: string) => void;
+  /**
+   * What happens after the vessels land on the list. Changes the copy only —
+   * the work is identical either way, but "Add to list" as the final button on
+   * a Find-people flow reads like the end of the task when it is the middle
+   * of one.
+   */
+  intent?: "add" | "find-people";
 };
 
-export function VesselAddToListModal({ vesselIds, onClose, onDone }: Props) {
+export function VesselAddToListModal({ vesselIds, onClose, onDone, intent = "add" }: Props) {
+  const findingPeople = intent === "find-people";
   const [lists, setLists] = useState<ContactList[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -109,8 +117,14 @@ export function VesselAddToListModal({ vesselIds, onClose, onDone }: Props) {
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <p className="text-sm font-semibold text-slate-950">Add to List</p>
-            <p className="text-xs text-slate-500">{vesselIds.length} vessel{vesselIds.length !== 1 ? "s" : ""} selected</p>
+            <p className="text-sm font-semibold text-slate-950">
+              {findingPeople ? "Choose a list" : "Add to List"}
+            </p>
+            <p className="text-xs text-slate-500">
+              {findingPeople
+                ? `${vesselIds.length} vessel${vesselIds.length !== 1 ? "s" : ""} · contacts you find will be saved here`
+                : `${vesselIds.length} vessel${vesselIds.length !== 1 ? "s" : ""} selected`}
+            </p>
           </div>
           <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X className="h-4 w-4" />
@@ -178,7 +192,7 @@ export function VesselAddToListModal({ vesselIds, onClose, onDone }: Props) {
             className="inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white hover:bg-ocean disabled:opacity-50"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Add to list
+            {findingPeople ? "Continue" : "Add to list"}
           </button>
         </div>
       </div>

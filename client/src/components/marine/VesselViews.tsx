@@ -831,12 +831,12 @@ export function ExternalContactsSubrow({
               <tr key={contact.id} className="hover:bg-slate-50">
                 <td className="px-3 py-2">
                   {isApollo ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent-700 dark:bg-accent-500/15 dark:text-accent-300">
                       <Zap className="h-3 w-3" />
                       Web
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-sky-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-accent-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent-700 dark:bg-accent-500/15 dark:text-accent-300">
                       <Database className="h-3 w-3" />
                       Directory
                     </span>
@@ -851,7 +851,7 @@ export function ExternalContactsSubrow({
                       type="button"
                       onClick={() => onReveal(contact, "email")}
                       disabled={revealing.has(emailKey)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 disabled:opacity-60 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:hover:bg-accent-500/20"
                       title="Unlock this email — 1 credit"
                     >
                       {revealing.get(emailKey) === "email" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
@@ -867,7 +867,7 @@ export function ExternalContactsSubrow({
                       type="button"
                       onClick={() => onReveal(contact, "phone")}
                       disabled={revealing.has(phoneKey)}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 disabled:opacity-60 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:hover:bg-accent-500/20"
                       title="Unlock this phone — 1 credit"
                     >
                       {revealing.get(phoneKey) === "phone" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}

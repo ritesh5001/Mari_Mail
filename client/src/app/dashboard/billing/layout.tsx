@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/api";
+import { BillingTabs } from "@/components/billing/BillingTabs";
 
 /**
  * Reachable by the active workspace's OWNER or ADMIN.
@@ -32,5 +33,16 @@ export default async function BillingLayout({ children }: { children: React.Reac
     redirect("/dashboard");
   }
 
-  return <>{children}</>;
+  // Header and tabs live here so both pages share one identity — and so the
+  // Credits tab is visible from the Plan page, which is the only way anyone
+  // discovers it.
+  return (
+    <div className="space-y-6">
+      <header className="space-y-4">
+        <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Plan &amp; billing</h1>
+        <BillingTabs />
+      </header>
+      {children}
+    </div>
+  );
 }

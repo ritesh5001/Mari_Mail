@@ -18,8 +18,8 @@ export type CalendarBooking = {
 /** Dot colour per status, matching the badges used in the list. */
 const STATUS_DOT: Record<BookingStatus, string> = {
   PENDING: "bg-amber-500",
-  CONTACTED: "bg-sky-500",
-  SCHEDULED: "bg-sky-500",
+  CONTACTED: "bg-accent-500",
+  SCHEDULED: "bg-accent-500",
   COMPLETED: "bg-emerald-500",
   CANCELLED: "bg-slate-400",
 };
@@ -335,7 +335,7 @@ export function DemoBookingCalendar({
           <button
             type="button"
             onClick={() => onSelectDay(null)}
-            className="font-medium text-sky-600 hover:underline dark:text-accent-300"
+            className="font-medium text-accent-600 hover:underline dark:text-accent-300"
           >
             Show all
           </button>

@@ -36,8 +36,8 @@ const TONE = {
     Icon: PauseCircle,
   },
   COMPLETED: {
-    box: "border-sky-300 bg-sky-50 dark:border-sky-400/30 dark:bg-sky-400/10",
-    text: "text-sky-900 dark:text-sky-200",
+    box: "border-accent-300 bg-accent-50 dark:border-accent-400/30 dark:bg-accent-400/10",
+    text: "text-accent-900 dark:text-accent-200",
     Icon: CheckCircle2,
   },
   FAILED: {

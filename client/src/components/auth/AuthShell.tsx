@@ -34,7 +34,7 @@ export function AuthShell({
         <section className="relative hidden flex-col overflow-hidden bg-white lg:flex dark:bg-black">
           <div className="absolute inset-0 starfield animate-star-pulse opacity-50" aria-hidden />
           <div className="absolute inset-0 hero-aurora animate-aurora-drift" aria-hidden />
-          <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-transparent to-sky-100/80 dark:from-[#0A0A0C]/80 dark:to-[#2A38B8]/20" aria-hidden />
+          <div className="absolute inset-0 bg-gradient-to-br from-white/80 via-transparent to-accent-100/80 dark:from-[#0A0A0C]/80 dark:to-[#2A38B8]/20" aria-hidden />
 
           <div className="relative z-10 flex h-full flex-col justify-between p-12">
             <Link href="/" className="flex items-center" aria-label="MariMail home">

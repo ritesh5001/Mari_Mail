@@ -332,7 +332,7 @@ function EngagementChip({
     <span
       className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
         active
-          ? "bg-sky-100 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300"
+          ? "bg-accent-100 text-accent-800 dark:bg-accent-500/10 dark:text-accent-300"
           : "bg-slate-100 text-slate-400 dark:bg-white/[0.06] dark:text-white/40"
       }`}
       title={label}

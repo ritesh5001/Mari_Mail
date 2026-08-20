@@ -196,7 +196,7 @@ function ListSection({
                 key={list.id}
                 className={`group relative flex items-center gap-3 rounded-lg border px-3 py-3 hover:border-ocean ${
                   isEta
-                    ? "border-sky-200 bg-sky-50/40 dark:border-sky-500/30 dark:bg-sky-500/[0.03]"
+                    ? "border-accent-200 bg-accent-50/40 dark:border-accent-500/30 dark:bg-accent-500/[0.03]"
                     : "border-emerald-200 bg-emerald-50/40 dark:border-emerald-500/30 dark:bg-emerald-500/[0.03]"
                 }`}
               >

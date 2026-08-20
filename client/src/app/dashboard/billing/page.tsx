@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { formatUsdCents, planRank, type PlanKey } from "@marimail/utils/plans";
 import { CheckoutButton } from "@/components/billing/CheckoutButton";
@@ -23,10 +24,6 @@ export default async function BillingPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Plan &amp; billing</h1>
-      </header>
-
       <MembershipStatus membership={membership} gracePeriodDays={GRACE_PERIOD_DAYS} />
 
       {/* Usage against the plan's limits, as bars. The question a customer
@@ -35,12 +32,15 @@ export default async function BillingPage() {
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-white">This month</h2>
-          <p className="text-sm text-slate-500 dark:text-white/50">
+          <Link
+            href="/dashboard/billing/credits"
+            className="text-sm text-slate-500 hover:text-accent-600 dark:text-white/50 dark:hover:text-accent-300"
+          >
             <span className="font-semibold text-slate-900 dark:text-white">
               {workspace.creditBalance.toLocaleString("en-US")}
             </span>{" "}
             contact credits remaining
-          </p>
+          </Link>
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <UsageBar label="Vessels tracked" used={usage.vessels} limit={workspace.vesselLimit} />
@@ -127,7 +127,10 @@ export default async function BillingPage() {
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]">
+      <section
+        id="credit-packs"
+        className="scroll-mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]"
+      >
         <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Credit top-ups</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           {CREDIT_PACKS.map((pack) => (
@@ -154,7 +157,9 @@ export default async function BillingPage() {
         </div>
       </section>
 
-      <PaymentHistory payments={payments} ledger={ledger} />
+      {/* Credit history lives on the Credits tab, where it has paging and a
+          price list to sit next to. */}
+      <PaymentHistory payments={payments} />
 
       {/* Only for workspaces that subscribed before Razorpay became the
           default — their subscription still renews through Stripe, and the

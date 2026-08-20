@@ -1,8 +1,16 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { CalendarClock, ExternalLink, ListPlus, Loader2, SlidersHorizontal } from "lucide-react";
+import {
+  CalendarClock,
+  ExternalLink,
+  ListPlus,
+  Loader2,
+  SlidersHorizontal,
+  UserRoundSearch,
+} from "lucide-react";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
 import { ColumnCustomizer } from "@/components/table/ColumnCustomizer";
 import { MotionButton } from "@/components/ui/motion-button";
@@ -36,6 +44,17 @@ export type IndiaRadarEta = {
   };
 };
 import { VesselAddToListModal } from "@/components/marine/VesselAddToListModal";
+
+/**
+ * Loaded on demand. The role search behind this modal lives in ListViews,
+ * which is large enough that importing it statically put ~28 kB on Port
+ * Radar's first load — paid by every visit, spent by the few that open it.
+ */
+const VesselFindPeopleModal = dynamic(
+  () =>
+    import("@/components/marine/VesselFindPeopleModal").then((m) => m.VesselFindPeopleModal),
+  { ssr: false },
+);
 import { ExternalContactsSubrow, type ExternalContactRow, type ExternalLoadState } from "@/components/marine/VesselViews";
 import { EditVesselButton } from "@/components/marine/EditVesselButton";
 import { EditEtaModal, type EditEtaInitial } from "@/components/marine/EditEtaModal";
@@ -74,12 +93,16 @@ function etaCountdown(value: string) {
   //   Today       — red     (act now)
   //   Tomorrow    — amber   (imminent)
   //   ≤ 7 days    — emerald (this week)
-  //   ≤ 30 days   — sky     (this month)
+  //   ≤ 30 days   — accent  (this month)
   //   > 30 days   — slate   (long-lead)
+  //
+  // The status hues get their dark treatment from the blanket rules in
+  // globals.css; accent carries its own, so it doesn't flatten the rest of
+  // the brand scale.
   if (days <= 0) return { label: "Today", tone: "border-red-200 bg-red-50 text-red-700" };
   if (days === 1) return { label: "Tomorrow", tone: "border-amber-200 bg-amber-50 text-amber-700" };
   if (days <= 7) return { label: `In ${days} days`, tone: "border-emerald-200 bg-emerald-50 text-emerald-700" };
-  if (days <= 30) return { label: `In ${days} days`, tone: "border-sky-200 bg-sky-50 text-sky-700" };
+  if (days <= 30) return { label: `In ${days} days`, tone: "border-accent-200 bg-accent-50 text-accent-700 dark:border-accent-400/30 dark:bg-accent-500/12 dark:text-accent-300" };
   return { label: `In ${days} days`, tone: "border-slate-200 bg-slate-100 text-slate-600" };
 }
 
@@ -115,7 +138,8 @@ function campaignBadge(triggers: Array<{ status: string }>) {
   if (!triggers.length) return { label: "None", tone: "border-slate-200 bg-slate-50 text-slate-600" };
   const active = triggers.some((trigger) => trigger.status === "PENDING" || trigger.status === "ACTIVE");
   if (active) return { label: "Active", tone: "border-emerald-200 bg-emerald-50 text-emerald-700" };
-  return { label: "Completed", tone: "border-cyan-200 bg-cyan-50 text-cyan-700" };
+  // Completed reads as accent app-wide (see the drip table's COMPLETED pill).
+  return { label: "Completed", tone: "border-accent-200 bg-accent-50 text-accent-700 dark:border-accent-400/30 dark:bg-accent-500/12 dark:text-accent-300" };
 }
 
 // Column visibility toggles persisted per-user in localStorage. Keys are the
@@ -185,6 +209,17 @@ export function PortRadarArrivals({
   const [externalLoadState, setExternalLoadState] = useState<Record<string, ExternalLoadState>>({});
   const [revealing, setRevealing] = useState<Map<string, "email" | "phone">>(new Map());
   const [showVesselModal, setShowVesselModal] = useState(false);
+  // "add" drops the selection on a list and stops there; "find-people" carries
+  // straight on into the role search against the same vessels.
+  const [listIntent, setListIntent] = useState<"add" | "find-people">("add");
+  // Set once the vessels are on a list and the role search can open. Holds the
+  // vessel ids captured at that moment — the row selection is cleared as soon
+  // as the add succeeds, so reading it later would search nothing.
+  const [findPeople, setFindPeople] = useState<{
+    listId: string;
+    listName: string;
+    vesselIds: string[];
+  } | null>(null);
   const [editingEta, setEditingEta] = useState<EditEtaInitial | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -419,12 +454,28 @@ export function PortRadarArrivals({
       {showVesselModal && (
         <VesselAddToListModal
           vesselIds={selectedVesselIds}
+          intent={listIntent}
           onClose={() => setShowVesselModal(false)}
-          onDone={(listName, added) => {
+          onDone={(listName, added, listId) => {
+            // Capture before clearing the selection — the role search needs
+            // the ids, and `selectedVesselIds` is about to be emptied.
+            const vesselIds = selectedVesselIds;
             setShowVesselModal(false);
             setSelectedVessels(new Set());
+            if (listIntent === "find-people") {
+              setFindPeople({ listId, listName, vesselIds });
+              return;
+            }
             done(`${added} vessel${added !== 1 ? "s" : ""} added to "${listName}"`);
           }}
+        />
+      )}
+      {findPeople && (
+        <VesselFindPeopleModal
+          listId={findPeople.listId}
+          listName={findPeople.listName}
+          vesselIds={findPeople.vesselIds}
+          onClose={() => setFindPeople(null)}
         />
       )}
       {editingEta && (
@@ -471,11 +522,31 @@ export function PortRadarArrivals({
               <SlidersHorizontal className="h-3.5 w-3.5" />
               Customize
             </button>
+            {/* The reason anyone selects arrivals in the first place is to
+                reach the people behind them, so that path gets its own button
+                here rather than living six steps away on the Lists page. */}
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedVesselIds.length === 0) return;
+                setListIntent("find-people");
+                setShowVesselModal(true);
+              }}
+              disabled={selectedVesselIds.length === 0}
+              className="inline-flex items-center gap-1 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-accent-700 disabled:opacity-40 enabled:hover:bg-accent-100 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:enabled:hover:bg-accent-500/20"
+            >
+              <UserRoundSearch className="h-3.5 w-3.5" />
+              Find people{selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}
+            </button>
             <MotionButton
               type="button"
               size="sm"
               icon={<ListPlus className="size-4" />}
-              onClick={() => selectedVesselIds.length > 0 && setShowVesselModal(true)}
+              onClick={() => {
+                if (selectedVesselIds.length === 0) return;
+                setListIntent("add");
+                setShowVesselModal(true);
+              }}
               disabled={selectedVesselIds.length === 0}
               label={`Add to List${selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}`}
             />

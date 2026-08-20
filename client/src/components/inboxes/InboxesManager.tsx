@@ -546,7 +546,7 @@ function ProviderPicker({ onPick }: { onPick: (provider: Provider) => void }) {
       title: "Outlook / Microsoft 365",
       description: "Sign in with Microsoft — no password needed.",
       mark: "O",
-      markClass: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+      markClass: "bg-accent-500/10 text-accent-600 dark:text-accent-400",
     },
     {
       id: "SMTP",

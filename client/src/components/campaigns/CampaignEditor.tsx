@@ -1292,7 +1292,7 @@ function KpiChip({
 }) {
   const badgeTone: Record<typeof tone, string> = {
     slate: "bg-slate-100 text-slate-700 dark:bg-white/[0.06] dark:text-white/80",
-    purple: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
+    purple: "bg-accent-100 text-accent-700 dark:bg-accent-500/20 dark:text-accent-200",
     amber: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200",
     pink: "bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-200",
     emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200",
@@ -2189,6 +2189,6 @@ function statusTone(status: string) {
   if (status === "ACTIVE") return "bg-emerald-100 text-emerald-700";
   if (status === "DRAFT") return "bg-slate-100 text-slate-700";
   if (status === "PAUSED") return "bg-amber-100 text-amber-700";
-  if (status === "COMPLETED") return "bg-blue-100 text-blue-700";
+  if (status === "COMPLETED") return "bg-accent-100 text-accent-700";
   return "bg-slate-100 text-slate-700";
 }

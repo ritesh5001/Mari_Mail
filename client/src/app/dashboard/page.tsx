@@ -18,6 +18,7 @@ import {
   formatRate,
   formatTrendDetail,
   getOverview,
+  getWorklist,
   requireAnalyticsWorkspace,
   trendDirection,
 } from "@/lib/analytics-data";
@@ -323,7 +324,12 @@ export default async function DashboardPage({
 }) {
   const { workspaceId, userId, workspace, countries, hasCountryGrant } =
     await requireAnalyticsWorkspace();
-  const itinerary = await getCampaignItineraryProgress(workspaceId, userId);
+  // Both feed the workflow guide above the fold, and neither depends on the
+  // other — no reason to make the second wait for the first.
+  const [itinerary, worklist] = await Promise.all([
+    getCampaignItineraryProgress(workspaceId, userId),
+    getWorklist(workspaceId),
+  ]);
   const days = (() => {
     const raw = typeof searchParams.range === "string" ? Number(searchParams.range) : 30;
     return [7, 30, 90].includes(raw) ? raw : 30;
@@ -356,7 +362,7 @@ export default async function DashboardPage({
         </div>
       </section>
 
-      <WorkflowJourney progress={itinerary} />
+      <WorkflowJourney progress={itinerary} worklist={worklist} />
 
       {/* No country granted = every ETA figure below is legitimately zero.
           Say why, but do NOT offer a picker: the target country is chosen at

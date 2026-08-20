@@ -6,7 +6,6 @@ import {
   Ban,
   Gift,
   BarChart3,
-  Bell,
   Bookmark,
   Calendar,
   ChevronDown,
@@ -43,6 +42,8 @@ import { ThemeToggle } from "./ThemeToggle";
 import { CreditBadge } from "@/components/dashboard/CreditBadge";
 import { TrialBanner } from "./TrialBanner";
 import type { CampaignItineraryProgress } from "@/lib/onboarding-types";
+import type { ActivityItem } from "@/lib/activity-data";
+import { ActivityBell } from "./ActivityBell";
 
 /**
  * Sidebar sections, in the order they appear.
@@ -147,12 +148,12 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
       className={cn(
         "group/nav relative flex h-11 items-center gap-3 rounded-lg px-[15px] transition-colors",
         active
-          ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+          ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300"
           : "text-slate-500 hover:bg-slate-100 hover:text-slate-950 dark:text-white/55 dark:hover:bg-white/[0.06] dark:hover:text-white",
       )}
     >
       {active && (
-        <span className="absolute left-[-12px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-sky-500 dark:bg-accent-400" />
+        <span className="absolute left-[-12px] top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r bg-accent-500 dark:bg-accent-400" />
       )}
       <Icon className="h-[18px] w-[18px] flex-shrink-0" />
       <motion.span
@@ -257,7 +258,7 @@ function NavSections({
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                       active
-                        ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+                        ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/70 dark:hover:bg-white/[0.06] dark:hover:text-white",
                     )}
                   >
@@ -370,10 +371,13 @@ function SidebarContent({
 export function DashboardShell({
   session,
   onboardingProgress,
+  activity,
   children,
 }: {
   session: AuthSession;
   onboardingProgress: CampaignItineraryProgress;
+  /** Recent workspace activity for the header bell, loaded by the layout. */
+  activity: ActivityItem[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -493,7 +497,7 @@ export function DashboardShell({
                 className={`hidden h-7 items-center gap-1.5 rounded-full border pl-1 pr-2.5 text-[12px] font-medium transition-colors sm:pr-3 md:inline-flex ${
                   setupInProgress
                     ? "border-accent-500/30 bg-accent-500/[0.08] text-accent-700 hover:bg-accent-500/[0.13] dark:border-accent-400/25 dark:bg-accent-400/10 dark:text-accent-200"
-                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-accent-50 hover:text-accent-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
                 }`}
               >
                 <span className="grid h-5 w-5 place-items-center rounded-full bg-white/80 text-current shadow-sm dark:bg-white/[0.08] dark:shadow-none">
@@ -517,24 +521,18 @@ export function DashboardShell({
               <button
                 type="button"
                 aria-label="Announcements"
-                className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
               >
                 <Megaphone className="h-4 w-4" />
                 <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#EF4444] shadow-[0_0_0_2px_#fff] dark:shadow-[0_0_0_2px_#0A0A0C]" />
               </button>
 
-              <button
-                type="button"
-                aria-label="Notifications"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70 dark:hover:bg-white/[0.08] dark:hover:text-white"
-              >
-                <Bell className="h-4 w-4" />
-              </button>
+              <ActivityBell items={activity} />
 
               <div className="group relative">
                 <button
                   type="button"
-                  className="flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm transition-colors hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                  className="flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm transition-colors hover:border-accent-200 hover:bg-accent-50 hover:text-accent-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:bg-white/[0.08] dark:hover:text-white"
                 >
                   <span className="max-w-[10rem] truncate">{activeWorkspace?.name ?? "Workspace"}</span>
                   <ChevronDown className="h-4 w-4 text-slate-400 dark:text-white/50" />
@@ -549,7 +547,7 @@ export function DashboardShell({
                         onClick={() => switchWorkspace(workspace)}
                         className={`block w-full truncate rounded px-2 py-2 text-left text-sm transition-colors ${
                           isActive
-                            ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+                            ? "bg-accent-50 text-accent-700 dark:bg-accent-500/15 dark:text-accent-300"
                             : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-white/75 dark:hover:bg-white/[0.06] dark:hover:text-white"
                         }`}
                       >

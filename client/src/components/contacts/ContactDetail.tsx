@@ -47,7 +47,7 @@ export function ContactDetail({ contact, vessels }: { contact: ContactModel; ves
           {contact.companyLinkedinUrl ? <a className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-3 py-2 font-semibold text-ocean" href={contact.companyLinkedinUrl}><Linkedin className="h-4 w-4" />Company LinkedIn</a> : null}
           {contact.website ? <a className="rounded-md border border-slate-200 px-3 py-2 font-semibold text-ocean" href={contact.website}>Website</a> : null}
           {contact.subsidiaryOf ? <span className="rounded-md bg-slate-100 px-3 py-2 font-semibold text-slate-700">Subsidiary of {contact.subsidiaryOf}</span> : null}
-          {contact.salesforceId ? <span className="rounded-md bg-blue-50 px-3 py-2 font-semibold text-ocean">Salesforce {contact.salesforceId}</span> : null}
+          {contact.salesforceId ? <span className="rounded-md bg-accent-50 px-3 py-2 font-semibold text-accent-700 dark:bg-accent-500/12 dark:text-accent-300">Salesforce {contact.salesforceId}</span> : null}
         </div>
       </section>
       {schemaGroups.map((group) => (

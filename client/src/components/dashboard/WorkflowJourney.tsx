@@ -4,16 +4,13 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
-  Filter,
   Inbox,
-  ListPlus,
   LockKeyhole,
   MailPlus,
   Radar,
   Rocket,
   Route,
   Settings2,
-  Ship,
   Sparkles,
   UserRoundSearch,
   Zap,
@@ -23,6 +20,7 @@ import type {
   CampaignItineraryStep,
   CampaignItineraryStepId,
 } from "@/lib/onboarding-types";
+import type { Worklist, WorklistRow } from "@/lib/analytics-data";
 
 const stepIcons: Record<CampaignItineraryStepId, LucideIcon> = {
   "connect-inbox": Inbox,
@@ -34,29 +32,6 @@ const stepIcons: Record<CampaignItineraryStepId, LucideIcon> = {
   "launch-campaign": Rocket,
 };
 
-const dailyRoutine = [
-  {
-    title: "Check new vessels",
-    description: "Open the latest arrivals in Port Radar.",
-    href: "/dashboard/port-radar",
-    action: "Open Port Radar",
-    icon: Ship,
-  },
-  {
-    title: "Update the same list",
-    description: "Add the relevant new vessels to your existing ETA list.",
-    href: "/dashboard/lists",
-    action: "Open lists",
-    icon: ListPlus,
-  },
-  {
-    title: "Reveal new contacts",
-    description: "Filter by title, reveal the decision-makers, and add them.",
-    href: "/dashboard/lists",
-    action: "Find contacts",
-    icon: Filter,
-  },
-] as const;
 
 function GuideUnavailable() {
   return (
@@ -282,38 +257,85 @@ function ItineraryList({ steps }: { steps: CampaignItineraryStep[] }) {
   );
 }
 
-function DailyWorkflow() {
+/**
+ * Copy for each worklist row. The count is the subject of the sentence, so
+ * the label reads as a job ("3 lists have no contacts yet") rather than a
+ * metric ("Lists without contacts: 3"). Singular and plural are both written
+ * out — English pluralisation here isn't just a trailing "s".
+ */
+const worklistCopy: Record<
+  WorklistRow["key"],
+  { icon: LucideIcon; one: string; many: (n: number) => string; action: string }
+> = {
+  "needs-contacts": {
+    icon: UserRoundSearch,
+    one: "1 list has vessels but no contacts",
+    many: (n) => `${n} lists have vessels but no contacts`,
+    action: "Find contacts",
+  },
+  "ready-to-launch": {
+    icon: Rocket,
+    one: "1 list has contacts and no campaign",
+    many: (n) => `${n} lists have contacts and no campaign`,
+    action: "Launch campaign",
+  },
+};
+
+function DailyWorkflow({ worklist }: { worklist: Worklist }) {
   return (
     <div className="space-y-4 p-5 sm:p-6">
-      <div className="grid gap-3 md:grid-cols-3">
-        {dailyRoutine.map((step, index) => {
-          const Icon = step.icon;
-          return (
-            <Link
-              key={step.title}
-              href={step.href}
-              className="group relative rounded-xl border border-slate-200 bg-white/85 p-4 transition-all hover:-translate-y-0.5 hover:border-accent-400 hover:shadow-md dark:border-white/10 dark:bg-white/[0.03] dark:hover:border-accent-400/50 dark:hover:shadow-none"
-            >
-              <div className="flex items-center justify-between">
-                <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent-500/10 text-accent-600 dark:text-accent-300">
-                  <Icon className="h-4 w-4" />
-                </span>
-                <span className="text-[11px] font-bold tabular-nums text-slate-300 dark:text-white/25">
-                  0{index + 1}
-                </span>
-              </div>
-              <h4 className="mt-4 text-sm font-semibold text-slate-950 dark:text-white">{step.title}</h4>
-              <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-white/50">
-                {step.description}
-              </p>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-accent-600 dark:text-accent-300">
-                {step.action}
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </Link>
-          );
-        })}
-      </div>
+      {worklist.rows.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/85 p-4 dark:border-white/10 dark:bg-white/[0.03]">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-300">
+            <CheckCircle2 className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-950 dark:text-white">
+              Nothing waiting on you
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-white/50">
+              Every list has contacts and a campaign behind it. New arrivals are below.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white/85 dark:divide-white/[0.07] dark:border-white/10 dark:bg-white/[0.03]">
+          {worklist.rows.map((row) => {
+            const copy = worklistCopy[row.key];
+            const Icon = copy.icon;
+            const name = worklist.listNames[row.key];
+            return (
+              <li key={row.key}>
+                <Link
+                  href={row.href}
+                  className="group flex items-center gap-3 p-4 transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+                >
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent-500/10 text-accent-600 dark:text-accent-300">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-slate-950 dark:text-white">
+                      {row.count === 1 ? copy.one : copy.many(row.count)}
+                    </span>
+                    {/* When exactly one list qualifies the link goes straight
+                        to it, so name it — otherwise the row promises a
+                        destination it doesn't identify. */}
+                    {name ? (
+                      <span className="mt-0.5 block truncate text-xs text-slate-500 dark:text-white/50">
+                        {name}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-accent-600 dark:text-accent-300">
+                    {copy.action}
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       <aside className="flex flex-col gap-4 rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/[0.07] sm:flex-row sm:items-center">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-500 text-white shadow-sm">
@@ -337,7 +359,13 @@ function DailyWorkflow() {
   );
 }
 
-export function WorkflowJourney({ progress }: { progress: CampaignItineraryProgress }) {
+export function WorkflowJourney({
+  progress,
+  worklist,
+}: {
+  progress: CampaignItineraryProgress;
+  worklist: Worklist;
+}) {
   if (!progress.available) return <GuideUnavailable />;
 
   return (
@@ -349,7 +377,7 @@ export function WorkflowJourney({ progress }: { progress: CampaignItineraryProgr
       <ProgressHeader progress={progress} />
 
       {progress.isComplete ? (
-        <DailyWorkflow />
+        <DailyWorkflow worklist={worklist} />
       ) : progress.nextStep ? (
         <div className="space-y-5 p-5 sm:p-6">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(360px,0.92fr)]">

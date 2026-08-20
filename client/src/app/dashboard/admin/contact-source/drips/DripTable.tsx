@@ -27,7 +27,7 @@ export type DripDTO = {
 const STATUS_TONE: Record<DripDTO["status"], string> = {
   ACTIVE: "bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-200",
   PAUSED: "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-white/70",
-  COMPLETED: "bg-sky-100 text-sky-800 dark:bg-sky-400/15 dark:text-sky-200",
+  COMPLETED: "bg-accent-100 text-accent-800 dark:bg-accent-400/15 dark:text-accent-200",
   FAILED: "bg-rose-100 text-rose-800 dark:bg-rose-400/15 dark:text-rose-200",
 };
 

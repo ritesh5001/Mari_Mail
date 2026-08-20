@@ -336,7 +336,7 @@ function StatusBadge({ job }: { job: ImportJob }) {
   const [Icon, label, className] = job.stalled
     ? [AlertTriangle, "Stuck", "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"]
     : job.status === "active"
-      ? [Loader2, "Running", "bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300"]
+      ? [Loader2, "Running", "bg-accent-50 text-accent-700 dark:bg-accent-500/10 dark:text-accent-300"]
       : job.status === "completed"
         ? [
             CheckCircle2,
@@ -398,7 +398,7 @@ function Banner({
       ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"
       : tone === "error"
         ? "border-red-200 bg-red-50 text-red-800 dark:border-red-400/20 dark:bg-red-500/10 dark:text-red-200"
-        : "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-200";
+        : "border-accent-200 bg-accent-50 text-accent-900 dark:border-accent-400/20 dark:bg-accent-500/10 dark:text-accent-200";
 
   return (
     <div className={cn("rounded-lg border px-4 py-3 text-sm", className)}>

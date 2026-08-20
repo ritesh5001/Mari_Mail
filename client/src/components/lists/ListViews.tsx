@@ -393,7 +393,7 @@ export function ContactListDetail({
       {notice && (
         <div
           role="status"
-          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800 shadow-lg dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200"
+          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-accent-200 bg-accent-50 px-4 py-3 text-sm font-medium text-accent-800 shadow-lg dark:border-accent-500/30 dark:bg-accent-500/10 dark:text-accent-200"
         >
           {notice}
         </div>
@@ -433,7 +433,7 @@ export function ContactListDetail({
               <span
                 className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                   isEta
-                    ? "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
+                    ? "bg-accent-100 text-accent-700 dark:bg-accent-500/20 dark:text-accent-200"
                     : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
                 }`}
               >
@@ -597,7 +597,7 @@ export function ContactListDetail({
               {activity.slice(0, 20).map((entry, idx) => (
                 <li key={`${entry.kind}:${entry.at}:${idx}`} className="flex items-center justify-between py-2 text-sm">
                   <div className="min-w-0">
-                    <span className={`mr-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${entry.kind === "vessel_added" ? "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"}`}>
+                    <span className={`mr-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${entry.kind === "vessel_added" ? "bg-accent-100 text-accent-700 dark:bg-accent-500/20 dark:text-accent-200" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"}`}>
                       {entry.kind === "vessel_added" ? "Vessel" : "Contact"}
                     </span>
                     {entry.kind === "vessel_added" ? (
@@ -2423,7 +2423,7 @@ export function CampaignByRolePanel({
                               type="button"
                               onClick={() => reveal(row, "email")}
                               disabled={revealing.has(emailKey)}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 disabled:opacity-60 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:hover:bg-accent-500/20"
                               title={`Unlock this email — ${revealPricing.email} credit${revealPricing.email === 1 ? "" : "s"}`}
                             >
                               {revealing.get(emailKey) === "email" ? (
@@ -2445,7 +2445,7 @@ export function CampaignByRolePanel({
                               type="button"
                               onClick={() => reveal(row, "phone")}
                               disabled={revealing.has(phoneKey)}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 disabled:opacity-60"
+                              className="inline-flex items-center gap-1.5 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 disabled:opacity-60 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:hover:bg-accent-500/20"
                               title={`Unlock this phone — ${revealPricing.phone} credits`}
                             >
                               {revealing.get(phoneKey) === "phone" ? (

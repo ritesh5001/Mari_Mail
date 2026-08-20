@@ -184,6 +184,22 @@ export const CREDIT_PACKS = [
 
 export type CreditPackKey = (typeof CREDIT_PACKS)[number]["packKey"];
 
+/**
+ * What each credit-spending action costs.
+ *
+ * Shared rather than server-local because the customer-facing Credits page has
+ * to quote these prices, and a page that promises "1 credit" while the server
+ * charges 20 is worse than no price at all. The two reveal prices are NOT here
+ * — they are admin-configurable per deployment and live on `ApolloSettings`,
+ * so they must be read from the database, not a constant.
+ */
+export const CREDIT_COST = {
+  VIEW_VESSEL: 1,
+  SAVE_VESSEL: 3,
+  EXPORT_VESSEL: 2,
+  WATERFALL_EMAIL: 20,
+} as const;
+
 export function creditPack(packKey: string) {
   return CREDIT_PACKS.find((pack) => pack.packKey === packKey) ?? null;
 }

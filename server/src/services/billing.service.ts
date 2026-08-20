@@ -1,5 +1,6 @@
 import { prisma, type BillingPlan, type BillingStatus, type Workspace, Prisma } from "@marimail/db";
 import {
+  CREDIT_COST as SHARED_CREDIT_COST,
   CREDIT_PACKS,
   PLANS,
   planLimits as sharedPlanLimits,
@@ -18,12 +19,12 @@ export const PLAN_CATALOG: Record<BillingPlan, PlanDefinition> = PLANS;
 
 export const CREDIT_PACK_CATALOG = CREDIT_PACKS;
 
-export const CREDIT_COST = {
-  VIEW_VESSEL: 1,
-  SAVE_VESSEL: 3,
-  EXPORT_VESSEL: 2,
-  WATERFALL_EMAIL: 20,
-} as const;
+/**
+ * Moved to `@marimail/utils/plans` for the same reason the plan catalog was:
+ * the Credits page quotes these prices to the customer, and only one copy may
+ * exist. Re-exported so existing call sites keep working.
+ */
+export const CREDIT_COST = SHARED_CREDIT_COST;
 
 export function waterfallEmailCost(contactCount: number): number {
   return Math.max(0, Math.trunc(contactCount)) * CREDIT_COST.WATERFALL_EMAIL;

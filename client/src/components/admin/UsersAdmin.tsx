@@ -48,14 +48,16 @@ const PLAN_LABEL: Record<BillingPlanKey, string> = {
 
 const PLAN_CLASS: Record<BillingPlanKey, string> = {
   STARTER: "bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-white/70",
-  PRO: "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200",
-  BUSINESS: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200",
+  PRO: "bg-accent-100 text-accent-800 dark:bg-accent-950/50 dark:text-accent-200",
+  // Violet, not indigo — indigo is the brand accent now, so a BUSINESS badge
+  // in indigo was indistinguishable from the PRO badge above it.
+  BUSINESS: "bg-violet-100 text-violet-800 dark:bg-violet-950/50 dark:text-violet-200",
   ENTERPRISE: "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
 };
 
 const STATUS_CLASS: Record<BillingStatusKey, string> = {
   ACTIVE: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200",
-  TRIALING: "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200",
+  TRIALING: "bg-accent-100 text-accent-800 dark:bg-accent-950/50 dark:text-accent-200",
   PAST_DUE: "bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200",
   CANCELED: "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-200",
 };
@@ -167,7 +169,7 @@ export function UsersAdmin({ initial, currentUserId }: { initial: AdminUsersList
         <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Total users" value={data.summary.total} />
           <Stat label="Paying" value={data.summary.subscribed} tone="emerald" />
-          <Stat label="On trial" value={data.summary.trialing} tone="sky" />
+          <Stat label="On trial" value={data.summary.trialing} tone="accent" />
           <Stat label="Suspended" value={data.summary.banned} tone="rose" />
         </div>
       </section>
@@ -356,11 +358,11 @@ export function UsersAdmin({ initial, currentUserId }: { initial: AdminUsersList
   );
 }
 
-function Stat({ label, value, tone = "slate" }: { label: string; value: number; tone?: "slate" | "emerald" | "sky" | "rose" }) {
+function Stat({ label, value, tone = "slate" }: { label: string; value: number; tone?: "slate" | "emerald" | "accent" | "rose" }) {
   const toneClass = {
     slate: "text-slate-900 dark:text-white",
     emerald: "text-emerald-600 dark:text-emerald-300",
-    sky: "text-sky-600 dark:text-sky-300",
+    accent: "text-accent-600 dark:text-accent-300",
     rose: "text-rose-600 dark:text-rose-300",
   }[tone];
   return (

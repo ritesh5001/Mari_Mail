@@ -135,7 +135,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
                 <Icon className="h-5 w-5" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">{item.label}</span>
-                  <span className={index === selected ? "block truncate text-xs text-blue-100" : "block truncate text-xs text-slate-500"}>
+                  <span className={index === selected ? "block truncate text-xs text-accent-200" : "block truncate text-xs text-slate-500"}>
                     {item.type} - {item.detail}
                   </span>
                 </span>
