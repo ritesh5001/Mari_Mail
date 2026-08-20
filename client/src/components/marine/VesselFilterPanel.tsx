@@ -707,25 +707,6 @@ export function VesselFilterPanel({
 
   const etaVoyageBody = (
     <>
-      {/* -- Focus card: the two boolean toggles that scope the entire feed -- */}
-      <FilterCard title="Focus">
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          <ToggleTile
-            checked={state.hasEta}
-            onChange={(v) => patch({ hasEta: v })}
-            title="Only vessels with an upcoming ETA"
-            description="Hide vessels that have no scheduled arrival on file."
-          />
-          <ToggleTile
-            tone="amber"
-            checked={state.noCampaign}
-            onChange={(v) => patch({ noCampaign: v })}
-            title="Missed opportunities"
-            description="Arriving with no campaign trigger attached. Pair with a window below."
-          />
-        </div>
-      </FilterCard>
-
       {/* -- ETA window: presets on top, manual date range below -- */}
       <FilterCard
         title="ETA window (UTC)"
@@ -1221,6 +1202,9 @@ export function VesselFilterPanel({
     }
   };
 
+  // Still chip-able and still settable from the URL — the dashboard's "Missed
+  // opportunities" card links straight to ?noCampaign=1 — they just no longer
+  // take up the top of the ETA pane as two large tiles nobody ticked.
   if (applied.hasEta) pushChip("hasEta", "Has an ETA", "eta", { hasEta: false });
   if (applied.noCampaign) pushChip("noCampaign", "No campaign attached", "eta", { noCampaign: false });
   if (applied.etaFrom || applied.etaTo) {
@@ -1516,53 +1500,6 @@ function FilterCard({
       </div>
       <div className="px-4 py-3.5">{children}</div>
     </div>
-  );
-}
-
-/**
- * Rich toggle tile — a bigger tap target than a bare checkbox, with a title
- * and a helper description. Used for the two focus toggles at the top of the
- * ETA & voyage pane so the primary controls read as clear, distinct choices
- * rather than a compressed row of labels.
- */
-function ToggleTile({
-  title,
-  description,
-  checked,
-  onChange,
-  tone = "ocean",
-}: {
-  title: string;
-  description: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-  tone?: "ocean" | "amber";
-}) {
-  const activeBorder =
-    tone === "amber"
-      ? "border-amber-400 bg-amber-50 dark:border-amber-500/50 dark:bg-amber-500/10"
-      : "border-ocean bg-ocean/[0.06] dark:border-accent-500 dark:bg-accent-500/10";
-  const activeCheck =
-    tone === "amber" ? "text-amber-600 focus:ring-amber-500" : "text-ocean focus:ring-ocean";
-  return (
-    <label
-      className={`group flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
-        checked
-          ? activeBorder
-          : "border-slate-200 bg-white hover:border-slate-300 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-white/20"
-      }`}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className={`mt-0.5 h-4 w-4 rounded border-slate-300 ${activeCheck}`}
-      />
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-slate-900 dark:text-white/90">{title}</p>
-        <p className="mt-0.5 text-xs text-slate-500 dark:text-white/50">{description}</p>
-      </div>
-    </label>
   );
 }
 

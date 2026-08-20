@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bookmark, BookmarkPlus, Check, ChevronDown, Loader2, Pencil, Trash2, X } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
+import { cn } from "@/lib/cn";
 
 export type SavedFilterEntityType = "VESSEL" | "CONTACT" | "COMPANY" | "ETA";
 
@@ -161,6 +162,9 @@ export function SavedFilterSets({
   }
 
   const loadedName = loadedId ? (sets.find((set) => set.id === loadedId)?.name ?? null) : null;
+  // Save sits in a modal footer; the picker sits in a toolbar with the page
+  // below it. Each opens away from its own edge.
+  const openUpward = mode === "save";
 
   return (
     <div ref={boxRef} className="relative flex items-center gap-2">
@@ -200,7 +204,15 @@ export function SavedFilterSets({
       ) : null}
 
       {naming ? (
-        <div className="absolute right-0 top-full z-[70] mt-1 w-[340px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013]">
+        <div
+          className={cn(
+            "absolute left-0 z-[70] w-[300px] rounded-lg border border-slate-200 bg-white p-2.5 shadow-xl dark:border-white/10 dark:bg-[#101013] sm:w-[340px]",
+            // The save control lives in a modal FOOTER, so anything opening
+            // downward lands past the dialog's bottom edge and is clipped by
+            // its overflow-hidden. Open upward from there instead.
+            openUpward ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-white/50">
             {naming.mode === "rename" ? "Rename set" : "Name this filter set"}
           </label>
@@ -278,7 +290,12 @@ export function SavedFilterSets({
       ) : null}
 
       {open ? (
-        <div className="absolute right-0 top-full z-[60] mt-1 w-[280px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]">
+        <div
+          className={cn(
+            "absolute right-0 z-[60] w-[280px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#101013]",
+            openUpward ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           {sets.length === 0 ? (
             <p className="px-3 py-3 text-[11px] text-slate-500 dark:text-white/50">
               No saved sets yet. Configure filters and hit{" "}

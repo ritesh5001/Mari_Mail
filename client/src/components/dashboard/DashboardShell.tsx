@@ -44,9 +44,31 @@ import { CreditBadge } from "@/components/dashboard/CreditBadge";
 import { TrialBanner } from "./TrialBanner";
 import type { CampaignItineraryProgress } from "@/lib/onboarding-types";
 
+/**
+ * Sidebar sections, in the order they appear.
+ *
+ * Twenty flat links is a wall to scan every time. Grouping them means the eye
+ * lands on a heading first and only reads the four items under it — and it
+ * makes the admin tools read as a separate area of the product rather than
+ * more of the same list.
+ */
+const NAV_GROUPS = ["main", "outreach", "data", "insights", "account", "admin"] as const;
+type NavGroup = (typeof NAV_GROUPS)[number];
+
+/** `null` = no heading; the first group needs no label to explain itself. */
+const GROUP_LABEL: Record<NavGroup, string | null> = {
+  main: null,
+  outreach: "Outreach",
+  data: "Data",
+  insights: "Insights",
+  account: "Account",
+  admin: "Admin",
+};
+
 type NavItem = {
   href: string;
   label: string;
+  group: NavGroup;
   icon: typeof LayoutDashboard;
   superAdminOnly?: boolean;
   /** Visible to the active workspace's OWNER/ADMIN — not to platform staff. See `canViewNavItem`. */
@@ -55,36 +77,42 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard, alwaysVisible: true },
+  { href: "/dashboard", label: "Overview", group: "main", icon: LayoutDashboard, alwaysVisible: true },
+
   // The daily workflow, in the order the job is done: find the vessels
   // arriving, put the people in a list, fire the ETA campaign off it, then the
-  // inbox and cold outreach. These five stay CONTIGUOUS — anything new goes
-  // below them, not in the middle, or the sequence stops reading as one.
-  { href: "/dashboard/port-radar", label: "ETA / Port Radar", icon: Radar },
-  { href: "/dashboard/lists", label: "Lists", icon: List },
-  { href: "/dashboard/campaigns/eta", label: "ETA campaigns", icon: Megaphone },
-  { href: "/dashboard/inboxes", label: "Inboxes", icon: Inbox },
-  { href: "/dashboard/campaigns/cold", label: "Cold campaigns", icon: Mail },
-  // Reference libraries — what you've already collected, rather than a step in
-  // the workflow. They sat directly under Overview, which put two lookup
-  // screens ahead of everything the user actually comes here to do.
-  { href: "/dashboard/vessels", label: "Vessels", icon: Ship, superAdminOnly: true },
-  { href: "/dashboard/saved", label: "Revealed contacts", icon: Bookmark },
-  // Supporting tools — used occasionally, not every day.
-  { href: "/dashboard/blocked", label: "Blocked", icon: Ban },
-  { href: "/dashboard/referrals", label: "Refer & earn", icon: Gift },
-  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
-  { href: "/dashboard/billing", label: "Plan & billing", icon: CreditCard, billingManagerOnly: true },
-  { href: "/dashboard/marine-db", label: "Marine DB", icon: Anchor, superAdminOnly: true },
-  { href: "/dashboard/admin/users", label: "Users", icon: Users, superAdminOnly: true },
-  { href: "/dashboard/admin/demos", label: "Demo Bookings", icon: Calendar, superAdminOnly: true },
-  { href: "/dashboard/admin/data-sources", label: "Data Sources", icon: Settings, superAdminOnly: true },
-  { href: "/dashboard/admin/maribiz", label: "Secondary Data Source", icon: Database, superAdminOnly: true },
-  { href: "/dashboard/admin/contact-source", label: "Contact Data Source", icon: Zap, superAdminOnly: true },
-  { href: "/dashboard/admin/contact-source/drips", label: "Scheduled Reveals", icon: CalendarClock, superAdminOnly: true },
-  { href: "/dashboard/admin/contact-source/accounts", label: "Provider Accounts", icon: KeyRound, superAdminOnly: true },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings, superAdminOnly: true, alwaysVisible: true },
+  // inbox and cold outreach. These five stay CONTIGUOUS — anything new goes in
+  // another group, not in the middle, or the sequence stops reading as one.
+  { href: "/dashboard/port-radar", label: "ETA / Port Radar", group: "outreach", icon: Radar },
+  { href: "/dashboard/lists", label: "Lists", group: "outreach", icon: List },
+  { href: "/dashboard/campaigns/eta", label: "ETA campaigns", group: "outreach", icon: Megaphone },
+  { href: "/dashboard/inboxes", label: "Inboxes", group: "outreach", icon: Inbox },
+  { href: "/dashboard/campaigns/cold", label: "Cold campaigns", group: "outreach", icon: Mail },
+
+  // What you have already collected, and the rules about who not to contact —
+  // reference material rather than a step in the workflow.
+  { href: "/dashboard/vessels", label: "Vessels", group: "data", icon: Ship, superAdminOnly: true },
+  { href: "/dashboard/saved", label: "Revealed contacts", group: "data", icon: Bookmark },
+  { href: "/dashboard/blocked", label: "Blocked", group: "data", icon: Ban },
+  { href: "/dashboard/marine-db", label: "Marine DB", group: "data", icon: Anchor, superAdminOnly: true },
+
+  { href: "/dashboard/analytics", label: "Analytics", group: "insights", icon: BarChart3 },
+
+  { href: "/dashboard/billing", label: "Plan & billing", group: "account", icon: CreditCard, billingManagerOnly: true },
+  { href: "/dashboard/referrals", label: "Refer & earn", group: "account", icon: Gift },
+
+  // Platform staff only. Its own group so it reads as a separate area of the
+  // product rather than eight more rows on the customer's list.
+  { href: "/dashboard/admin/users", label: "Users", group: "admin", icon: Users, superAdminOnly: true },
+  { href: "/dashboard/admin/demos", label: "Demo Bookings", group: "admin", icon: Calendar, superAdminOnly: true },
+  { href: "/dashboard/admin/data-sources", label: "Data Sources", group: "admin", icon: Settings, superAdminOnly: true },
+  { href: "/dashboard/admin/maribiz", label: "Secondary Data Source", group: "admin", icon: Database, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source", label: "Contact Data Source", group: "admin", icon: Zap, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source/drips", label: "Scheduled Reveals", group: "admin", icon: CalendarClock, superAdminOnly: true },
+  { href: "/dashboard/admin/contact-source/accounts", label: "Provider Accounts", group: "admin", icon: KeyRound, superAdminOnly: true },
+  { href: "/dashboard/settings", label: "Settings", group: "admin", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
+
 
 /**
  * A nav item is visible if it has no restriction, or the session clears
@@ -140,6 +168,108 @@ function NavRow({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+/** Section heading. Fades out with the labels when the rail collapses. */
+function NavGroupLabel({ label }: { label: string }) {
+  const { open, animate } = useSidebar();
+  return (
+    <motion.p
+      animate={{
+        // Collapsed, the rail is ~28px — no room for a word. The divider below
+        // keeps the grouping legible without it.
+        height: animate ? (open ? "auto" : 0) : "auto",
+        opacity: animate ? (open ? 1 : 0) : 1,
+        marginTop: animate ? (open ? 16 : 8) : 16,
+      }}
+      className="overflow-hidden whitespace-pre px-[15px] pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30"
+    >
+      {label}
+    </motion.p>
+  );
+}
+
+/**
+ * The nav, grouped into sections.
+ *
+ * Shared by the desktop rail and the mobile sheet so the two can't drift into
+ * different orders or different groupings — they did exactly that with the flat
+ * list, since each rendered its own copy of the same `.map`.
+ *
+ * A group whose items are all hidden — by role, or by the user's own
+ * customisation — renders nothing at all, heading included. A lone heading over
+ * empty space reads as something failing to load.
+ */
+function NavSections({
+  session,
+  hiddenNavItems,
+  pathname,
+  variant = "rail",
+}: {
+  session: AuthSession;
+  hiddenNavItems: string[];
+  pathname: string;
+  /**
+   * "rail" is the collapsible desktop sidebar; "sheet" is the mobile drawer,
+   * which renders OUTSIDE the sidebar provider — so it cannot use the animated
+   * row and heading, both of which read `useSidebar()`.
+   */
+  variant?: "rail" | "sheet";
+}) {
+  return (
+    <>
+      {NAV_GROUPS.map((group) => {
+        const items = navItems.filter(
+          (item) =>
+            item.group === group &&
+            canViewNavItem(item, session) &&
+            (item.alwaysVisible || !hiddenNavItems.includes(item.href)),
+        );
+        if (items.length === 0) return null;
+
+        const label = GROUP_LABEL[group];
+        return (
+          <div key={group} className={cn(label && "border-t border-slate-100 pt-1 dark:border-white/[0.04]")}>
+            {label ? (
+              variant === "rail" ? (
+                <NavGroupLabel label={label} />
+              ) : (
+                <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-white/30">
+                  {label}
+                </p>
+              )
+            ) : null}
+            <div className="space-y-1">
+              {items.map((item) => {
+                const active =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                if (variant === "rail") {
+                  return <NavRow key={item.href} item={item} active={active} />;
+                }
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                      active
+                        ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/70 dark:hover:bg-white/[0.06] dark:hover:text-white",
+                    )}
+                  >
+                    <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** Logo that shows the wordmark when open, just the mark when collapsed. */
 function SidebarLogo() {
   const { open, animate } = useSidebar();
@@ -192,14 +322,7 @@ function SidebarContent({
       <SidebarLogo />
 
       <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {navItems.map((item) => {
-          if (!canViewNavItem(item, session)) return null;
-          if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
-          const active =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          return <NavRow key={item.href} item={item} active={active} />;
-        })}
+        <NavSections session={session} hiddenNavItems={hiddenNavItems} pathname={pathname} />
       </nav>
 
       <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
@@ -534,29 +657,12 @@ function MobileNav({
               </div>
 
               <nav className="mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto">
-                {navItems.map((item) => {
-                  if (!canViewNavItem(item, session)) return null;
-                  if (!item.alwaysVisible && hiddenNavItems.includes(item.href)) return null;
-                  const Icon = item.icon;
-                  const active =
-                    pathname === item.href ||
-                    (item.href !== "/dashboard" && pathname.startsWith(item.href));
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                        active
-                          ? "bg-sky-50 text-sky-700 dark:bg-accent-500/15 dark:text-accent-300"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-white/70 dark:hover:bg-white/[0.06] dark:hover:text-white",
-                      )}
-                    >
-                      <Icon className="h-[18px] w-[18px] flex-shrink-0" />
-                      {item.label}
-                    </Link>
-                  );
-                })}
+                <NavSections
+                  session={session}
+                  hiddenNavItems={hiddenNavItems}
+                  pathname={pathname}
+                  variant="sheet"
+                />
               </nav>
 
               <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/[0.04]">
