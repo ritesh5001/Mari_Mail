@@ -367,12 +367,33 @@ export function VesselFilterPanel({
   searchParams,
   basePath = "/dashboard/vessels",
   orientation = "vertical",
+  onApply,
+  hideSavedSets = false,
+  applyLabel,
 }: {
   searchParams: SearchParams;
   basePath?: string;
   orientation?: "vertical" | "horizontal" | "modal";
+  /**
+   * Hand the filter back instead of navigating to it.
+   *
+   * The panel is normally URL-driven: Apply pushes a query string and the page
+   * below re-reads it. Settings edits a *stored* filter that no page is
+   * currently showing, so there is nothing to navigate to — it needs the value.
+   *
+   * The shape handed back is exactly what a saved set stores (the query-string
+   * object), so it round-trips through `searchParamsToState` on the way back
+   * in. That is also why Settings can seed this panel by passing a persona's
+   * `filterConfig` straight in as `searchParams`.
+   */
+  onApply?: (config: Record<string, string>) => void;
+  /** Saved-set controls are meaningless while editing a saved set. */
+  hideSavedSets?: boolean;
+  applyLabel?: string;
 }) {
   const router = useRouter();
+  /** Editing a stored value rather than driving the page's URL. */
+  const valueMode = typeof onApply === "function";
 
   /**
    * APPLIED vs DRAFT.
@@ -555,6 +576,13 @@ export function VesselFilterPanel({
 
   function apply() {
     const params = stateToParams(state);
+    if (valueMode) {
+      // No pageSize: that is a property of how a table is being browsed, not
+      // of the filter, and storing it in a saved set would pin someone else's
+      // page length onto whoever loads it.
+      onApply!(Object.fromEntries(params.entries()));
+      return;
+    }
     // Carry the page-size choice across a filter change (page itself resets to
     // 1, since the new result set makes the old offset meaningless).
     const pageSize = searchParams.pageSize;
@@ -575,6 +603,11 @@ export function VesselFilterPanel({
   function applyWith(part: Partial<FilterState>) {
     const next = { ...applied, ...part };
     setState(next);
+    if (valueMode) {
+      // In value mode there is no "already in the results" to undo — a chip ×
+      // is just an edit, and the caller commits on Apply.
+      return;
+    }
     const params = stateToParams(next);
     const pageSize = searchParams.pageSize;
     if (typeof pageSize === "string") params.set("pageSize", pageSize);
@@ -609,6 +642,7 @@ export function VesselFilterPanel({
     }
     const next = searchParamsToState(params);
     setState(next);
+    if (valueMode) return;
     const qs = stateToParams(next).toString();
     router.push(qs ? `${basePath}?${qs}` : basePath);
   }
@@ -620,6 +654,7 @@ export function VesselFilterPanel({
     // it still had one applied.
     setCountryQuery("");
     setPortQuery("");
+    if (valueMode) return;
     router.push(basePath);
   }
 
@@ -1281,24 +1316,29 @@ export function VesselFilterPanel({
         onOpen={() => setState(applied)}
         onCancel={() => setState(applied)}
         chips={activeChips}
+        applyLabel={applyLabel}
         savedSets={
-          <SavedFilterSets
-            mode="picker"
-            entityType="ETA"
-            value={savedFilterConfig}
-            hasFilter={appliedActive > 0}
-            onLoad={loadSavedFilter}
-          />
+          hideSavedSets ? null : (
+            <SavedFilterSets
+              mode="picker"
+              entityType="ETA"
+              value={savedFilterConfig}
+              hasFilter={appliedActive > 0}
+              onLoad={loadSavedFilter}
+            />
+          )
         }
         saveControl={
-          <SavedFilterSets
-            mode="save"
-            entityType="ETA"
-            value={savedFilterConfig}
-            hasFilter={active > 0}
-            onLoad={loadSavedFilter}
-            namePlaceholder="e.g. Tankers · Brazil · 7 days"
-          />
+          hideSavedSets ? null : (
+            <SavedFilterSets
+              mode="save"
+              entityType="ETA"
+              value={savedFilterConfig}
+              hasFilter={active > 0}
+              onLoad={loadSavedFilter}
+              namePlaceholder="e.g. Tankers · Brazil · 7 days"
+            />
+          )
         }
       />
     );
@@ -1571,6 +1611,7 @@ function FilterModalShell({
   chips,
   savedSets,
   saveControl,
+  applyLabel,
 }: {
   /** Count of the DRAFT — what the rail and footer describe. */
   active: number;
@@ -1585,8 +1626,11 @@ function FilterModalShell({
   /** Throw the draft away. */
   onCancel: () => void;
   chips: Array<{ key: string; label: string; section: string; onRemove: () => void }>;
+  /** Null when saved sets make no sense — e.g. while editing a saved set. */
   savedSets: React.ReactNode;
   saveControl: React.ReactNode;
+  /** Overrides the commit button's wording ("Apply filters" by default). */
+  applyLabel?: string;
 }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -1754,7 +1798,7 @@ function FilterModalShell({
           </button>
         ) : null}
 
-        <div className="shrink-0">{savedSets}</div>
+        {savedSets ? <div className="shrink-0">{savedSets}</div> : null}
 
         <div className="min-w-[220px] shrink-0 grow sm:grow-0 sm:basis-[320px]">{searchRow}</div>
       </div>
@@ -1882,7 +1926,9 @@ function FilterModalShell({
                 {/* Saving lives with the thing being saved. It used to sit in
                     the toolbar, so building a filter and keeping it meant
                     closing the modal first and trusting it had captured what
-                    you did. Saves the DRAFT — what is on screen. */}
+                    you did. Saves the DRAFT — what is on screen.
+                    Null while editing an existing set, where "save as new" is
+                    not what the user came here to do. */}
                 {saveControl}
               </div>
               <div className="flex items-center gap-2">
@@ -1914,7 +1960,7 @@ function FilterModalShell({
                   className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40"
                 >
                   <Search className="h-3.5 w-3.5" />
-                  Apply &amp; search
+                  {applyLabel ?? "Apply & search"}
                 </button>
               </div>
             </div>

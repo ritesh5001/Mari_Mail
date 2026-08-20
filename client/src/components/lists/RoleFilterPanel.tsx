@@ -1102,8 +1102,13 @@ export function RoleFilterPanel({
  * flow supports rename + overwrite so users can iterate on a set instead of
  * being forced to make a new one each time.
  */
-/** Coerce arbitrary saved JSON back into a full RoleFilter (missing arrays → []). */
-function normalizeRoleFilter(raw: unknown): RoleFilter {
+/**
+ * Coerce arbitrary saved JSON back into a full RoleFilter (missing arrays → []).
+ *
+ * Exported because Settings edits saved sets with this same panel, and it has
+ * only the stored JSON to seed it with.
+ */
+export function normalizeRoleFilter(raw: unknown): RoleFilter {
   const r = (raw ?? {}) as Partial<RoleFilter>;
   const arr = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];

@@ -1,18 +1,54 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Copy, Loader2, Pencil, Radar, Trash2, Users, X } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 import { cn } from "@/lib/cn";
-import {
-  PERSONA_FIELDS,
-  countActive,
-  readField,
-  summarizePersona,
-  writeField,
-  type PersonaConfig,
-  type PersonaField,
-} from "@/lib/persona-fields";
+import { countActive, summarizePersona, type PersonaConfig } from "@/lib/persona-fields";
+import { normalizeRoleFilter, type RoleFilter } from "@/components/lists/RoleFilterPanel";
+
+/**
+ * Both panels are large and only mount once someone clicks Edit, so they are
+ * loaded on demand — importing them statically put ~30 kB on the page for
+ * people who only came to rename or delete a set.
+ */
+const VesselFilterPanel = dynamic(
+  () => import("@/components/marine/VesselFilterPanel").then((m) => m.VesselFilterPanel),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+
+const RoleFilterPanel = dynamic(
+  () => import("@/components/lists/RoleFilterPanel").then((m) => m.RoleFilterPanel),
+  { ssr: false, loading: () => <PanelSkeleton /> },
+);
+
+function PanelSkeleton() {
+  return (
+    <div className="h-10 w-40 animate-pulse rounded-md bg-slate-100 dark:bg-white/[0.06]" />
+  );
+}
+
+/**
+ * Narrow a stored config to the shape VesselFilterPanel parses.
+ *
+ * `filterConfig` is `unknown`-valued JSON, and the panel's readers only handle
+ * `string | string[] | undefined` — a number or a nested object would fall
+ * straight through them and silently vanish from the rebuilt state. Dropping
+ * non-string values here makes that explicit; they are still preserved in the
+ * saved object, since the editor spreads over the original config on save.
+ */
+function toSearchParams(config: PersonaConfig): Record<string, string | string[] | undefined> {
+  const out: Record<string, string | string[] | undefined> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (typeof value === "string") out[key] = value;
+    else if (Array.isArray(value)) {
+      out[key] = value.filter((item): item is string => typeof item === "string");
+    }
+  }
+  return out;
+}
+
 
 type Persona = {
   id: string;
@@ -253,15 +289,30 @@ function IconAction({
 }
 
 /**
- * Field-level editing of a persona.
+ * Editing a persona, using the same filter UI that created it.
  *
- * Writes back through PATCH, which already existed for the panels' "overwrite
- * this set" action — so renaming and editing the body share one atomic
- * statement rather than the delete-then-recreate this used to be.
+ * The first version of this page rendered a generic list of text inputs and
+ * chip rows derived from the stored keys. It worked, but it was a second,
+ * worse filter builder: no port lookup, no vessel-type tree, no title
+ * suggestions, no seniority vocabulary — just whatever strings you could type
+ * from memory. Editing "Brazil" meant knowing that `destCountry` wanted `BR`.
  *
- * Unknown keys are carried through untouched: the editor starts from the
- * stored config and only replaces keys it recognises, so a field added by a
- * newer panel version survives a round trip through this page.
+ * So it mounts the real panels instead:
+ *
+ *   ETA      → VesselFilterPanel in its modal orientation, seeded by passing
+ *              the stored config straight in as `searchParams`. That works
+ *              because a saved set IS the query-string object the panel emits
+ *              (`stateToParams`), so it round-trips through the same parser
+ *              the address bar uses.
+ *   CONTACT  → RoleFilterPanel, which was already value-driven
+ *              (`value`/`onChange`/`onApply`) and needed no changes at all.
+ *
+ * Both are given an apply handler that hands the filter back rather than
+ * navigating — see `onApply` on VesselFilterPanel. Nothing is written until
+ * "Save changes", so Apply here means "keep this edit", not "run it".
+ *
+ * Writes through PATCH, which already existed for the panels' overwrite
+ * action, so name and body are saved in one statement.
  */
 function PersonaEditor({
   persona,
@@ -272,24 +323,15 @@ function PersonaEditor({
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const fields = PERSONA_FIELDS[persona.entityType] ?? [];
   const [name, setName] = useState(persona.name);
   const [config, setConfig] = useState<PersonaConfig>(persona.filterConfig);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Cleared once the user commits a change in the panel, so the summary below
+  // never claims an edit was captured when it wasn't.
+  const [edited, setEdited] = useState(false);
 
-  /**
-   * A handful of older sets were saved by a condition-group builder and store
-   * their criteria under `groups` rather than the flat keys the panels write
-   * today. The fields below would all render empty for one, which reads as
-   * "this persona is blank" when it isn't — so say so instead.
-   *
-   * Editing is still safe: only fields the user actually touches are written,
-   * and unrecognised keys are carried through untouched.
-   */
-  const legacyShape =
-    Array.isArray((config as { groups?: unknown }).groups) &&
-    fields.every((field) => readField(config, field).length === 0);
+  const dirty = edited || name.trim() !== persona.name.trim();
 
   async function save() {
     if (name.trim().length < 2) {
@@ -329,8 +371,8 @@ function PersonaEditor({
         </button>
       </div>
 
-      <div className="mt-4 max-w-lg space-y-4">
-        <div>
+      <div className="mt-4 space-y-4">
+        <div className="max-w-md">
           <label
             htmlFor="persona-name"
             className="block text-xs font-medium text-slate-600 dark:text-white/60"
@@ -346,38 +388,34 @@ function PersonaEditor({
           />
         </div>
 
-        {legacyShape ? (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-            This set was saved in an older format, so its criteria can&rsquo;t be shown here. Renaming
-            is safe and its filter is left untouched. To rebuild it, load the set from the filter
-            panel and save over it.
+        <div>
+          <span className="block text-xs font-medium text-slate-600 dark:text-white/60">
+            Filter
+          </span>
+          <p className="mt-1 text-xs text-slate-500 dark:text-white/45">
+            {summarizePersona(persona.entityType, config)}
           </p>
-        ) : null}
 
-        {fields.length === 0 ? (
-          <p className="text-xs text-slate-500 dark:text-white/45">
-            This persona type has no editable fields here — you can still rename, duplicate or
-            delete it.
-          </p>
-        ) : (
-          fields.map((field) => (
-            <FieldEditor
-              key={field.key}
-              field={field}
-              values={readField(config, field)}
-              onChange={(values) => setConfig((prev) => writeField(prev, field, values))}
+          <div className="mt-2">
+            <PersonaFilterEditor
+              persona={persona}
+              config={config}
+              onChange={(next) => {
+                setConfig(next);
+                setEdited(true);
+              }}
             />
-          ))
-        )}
+          </div>
+        </div>
 
         {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
 
-        <div className="flex gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.08]">
+        <div className="flex items-center gap-2 border-t border-slate-200 pt-4 dark:border-white/[0.08]">
           <button
             type="button"
             onClick={save}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-600 disabled:opacity-40"
+            disabled={saving || !dirty}
+            className="inline-flex items-center gap-2 rounded-md bg-accent-500 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save changes
@@ -389,110 +427,89 @@ function PersonaEditor({
           >
             Cancel
           </button>
+          {dirty ? (
+            <span className="text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function FieldEditor({
-  field,
-  values,
+/**
+ * Mounts whichever real filter panel produced this persona.
+ *
+ * Anything else — the legacy `groups` shape, or an entity type no panel
+ * builds — falls through to a notice rather than a broken editor. Its stored
+ * config is left completely untouched, so renaming one is still safe.
+ */
+function PersonaFilterEditor({
+  persona,
+  config,
   onChange,
 }: {
-  field: PersonaField;
-  values: string[];
-  onChange: (values: string[]) => void;
+  persona: Persona;
+  config: PersonaConfig;
+  onChange: (next: PersonaConfig) => void;
 }) {
-  const [draft, setDraft] = useState("");
-  const isList = field.kind === "chips" || field.kind === "csv";
-
-  if (!isList) {
-    const inputType = field.kind === "date" ? "date" : field.kind === "number" ? "number" : "text";
+  if (persona.entityType === "ETA" || persona.entityType === "VESSEL") {
     return (
-      <div>
-        <label
-          htmlFor={`persona-${field.key}`}
-          className="block text-xs font-medium text-slate-600 dark:text-white/60"
-        >
-          {field.label}
-        </label>
-        <input
-          id={`persona-${field.key}`}
-          type={inputType}
-          value={values[0] ?? ""}
-          onChange={(event) => onChange(event.target.value ? [event.target.value] : [])}
-          className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:border-white/15 dark:bg-white/[0.04] dark:text-white"
-        />
-        {field.hint ? (
-          <p className="mt-1 text-[11px] text-slate-400 dark:text-white/30">{field.hint}</p>
-        ) : null}
-      </div>
+      <VesselFilterPanel
+        // The stored config doubles as the panel's searchParams — see the note
+        // on PersonaEditor.
+        searchParams={toSearchParams(config)}
+        orientation="modal"
+        hideSavedSets
+        applyLabel="Use this filter"
+        // Replaces the config outright rather than merging over it. The panel
+        // omits a key whose field is empty, so merging would leave a cleared
+        // "Minimum DWT" standing and the edit would appear not to take. Safe
+        // because an ETA set is produced entirely by this panel — verified
+        // against production, where no ETA persona carries a key it doesn't own.
+        onApply={(next) => onChange(next)}
+      />
     );
   }
 
-  const add = () => {
-    const value = draft.trim();
-    if (!value || values.includes(value)) {
-      setDraft("");
-      return;
-    }
-    onChange([...values, value]);
-    setDraft("");
-  };
+  if (persona.entityType === "CONTACT") {
+    return <ContactPersonaEditor config={config} onChange={onChange} />;
+  }
 
   return (
-    <div>
-      <span className="block text-xs font-medium text-slate-600 dark:text-white/60">
-        {field.label}
-      </span>
-      <div className="mt-1 flex flex-wrap gap-1.5">
-        {values.map((value) => (
-          <span
-            key={value}
-            className="inline-flex items-center gap-1 rounded-full border border-accent-500/25 bg-accent-500/10 py-0.5 pl-2.5 pr-1 text-xs font-medium text-accent-700 dark:text-accent-300"
-          >
-            {value}
-            <button
-              type="button"
-              onClick={() => onChange(values.filter((item) => item !== value))}
-              aria-label={`Remove ${value}`}
-              className="rounded-full p-0.5 hover:bg-accent-500/20"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </span>
-        ))}
-        {values.length === 0 ? (
-          <span className="text-xs text-slate-400 dark:text-white/30">Not set</span>
-        ) : null}
-      </div>
-      <div className="mt-1.5 flex gap-2">
-        <input
-          type="text"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              add();
-            }
-          }}
-          placeholder="Add…"
-          className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500 dark:border-white/15 dark:bg-white/[0.04] dark:text-white"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-accent-400 hover:text-accent-600 disabled:opacity-40 dark:border-white/10 dark:text-white/70"
-        >
-          Add
-        </button>
-      </div>
-      {field.hint ? (
-        <p className="mt-1 text-[11px] text-slate-400 dark:text-white/30">{field.hint}</p>
-      ) : null}
-    </div>
+    <p className="rounded-md bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600 dark:bg-white/[0.03] dark:text-white/55">
+      This persona type has no filter builder. You can still rename, duplicate or delete it.
+    </p>
+  );
+}
+
+/**
+ * RoleFilterPanel keeps its draft in the parent, so this holds one and commits
+ * it on Apply — matching the ETA side, where nothing is captured until the
+ * user says so.
+ *
+ * The suggestion loaders the list page passes are deliberately omitted: they
+ * are scoped to a specific list's vessel domains, and there is no list here.
+ * The panel degrades to free typing, which is what it does on an empty list.
+ */
+function ContactPersonaEditor({
+  config,
+  onChange,
+}: {
+  config: PersonaConfig;
+  onChange: (next: PersonaConfig) => void;
+}) {
+  const [draft, setDraft] = useState<RoleFilter>(() => normalizeRoleFilter(config));
+
+  return (
+    <RoleFilterPanel
+      value={draft}
+      onChange={setDraft}
+      onApply={() => {
+        // Preserve unrecognised keys (e.g. a legacy `groups`) rather than
+        // replacing the stored object wholesale.
+        onChange({ ...config, ...draft });
+      }}
+      scope="apollo"
+    />
   );
 }
