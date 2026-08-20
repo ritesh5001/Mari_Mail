@@ -5,7 +5,7 @@ import { InfoHint } from "@/components/ui/InfoHint";
 import { AlertTriangle, Ban, Building2, Loader2, Plus, Trash2, User } from "lucide-react";
 import { apiFetch } from "@/lib/browser-fetch";
 import { cn } from "@/lib/cn";
-import type { BlockDTO, BlocklistDTO } from "@/app/dashboard/blocked/page";
+import type { BlockDTO, BlocklistDTO } from "@/lib/blocklist-types";
 
 /**
  * The workspace do-not-contact list.

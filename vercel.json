@@ -1,4 +1,6 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["sin1"],
   "buildCommand": "pnpm --filter @marimail/client build",
   "devCommand": "pnpm --filter @marimail/client dev",
   "installCommand": "pnpm install"

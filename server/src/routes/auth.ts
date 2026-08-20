@@ -152,9 +152,20 @@ const resetPasswordSchema = z.object({
   password: passwordField,
 });
 
-const preferencesSchema = z.object({
-  hiddenNavItems: z.array(z.string().trim().min(1)).max(50),
-});
+/**
+ * Both fields optional so a caller can send just the one it is changing. The
+ * sidebar customiser sends `hiddenNavItems`; the profile form sends `name`,
+ * which previously had no endpoint at all — there was no way to correct your
+ * own display name once registered.
+ */
+const preferencesSchema = z
+  .object({
+    hiddenNavItems: z.array(z.string().trim().min(1)).max(50).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+  })
+  .refine((value) => value.hiddenNavItems !== undefined || value.name !== undefined, {
+    message: "Nothing to update",
+  });
 
 const onboardingSchema = z.object({
   workspaceName: z.string().trim().min(2),
@@ -262,6 +273,7 @@ function serializeSession(user: {
   defaultWorkspaceId: string | null;
   isSuperAdmin?: boolean;
   hiddenNavItems?: string[];
+  mfaEnabled?: boolean;
   memberships: Array<{
     role: "OWNER" | "ADMIN" | "MEMBER";
     workspace: {
@@ -313,6 +325,10 @@ function serializeSession(user: {
       defaultWorkspaceId: user.defaultWorkspaceId,
       isSuperAdmin: user.isSuperAdmin ?? false,
       hiddenNavItems: user.hiddenNavItems ?? [],
+      // Carried on the session so the security page can render the current
+      // state without a second round trip. The secret itself never leaves the
+      // server — this is only the on/off flag.
+      mfaEnabled: user.mfaEnabled ?? false,
     },
     activeWorkspace,
     workspaces,
@@ -328,6 +344,7 @@ function userSessionSelect(includeTargetPortCountry: boolean) {
     defaultWorkspaceId: true,
     isSuperAdmin: true,
     hiddenNavItems: true,
+    mfaEnabled: true,
     memberships: {
       select: {
         role: true,
@@ -1007,9 +1024,17 @@ authRouter.patch("/preferences", requireAuth, async (req, res, next) => {
     }
 
     const { userId } = (req as AuthedRequest).auth;
+    // Spread only what was sent: passing `undefined` for a column Prisma
+    // treats as "leave unchanged" is correct here, but being explicit keeps a
+    // future edit from turning an omitted field into a null.
     await prisma.user.update({
       where: { id: userId },
-      data: { hiddenNavItems: input.data.hiddenNavItems },
+      data: {
+        ...(input.data.hiddenNavItems !== undefined
+          ? { hiddenNavItems: input.data.hiddenNavItems }
+          : {}),
+        ...(input.data.name !== undefined ? { name: input.data.name } : {}),
+      },
     });
 
     const session = await loadSession(userId);

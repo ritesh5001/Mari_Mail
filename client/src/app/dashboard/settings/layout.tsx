@@ -1,24 +1,36 @@
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/api";
+import { SettingsNav } from "@/components/settings/SettingsNav";
 
 /**
- * Everything under /dashboard/settings/* is super-admin-only: sending domains,
- * port rules, cargo rules — genuine platform-config pages.
+ * Workspace settings. Any signed-in member reaches this.
  *
- * Billing used to live at /dashboard/settings/billing and inherited this same
- * gate, which meant a workspace OWNER — not platform staff, but the person
- * whose card is on file and whose trial is running out — was bounced straight
- * back to /dashboard trying to reach it. It has since moved to its own route,
- * /dashboard/billing, with its own OWNER/ADMIN-or-super-admin rule (see
- * app/dashboard/billing/layout.tsx). Next.js layouts are additive down the
- * route tree — a nested layout runs in ADDITION to this one, never instead of
- * it — so relaxing the rule for billing specifically required moving it out of
- * this subtree rather than adding a more specific layout underneath it.
+ * It used to redirect everyone but super-admins to /dashboard, on the stated
+ * grounds that sending defaults, port rules and cargo rules were "genuine
+ * platform-config pages". The code never agreed: all three read and write
+ * per-workspace rows (`listPortRules(workspaceId)`,
+ * `/workspaces/me/send-gap-defaults`), and every endpoint behind them is
+ * `requireAuth` + workspace-scoped, not super-admin. So the gate wasn't
+ * protecting platform config — it was locking customers out of their own
+ * campaign automation, with the server perfectly willing to serve them.
+ *
+ * Genuine platform config lives under /dashboard/admin/*, which has its own
+ * super-admin checks.
  */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
   const session = await getServerSession();
-  if (!session?.user.isSuperAdmin) {
-    redirect("/dashboard");
-  }
-  return <>{children}</>;
+  if (!session) redirect("/login");
+  if (!session.activeWorkspace) redirect("/onboarding");
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-2xl font-semibold text-slate-950 dark:text-white">Settings</h1>
+      </header>
+      <div className="flex flex-col gap-6 lg:flex-row">
+        <SettingsNav />
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
+    </div>
+  );
 }

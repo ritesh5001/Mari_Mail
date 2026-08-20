@@ -6,6 +6,8 @@ export type AuthUser = {
   defaultWorkspaceId: string | null;
   isSuperAdmin: boolean;
   hiddenNavItems: string[];
+  /** Whether TOTP two-factor is switched on. The secret stays server-side. */
+  mfaEnabled: boolean;
 };
 
 export type WorkspaceSummary = {

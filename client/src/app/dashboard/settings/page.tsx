@@ -1,53 +1,13 @@
-import Link from "next/link";
-import { Anchor, Radar, Timer, Workflow } from "lucide-react";
+import { redirect } from "next/navigation";
 
-const settingsLinks = [
-  {
-    href: "/dashboard/settings/sending",
-    title: "Sending Defaults",
-    description: "Set the default random gap between outgoing emails for every new campaign (5–20 min).",
-    icon: Timer,
-  },
-  {
-    href: "/dashboard/settings/port-rules",
-    title: "Port Campaign Rules",
-    description: "Auto-assign a campaign when a vessel of a given type arrives at a specific port.",
-    icon: Radar,
-  },
-  {
-    href: "/dashboard/settings/cargo-rules",
-    title: "Cargo Change Rules",
-    description: "Fire a campaign when a vessel's previous cargo and next cargo combination matches.",
-    icon: Workflow,
-  },
-];
-
+/**
+ * Settings has a persistent section nav in the layout, so an index page would
+ * be a second copy of that list and one more click to get anywhere. Land on
+ * Profile instead.
+ *
+ * The old index was a card grid of three links plus an empty "Coming soon"
+ * panel — light-mode only, and with an unused icon import.
+ */
 export default function SettingsPage() {
-  return (
-    <div className="space-y-6">
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-shell">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Workspace Settings</p>
-        <h2 className="mt-1 text-2xl font-semibold text-slate-950">Configure ETA automation</h2>
-      </section>
-      <section className="grid gap-4 md:grid-cols-2">
-        {settingsLinks.map((link) => {
-          const Icon = link.icon;
-          return (
-            <Link key={link.href} href={link.href} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm transition hover:border-ocean">
-              <div className="flex items-center gap-3">
-                <div className="rounded-md bg-ocean/10 p-2 text-ocean">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h3 className="text-base font-semibold text-slate-950">{link.title}</h3>
-              </div>
-              <p className="mt-2 text-sm text-slate-600">{link.description}</p>
-            </Link>
-          );
-        })}
-      </section>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Coming soon</h3>
-      </section>
-    </div>
-  );
+  redirect("/dashboard/settings/profile");
 }

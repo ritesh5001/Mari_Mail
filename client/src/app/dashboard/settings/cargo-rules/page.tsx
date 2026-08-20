@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { listCampaignsForWorkspace, listCargoRules, requireEtaWorkspaceId } from "@/lib/eta-data";
 import { CargoRuleManager } from "@/components/marine/CargoRuleManager";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,10 @@ export default async function CargoRulesPage() {
     listCampaignsForWorkspace(workspaceId),
   ]);
   return (
-    <div className="space-y-6">
-      <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
-        <h2 className="text-2xl font-semibold text-slate-950">Cargo Change Trigger Rules</h2>
-        <p className="mt-1 text-xs text-slate-400">
-          <Link className="text-ocean hover:underline" href="/dashboard/settings/port-rules">Port campaign rules →</Link>
-        </p>
-      </header>
+    <SettingsCard
+      title="Cargo change rules"
+      description="Fire a campaign when a vessel's previous and next cargo match a combination you care about — a tanker switching trade is a buying signal."
+    >
       <CargoRuleManager
         rules={rules.map((rule) => ({
           id: rule.id,
@@ -31,6 +27,6 @@ export default async function CargoRulesPage() {
         }))}
         campaigns={campaigns.map((c) => ({ id: c.id, name: c.name }))}
       />
-    </div>
+    </SettingsCard>
   );
 }

@@ -59,7 +59,7 @@ export function BlockContactActions({
         return;
       }
       // This contact is now hidden everywhere, including the page we are on.
-      router.push("/dashboard/blocked");
+      router.push("/dashboard/settings/blocked");
     } finally {
       setBusy(null);
     }

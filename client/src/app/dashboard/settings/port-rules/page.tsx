@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { formatEnum } from "@/lib/contact-data";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 import { listCampaignsForWorkspace, listPortRules, listPorts, requireEtaWorkspaceId } from "@/lib/eta-data";
 import { PortRuleManager } from "@/components/marine/PortRuleManager";
 
@@ -14,12 +14,10 @@ export default async function PortRulesPage() {
   ]);
 
   return (
-    <div className="space-y-6">
-      <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
-        <h2 className="text-2xl font-semibold text-slate-950">Port Campaign Rules</h2>
-        <p className="mt-1 text-xs text-slate-400"><Link className="text-ocean hover:underline" href="/dashboard/settings/cargo-rules">Cargo change rules →</Link></p>
-      </header>
+    <SettingsCard
+      title="Port campaign rules"
+      description="Automatically enrol a vessel in a campaign when it arrives at a given port. Priority 10 is the highest — the first matching rule wins."
+    >
       <PortRuleManager rules={rules.map((rule) => ({
         id: rule.id,
         portCode: rule.portCode,
@@ -31,7 +29,9 @@ export default async function PortRulesPage() {
         priority: rule.priority,
         workspaceScoped: rule.workspaceId !== null,
       }))} campaigns={campaigns.map((c) => ({ id: c.id, name: c.name }))} ports={ports.map((p) => ({ portCode: p.portCode, portName: p.portName }))} />
-      <p className="text-xs text-slate-400">Tip: priority 10 = highest urgency. {formatEnum("PORT_BASED")} campaigns appear first in the campaign picker.</p>
-    </div>
+      <p className="mt-3 text-xs text-slate-500 dark:text-white/45">
+        {formatEnum("PORT_BASED")} campaigns appear first in the campaign picker.
+      </p>
+    </SettingsCard>
   );
 }

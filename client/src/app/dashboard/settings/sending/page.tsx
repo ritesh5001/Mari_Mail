@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { apiUrl } from "@/lib/api";
 import { SendGapDefaultsForm } from "@/components/settings/SendGapDefaultsForm";
+import { SettingsCard } from "@/components/settings/SettingsCard";
 
 export const dynamic = "force-dynamic";
 
@@ -25,18 +25,17 @@ async function loadDefaults(): Promise<{ min: number; max: number }> {
   }
 }
 
+// Header and back-link removed: the settings layout supplies the page title
+// and a persistent section nav, so both were a second copy of navigation the
+// reader can already see.
 export default async function SendingSettingsPage() {
   const { min, max } = await loadDefaults();
   return (
-    <div className="space-y-6">
-      <header className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Settings</p>
-        <h2 className="text-2xl font-semibold text-slate-950 dark:text-white">Sending defaults</h2>
-        <p className="mt-1 text-xs text-slate-400">
-          <Link className="text-ocean hover:underline" href="/dashboard/settings">← Back to settings</Link>
-        </p>
-      </header>
+    <SettingsCard
+      title="Sending defaults"
+      description="The random gap between two outgoing emails, applied to every new campaign. Spacing sends makes a sequence look less automated to inbox providers."
+    >
       <SendGapDefaultsForm initialMinSeconds={min} initialMaxSeconds={max} />
-    </div>
+    </SettingsCard>
   );
 }

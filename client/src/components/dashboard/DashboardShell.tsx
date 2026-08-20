@@ -94,13 +94,18 @@ const navItems: NavItem[] = [
   // reference material rather than a step in the workflow.
   { href: "/dashboard/vessels", label: "Vessels", group: "data", icon: Ship, superAdminOnly: true },
   { href: "/dashboard/saved", label: "Revealed contacts", group: "data", icon: Bookmark },
-  { href: "/dashboard/blocked", label: "Blocked", group: "data", icon: Ban },
+  // Blocked moved into Settings — it is a standing rule, not a data set.
   { href: "/dashboard/marine-db", label: "Marine DB", group: "data", icon: Anchor, superAdminOnly: true },
 
   { href: "/dashboard/analytics", label: "Analytics", group: "insights", icon: BarChart3 },
 
   { href: "/dashboard/billing", label: "Plan & billing", group: "account", icon: CreditCard, billingManagerOnly: true },
   { href: "/dashboard/referrals", label: "Refer & earn", group: "account", icon: Gift },
+  // Customer-facing settings: profile, security, personas, blocked, and the
+  // per-workspace campaign rules. It used to sit in the Admin group behind a
+  // superAdminOnly flag, which hid every one of those from the people they
+  // belong to — see settings/layout.tsx.
+  { href: "/dashboard/settings", label: "Settings", group: "account", icon: Settings },
 
   // Platform staff only. Its own group so it reads as a separate area of the
   // product rather than eight more rows on the customer's list.
@@ -111,7 +116,6 @@ const navItems: NavItem[] = [
   { href: "/dashboard/admin/contact-source", label: "Contact Data Source", group: "admin", icon: Zap, superAdminOnly: true },
   { href: "/dashboard/admin/contact-source/drips", label: "Scheduled Reveals", group: "admin", icon: CalendarClock, superAdminOnly: true },
   { href: "/dashboard/admin/contact-source/accounts", label: "Provider Accounts", group: "admin", icon: KeyRound, superAdminOnly: true },
-  { href: "/dashboard/settings", label: "Settings", group: "admin", icon: Settings, superAdminOnly: true, alwaysVisible: true },
 ];
 
 
