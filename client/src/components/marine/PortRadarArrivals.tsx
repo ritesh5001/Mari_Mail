@@ -499,7 +499,7 @@ export function PortRadarArrivals({
         />
       )}
       {toast ? (
-        <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">
+        <div className="fixed bottom-24 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">
           {toast}
         </div>
       ) : null}
@@ -829,7 +829,11 @@ export function PortRadarArrivals({
         </table>
         </div>
       </div>
-      <div className="sticky bottom-0 z-20 mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-1 py-2 backdrop-blur-sm dark:border-white/[0.08] dark:bg-[#0a0a0c]/95">
+      {/* `pr-44` on desktop clears the floating WhatsApp button, which is
+          fixed to the same corner — without it the button sits on top of
+          "Next". Mobile keeps the normal padding: the button collapses to a
+          glyph there and the pagination wraps above it. */}
+      <div className="sticky bottom-0 z-20 mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-1 py-2 backdrop-blur-sm sm:pr-44 dark:border-white/[0.08] dark:bg-[#0a0a0c]/95">
         <p className="text-xs text-slate-500">
           Showing {pageEtas.length === 0 ? 0 : pageStart + 1}–{pageStart + pageEtas.length} of{" "}
           {count.toLocaleString("en")}{" "}

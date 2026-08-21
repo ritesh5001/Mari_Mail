@@ -403,7 +403,7 @@ export function CampaignEditor({
   return (
     <div className="space-y-5">
       {toast ? (
-        <div className="fixed bottom-5 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">
+        <div className="fixed bottom-24 right-5 z-50 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-lg">
           {toast}
         </div>
       ) : null}

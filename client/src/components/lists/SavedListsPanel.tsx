@@ -82,7 +82,7 @@ export function SavedListsPanel() {
       {error && (
         <div
           role="alert"
-          className="fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
+          className="fixed bottom-24 right-5 z-[80] max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 shadow-lg dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200"
         >
           {error}
         </div>

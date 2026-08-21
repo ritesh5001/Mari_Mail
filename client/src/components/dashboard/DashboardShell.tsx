@@ -44,7 +44,7 @@ import { TrialBanner } from "./TrialBanner";
 import type { CampaignItineraryProgress } from "@/lib/onboarding-types";
 import type { ActivityItem } from "@/lib/activity-data";
 import { ActivityBell } from "./ActivityBell";
-import { WhatsAppHeaderButton } from "@/components/marketing/WhatsAppButton";
+import { WhatsAppButton } from "@/components/marketing/WhatsAppButton";
 
 /**
  * Sidebar sections, in the order they appear.
@@ -534,11 +534,6 @@ export function DashboardShell({
 
               <ActivityBell items={activity} />
 
-              {/* Support is a WhatsApp conversation for most of this audience,
-                  so the way to start one is in the chrome on every page rather
-                  than only on the public site. */}
-              <WhatsAppHeaderButton />
-
               <div className="group relative">
                 <button
                   type="button"
@@ -602,6 +597,13 @@ export function DashboardShell({
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+
+      {/* Same floating button as the public site, on every dashboard page.
+          Two things already lived in this corner and had to move out of its
+          way: toasts (which now sit above it — see the `bottom-24` in each)
+          and Port Radar's sticky pagination (which gained right padding so
+          "Next" stays clickable). */}
+      <WhatsAppButton />
     </div>
   );
 }
