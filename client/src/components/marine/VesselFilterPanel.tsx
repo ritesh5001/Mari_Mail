@@ -1282,7 +1282,10 @@ export function VesselFilterPanel({
   if (applied.hasMmsi) pushChip("hasMmsi", "AIS active", "type", { hasMmsi: false });
   if (applied.hasEmail) pushChip("hasEmail", "Has contact email", "type", { hasEmail: false });
 
-  const searchRow = (
+  // Null in value mode: there is no live results table for a free-text search
+  // to run against while editing a stored persona, so the row that runs one
+  // goes with the other saved-set-only controls.
+  const searchRow = valueMode ? null : (
     <div className="flex min-w-0 gap-2">
       <input
         value={state.q}
@@ -1800,7 +1803,12 @@ function FilterModalShell({
 
         {savedSets ? <div className="shrink-0">{savedSets}</div> : null}
 
-        <div className="min-w-[220px] shrink-0 grow sm:grow-0 sm:basis-[320px]">{searchRow}</div>
+        {/* The free-text quick search searches a live results table that
+            doesn't exist while editing a stored persona — there is nothing
+            for it to run against — so it goes with the saved-set controls. */}
+        {searchRow ? (
+          <div className="min-w-[220px] shrink-0 grow sm:grow-0 sm:basis-[320px]">{searchRow}</div>
+        ) : null}
       </div>
 
       {mounted ? (

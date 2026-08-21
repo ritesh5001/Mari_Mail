@@ -292,6 +292,8 @@ export function RoleFilterPanel({
   countryOptions = [],
   resultCount,
   scope = "vessels",
+  hideSavedSets = false,
+  applyLabel,
 }: {
   value: RoleFilter;
   onChange: (next: RoleFilter) => void;
@@ -316,6 +318,17 @@ export function RoleFilterPanel({
    * vessel-scoped search is already pinned to specific domains.
    */
   scope?: "vessels" | "apollo";
+  /**
+   * Drops the parts of the toolbar that only make sense when this panel is
+   * driving a live search: the "load a different saved set" picker, the
+   * "save this as a new set" control, and the toolbar's direct re-apply
+   * button. Settings edits one specific persona — offering to swap it for
+   * another mid-edit, or firing an apply with nothing changed, is noise
+   * rather than a feature there.
+   */
+  hideSavedSets?: boolean;
+  /** Overrides the commit button's wording ("Apply & search" by default). */
+  applyLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<CategoryKey>("titles");
@@ -615,33 +628,37 @@ export function RoleFilterPanel({
             </button>
           ) : null}
 
-          <div className="shrink-0">
-            {/* Loading stays in the toolbar so recalling a set is one click.
-                Saving moved into the modal footer, next to the filter being
-                saved. */}
-            <SavedFilterSets
-              mode="picker"
-              entityType="CONTACT"
-              value={savedConfig}
-              hasFilter={totalActive > 0}
-              onLoad={(config) => onChange(normalizeRoleFilter(config))}
-              disabled={disabled}
-            />
-          </div>
+          {hideSavedSets ? null : (
+            <div className="shrink-0">
+              {/* Loading stays in the toolbar so recalling a set is one click.
+                  Saving moved into the modal footer, next to the filter being
+                  saved. */}
+              <SavedFilterSets
+                mode="picker"
+                entityType="CONTACT"
+                value={savedConfig}
+                hasFilter={totalActive > 0}
+                onLoad={(config) => onChange(normalizeRoleFilter(config))}
+                disabled={disabled}
+              />
+            </div>
+          )}
 
-          <button
-            type="button"
-            onClick={onApply}
-            disabled={disabled}
-            className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
-          >
-            {disabled ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-            )}
-            {searchLabel}
-          </button>
+          {hideSavedSets ? null : (
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={disabled}
+              className="group inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-accent-500 to-accent-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm shadow-accent-500/25 transition-all hover:from-accent-500 hover:to-accent-500 hover:shadow-accent-500/40 disabled:from-slate-300 disabled:to-slate-400 disabled:shadow-none dark:disabled:from-white/10 dark:disabled:to-white/10"
+            >
+              {disabled ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
+              )}
+              {searchLabel}
+            </button>
+          )}
         </div>
 
         {/* Refine row — country only.
@@ -1047,15 +1064,19 @@ export function RoleFilterPanel({
                       : `${totalActive} filter${totalActive === 1 ? "" : "s"} active`}
                   </p>
                   {/* Saving belongs with the filter you just built, not in the
-                      toolbar behind the modal. Saves what is on screen. */}
-                  <SavedFilterSets
-                    mode="save"
-                    entityType="CONTACT"
-                    value={savedConfig}
-                    hasFilter={totalActive > 0}
-                    onLoad={(config) => onChange(normalizeRoleFilter(config))}
-                    namePlaceholder="e.g. Fleet Managers · India"
-                  />
+                      toolbar behind the modal. Saves what is on screen.
+                      Null while editing an existing set — "save as new" is
+                      not what the user came here to do. */}
+                  {hideSavedSets ? null : (
+                    <SavedFilterSets
+                      mode="save"
+                      entityType="CONTACT"
+                      value={savedConfig}
+                      hasFilter={totalActive > 0}
+                      onLoad={(config) => onChange(normalizeRoleFilter(config))}
+                      namePlaceholder="e.g. Fleet Managers · India"
+                    />
+                  )}
                   <div className="flex-1" />
                   <button
                     type="button"
@@ -1078,7 +1099,7 @@ export function RoleFilterPanel({
                     ) : (
                       <Search className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
                     )}
-                    Apply &amp; search
+                    {applyLabel ?? "Apply & search"}
                   </button>
                 </div>
               </div>

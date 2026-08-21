@@ -510,6 +510,8 @@ function ContactPersonaEditor({
         onChange({ ...config, ...draft });
       }}
       scope="apollo"
+      hideSavedSets
+      applyLabel="Use this filter"
     />
   );
 }
