@@ -9,7 +9,6 @@ import {
 } from "@/lib/eta-data";
 import { serializeRadarEta } from "@/lib/port-radar-serialize";
 import { PortRadarTabs, type PortRadarTabKey } from "@/components/marine/PortRadarTabs";
-import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
 import { NoCountryNotice } from "@/components/marine/NoCountryNotice";
 import { getServerSession } from "@/lib/api";
 
@@ -97,13 +96,13 @@ export default async function PortRadarPage({
     <div className="space-y-5">
       {needsCountry ? <NoCountryNotice /> : null}
 
-      <VesselFilterPanel
-        searchParams={searchParams}
-        basePath="/dashboard/port-radar"
-        orientation="modal"
-      />
-
+      {/* The filter toolbar used to be its own card sitting above this one,
+          with a near-identical "N vessels match" line repeated just inside
+          the tab card below it, and a THIRD count repeated again on the
+          Table view row further down. It now renders inside PortRadarTabs,
+          merged into the same card as the table it controls. */}
       <PortRadarTabs
+        searchParams={searchParams}
         countryLabel={countryLabel}
         showCountryColumn={showCountryColumn}
         isSuperAdmin={isSuperAdmin}

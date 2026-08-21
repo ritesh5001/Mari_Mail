@@ -496,8 +496,11 @@ export function PortRadarArrivals({
           {toast}
         </div>
       ) : null}
-      <div className="mt-4 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+      {/* No longer its own bordered card — this now lives inside the same
+          card as the filter toolbar above it (PortRadarTabs), separated by a
+          divider rather than a second nested box. */}
+      <div className="border-t border-slate-200 pt-4 dark:border-white/10">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-white/10">
           <div>
             <p className="text-sm font-semibold text-slate-950 dark:text-white">Table view</p>
             <p className="text-xs text-slate-500 dark:text-white/45">
@@ -567,7 +570,7 @@ export function PortRadarArrivals({
             container's own horizontal scrollbar sits at its bottom edge,
             which is always on screen because the container is capped to
             the viewport height. */}
-        <div className="max-h-[calc(100vh-230px)] overflow-auto overscroll-x-contain rounded-b-lg">
+        <div className="max-h-[calc(100vh-230px)] overflow-auto overscroll-x-contain">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="sticky top-0 z-30 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)] dark:bg-[#0F0F11] dark:text-white/50 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)]">
             <tr>

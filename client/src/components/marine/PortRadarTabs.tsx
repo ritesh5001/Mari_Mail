@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Radar, Ship } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
+import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
 import type { SortState } from "@/hooks/useClientSort";
 
 // The old "missed opportunities" tab has been folded into the vessel filter
@@ -64,6 +65,7 @@ type TabState = {
  * render (a second request) and are merged into the rows in place.
  */
 export function PortRadarTabs({
+  searchParams,
   countryLabel,
   showCountryColumn,
   isSuperAdmin,
@@ -74,6 +76,8 @@ export function PortRadarTabs({
   initialCount,
   pageSize,
 }: {
+  /** Passed straight through to the filter toolbar — see the note above it. */
+  searchParams: Record<string, string | string[] | undefined>;
   /** Set only when the workspace's grant is exactly one country. */
   countryLabel: string | null;
   /** Show each row's country — true for a super-admin or a multi-country grant. */
@@ -439,6 +443,18 @@ export function PortRadarTabs({
       </div>
 
       <div className="p-5">
+        {/* Filter toolbar, merged in from the page — it used to be a separate
+            card above this one, with the count it controls repeated twice
+            more below (once in this card's caption, once again on the Table
+            view row). One toolbar now lives with the one table it filters. */}
+        <div className="mb-4">
+          <VesselFilterPanel
+            searchParams={searchParams}
+            basePath="/dashboard/port-radar"
+            orientation="modal"
+          />
+        </div>
+
         {tab === "newly" ? (
           <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
             {/* "Upload" and "batch" are import-side words. An admin uploads and
@@ -449,16 +465,14 @@ export function PortRadarTabs({
               : `${badgeCount("newly")} vessel${badgeCount("newly") === 1 ? "" : "s"} added in the latest data update. Your full list is under Upcoming arrivals.`}
           </p>
         ) : null}
-        {tab === "upcoming" ? (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-slate-600 dark:text-white/55">
-              {badgeCount("upcoming")} upcoming vessels match — sorted by ETA
-            </p>
-            {isSuperAdmin ? (
-              <Link href="/dashboard/import" className="text-sm font-medium text-ocean hover:underline">
-                Import ETAs
-              </Link>
-            ) : null}
+        {tab === "upcoming" && isSuperAdmin ? (
+          // The count that used to sit beside this link now lives on the
+          // Table view row just below — this stays only for the one thing
+          // that row doesn't say.
+          <div className="mb-3 flex justify-end">
+            <Link href="/dashboard/import" className="text-sm font-medium text-ocean hover:underline">
+              Import ETAs
+            </Link>
           </div>
         ) : null}
 
