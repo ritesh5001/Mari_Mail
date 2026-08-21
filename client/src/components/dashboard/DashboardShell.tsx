@@ -44,6 +44,7 @@ import { TrialBanner } from "./TrialBanner";
 import type { CampaignItineraryProgress } from "@/lib/onboarding-types";
 import type { ActivityItem } from "@/lib/activity-data";
 import { ActivityBell } from "./ActivityBell";
+import { WhatsAppHeaderButton } from "@/components/marketing/WhatsAppButton";
 
 /**
  * Sidebar sections, in the order they appear.
@@ -532,6 +533,11 @@ export function DashboardShell({
               </button>
 
               <ActivityBell items={activity} />
+
+              {/* Support is a WhatsApp conversation for most of this audience,
+                  so the way to start one is in the chrome on every page rather
+                  than only on the public site. */}
+              <WhatsAppHeaderButton />
 
               <div className="group relative">
                 <button

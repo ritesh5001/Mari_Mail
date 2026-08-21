@@ -36,6 +36,34 @@ export function WhatsAppButton() {
   );
 }
 
+/**
+ * Header-chrome variant, for the signed-in dashboard.
+ *
+ * Not the floating button the marketing pages use: the dashboard's bottom-right
+ * corner is already taken twice over — every toast in the app renders at
+ * `fixed bottom-5 right-5`, and the Port Radar table pins its pagination to
+ * `sticky bottom-0`. A floating button there would cover the "Next" control and
+ * fight each toast for the same 200 pixels. Sitting in the header instead, it
+ * is visible on every dashboard page and collides with nothing.
+ *
+ * Same number, same pre-filled message as everywhere else — both come from
+ * `@/lib/whatsapp`.
+ */
+export function WhatsAppHeaderButton() {
+  return (
+    <a
+      href={whatsappUrl()}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Chat with MariMail on WhatsApp at ${WHATSAPP_DISPLAY}`}
+      title={`WhatsApp ${WHATSAPP_DISPLAY}`}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-[#25D366] shadow-sm transition-colors hover:border-[#25D366]/40 hover:bg-[#25D366]/10 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-[#25D366]/15"
+    >
+      <WhatsAppGlyph className="h-4 w-4" />
+    </a>
+  );
+}
+
 /** Inline variant for footers and CTA sections. */
 export function WhatsAppLink({ className }: { className?: string }) {
   return (
