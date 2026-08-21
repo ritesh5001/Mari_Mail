@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Radar, Ship } from "lucide-react";
+import { Radar, Ship, SlidersHorizontal } from "lucide-react";
 import { PortRadarArrivals, type IndiaRadarEta } from "@/components/marine/PortRadarArrivals";
 import { VesselFilterPanel } from "@/components/marine/VesselFilterPanel";
 import type { SortState } from "@/hooks/useClientSort";
@@ -91,6 +90,10 @@ export function PortRadarTabs({
   pageSize: number;
 }) {
   const [tab, setTab] = useState<PortRadarTabKey>(initialTab);
+  // Only the open/close flag lives up here, so the trigger can sit in the
+  // toolbar above. The drawer itself still renders inside PortRadarArrivals,
+  // which owns the column-preference state it reads and writes.
+  const [showCustomizer, setShowCustomizer] = useState(false);
   const [tabs, setTabs] = useState<Record<PortRadarTabKey, TabState>>(() => ({
     newly: emptyTab(),
     upcoming: emptyTab(),
@@ -443,20 +446,32 @@ export function PortRadarTabs({
       </div>
 
       <div className="p-5">
-        {/* Filter toolbar, merged in from the page — it used to be a separate
-            card above this one, with the count it controls repeated twice
-            more below (once in this card's caption, once again on the Table
-            view row). One toolbar now lives with the one table it filters. */}
-        <div className="mb-4">
-          <VesselFilterPanel
-            searchParams={searchParams}
-            basePath="/dashboard/port-radar"
-            orientation="modal"
-          />
-        </div>
+        {/* ONE row of controls.
+
+            This page used to stack three things that all described the same
+            table: this filter toolbar (its own card), a caption repeating the
+            result count, and a "Table view" bar repeating the count a third
+            time next to the table's buttons. The toolbar absorbed the
+            buttons, and both counts are gone — the tab above already carries
+            the number, and repeating it three times never made it truer. */}
+        <VesselFilterPanel
+          searchParams={searchParams}
+          basePath="/dashboard/port-radar"
+          orientation="modal"
+          actions={
+            <button
+              type="button"
+              onClick={() => setShowCustomizer(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-semibold text-slate-700 shadow-sm transition-all hover:border-accent-400 hover:text-accent-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-white/80 dark:hover:border-accent-400/60"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 text-accent-500" />
+              Columns
+            </button>
+          }
+        />
 
         {tab === "newly" ? (
-          <p className="mb-3 text-sm text-slate-600 dark:text-white/55">
+          <p className="mt-3 text-sm text-slate-600 dark:text-white/55">
             {/* "Upload" and "batch" are import-side words. An admin uploads and
                 recognises them; a customer never does and reads them as jargon
                 about something they can't see. */}
@@ -464,16 +479,6 @@ export function PortRadarTabs({
               ? `${badgeCount("newly")} vessel${badgeCount("newly") === 1 ? "" : "s"} from the most recent upload — visible until the next batch arrives.`
               : `${badgeCount("newly")} vessel${badgeCount("newly") === 1 ? "" : "s"} added in the latest data update. Your full list is under Upcoming arrivals.`}
           </p>
-        ) : null}
-        {tab === "upcoming" && isSuperAdmin ? (
-          // The count that used to sit beside this link now lives on the
-          // Table view row just below — this stays only for the one thing
-          // that row doesn't say.
-          <div className="mb-3 flex justify-end">
-            <Link href="/dashboard/import" className="text-sm font-medium text-ocean hover:underline">
-              Import ETAs
-            </Link>
-          </div>
         ) : null}
 
         {state.error && state.rows.length === 0 ? (
@@ -504,6 +509,8 @@ export function PortRadarTabs({
             onSort={onSortColumn}
             portsWithCoordinates={portsWithCoordinates}
             isSuperAdmin={isSuperAdmin}
+            showCustomizer={showCustomizer}
+            onCloseCustomizer={() => setShowCustomizer(false)}
           />
         )}
       </div>

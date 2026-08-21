@@ -370,6 +370,7 @@ export function VesselFilterPanel({
   onApply,
   hideSavedSets = false,
   applyLabel,
+  actions,
 }: {
   searchParams: SearchParams;
   basePath?: string;
@@ -390,6 +391,15 @@ export function VesselFilterPanel({
   /** Saved-set controls are meaningless while editing a saved set. */
   hideSavedSets?: boolean;
   applyLabel?: string;
+  /**
+   * Extra controls pinned to the end of the toolbar row (modal orientation).
+   *
+   * Port Radar used to stack a second bar under this one holding "Table view",
+   * a repeated result count and the table's own buttons. This slot lets the
+   * table contribute its controls to the toolbar that already exists, so the
+   * page has one row of controls instead of two.
+   */
+  actions?: React.ReactNode;
 }) {
   const router = useRouter();
   /** Editing a stored value rather than driving the page's URL. */
@@ -1320,6 +1330,7 @@ export function VesselFilterPanel({
         onCancel={() => setState(applied)}
         chips={activeChips}
         applyLabel={applyLabel}
+        actions={actions}
         savedSets={
           hideSavedSets ? null : (
             <SavedFilterSets
@@ -1615,6 +1626,7 @@ function FilterModalShell({
   savedSets,
   saveControl,
   applyLabel,
+  actions,
 }: {
   /** Count of the DRAFT — what the rail and footer describe. */
   active: number;
@@ -1634,6 +1646,8 @@ function FilterModalShell({
   saveControl: React.ReactNode;
   /** Overrides the commit button's wording ("Apply filters" by default). */
   applyLabel?: string;
+  /** Table-side controls pinned to the end of the toolbar row. */
+  actions?: React.ReactNode;
 }) {
   const [mounted, setMounted] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -1809,6 +1823,10 @@ function FilterModalShell({
         {searchRow ? (
           <div className="min-w-[220px] shrink-0 grow sm:grow-0 sm:basis-[320px]">{searchRow}</div>
         ) : null}
+
+        {/* The table's own controls, so the page has one row of controls
+            rather than this toolbar plus a second bar beneath it. */}
+        {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>
 
       {mounted ? (

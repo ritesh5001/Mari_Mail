@@ -8,7 +8,6 @@ import {
   ExternalLink,
   ListPlus,
   Loader2,
-  SlidersHorizontal,
   UserRoundSearch,
 } from "lucide-react";
 import type { MarineVesselContactView, MarineVesselContactsResponse } from "@/lib/marine-row-views";
@@ -178,6 +177,8 @@ export function PortRadarArrivals({
   showCountry = false,
   feedKind = "upcoming",
   isSuperAdmin = false,
+  showCustomizer = false,
+  onCloseCustomizer,
 }: {
   etas: IndiaRadarEta[];
   count: number;
@@ -202,6 +203,13 @@ export function PortRadarArrivals({
    */
   feedKind?: "upcoming" | "newly";
   isSuperAdmin?: boolean;
+  /**
+   * The column drawer is opened from the filter toolbar in PortRadarTabs, so
+   * the flag is owned there. The drawer still renders here because the
+   * column-preference state it edits belongs to this component.
+   */
+  showCustomizer?: boolean;
+  onCloseCustomizer?: () => void;
 }) {
   const [selectedVessels, setSelectedVessels] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -223,7 +231,6 @@ export function PortRadarArrivals({
   const [editingEta, setEditingEta] = useState<EditEtaInitial | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [showCustomizer, setShowCustomizer] = useState(false);
   // Shared column-prefs hook — same drawer + persistence flow the Vessels and
   // Contacts tables use. `visibleIds` gates every optional <th>/<td> below.
   const allColumns = useMemo(() => portRadarColumns(), []);
@@ -486,7 +493,7 @@ export function PortRadarArrivals({
           title="Customize arrival columns"
           lockedColumns={lockedColumns}
           orderedAll={orderedAll}
-          onClose={() => setShowCustomizer(false)}
+          onClose={() => onCloseCustomizer?.()}
           onSave={saveColumns}
           onReset={resetColumns}
         />
@@ -496,74 +503,63 @@ export function PortRadarArrivals({
           {toast}
         </div>
       ) : null}
-      {/* No longer its own bordered card — this now lives inside the same
-          card as the filter toolbar above it (PortRadarTabs), separated by a
-          divider rather than a second nested box. */}
-      <div className="border-t border-slate-200 pt-4 dark:border-white/10">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-white/10">
-          <div>
-            <p className="text-sm font-semibold text-slate-950 dark:text-white">Table view</p>
-            <p className="text-xs text-slate-500 dark:text-white/45">
-              {selectedVesselIds.length > 0
-                ? // Select-all only covers the rows currently on screen. Say so
-                  // when there are more pages, so "Add to List (25)" of 277
-                  // results isn't mistaken for "all 277".
-                  `${selectedVesselIds.length} vessel${selectedVesselIds.length === 1 ? "" : "s"} selected${
-                    count > etas.length ? ` on this page · ${count.toLocaleString("en")} total` : ""
-                  }`
-                : feedKind === "newly"
-                  ? `${count.toLocaleString("en")} vessel${count === 1 ? "" : "s"} in the latest upload · sorted by ETA`
-                  : `${count.toLocaleString("en")} upcoming arrival${count === 1 ? "" : "s"} · sorted by ETA`}
+      <div className="mt-4">
+        {/* Selection bar.
+
+            These three actions used to sit permanently above the table in a
+            "Table view" header, greyed out whenever nothing was selected —
+            three dead buttons, a heading naming the thing you were already
+            looking at, and a result count the tab above already showed. All
+            three only ever apply to selected rows, so the bar appears when
+            there is a selection and takes up no space when there isn't. */}
+        {selectedVesselIds.length > 0 ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-accent-300 bg-accent-50 px-3 py-2 dark:border-accent-400/30 dark:bg-accent-500/10">
+            <p className="mr-auto text-xs font-semibold text-accent-800 dark:text-accent-200">
+              {/* Select-all only covers the rows currently on screen. Say so
+                  when there are more pages, so "Add to List (25)" of 277
+                  results isn't mistaken for "all 277". */}
+              {selectedVesselIds.length} selected
+              {count > etas.length ? ` on this page · ${count.toLocaleString("en")} total` : ""}
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600 dark:text-white/70">
-            <button
-              type="button"
-              onClick={() => setShowCustomizer(true)}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 hover:border-ocean hover:text-ocean dark:border-white/10"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              Customize
-            </button>
-            {/* The reason anyone selects arrivals in the first place is to
-                reach the people behind them, so that path gets its own button
-                here rather than living six steps away on the Lists page. */}
             <button
               type="button"
               onClick={() => {
-                if (selectedVesselIds.length === 0) return;
                 setListIntent("find-people");
                 setShowVesselModal(true);
               }}
-              disabled={selectedVesselIds.length === 0}
-              className="inline-flex items-center gap-1 rounded-md border border-accent-300 bg-accent-50 px-2 py-1 text-accent-700 disabled:opacity-40 enabled:hover:bg-accent-100 dark:border-accent-400/30 dark:bg-accent-500/10 dark:text-accent-300 dark:enabled:hover:bg-accent-500/20"
+              className="inline-flex items-center gap-1 rounded-md border border-accent-400 bg-white px-2 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100 dark:border-accent-400/40 dark:bg-white/[0.06] dark:text-accent-200 dark:hover:bg-white/[0.12]"
             >
               <UserRoundSearch className="h-3.5 w-3.5" />
-              Find people{selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}
+              Find people
             </button>
             <MotionButton
               type="button"
               size="sm"
               icon={<ListPlus className="size-4" />}
               onClick={() => {
-                if (selectedVesselIds.length === 0) return;
                 setListIntent("add");
                 setShowVesselModal(true);
               }}
-              disabled={selectedVesselIds.length === 0}
-              label={`Add to List${selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}`}
+              label="Add to List"
             />
             <button
               type="button"
               onClick={handleExport}
-              disabled={selectedVesselIds.length === 0 || exporting}
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean dark:border-white/10"
+              disabled={exporting}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600 disabled:opacity-40 enabled:hover:border-ocean enabled:hover:text-ocean dark:border-white/10 dark:bg-white/[0.06] dark:text-white/70"
             >
               {exporting ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-              Export CSV{selectedVesselIds.length > 0 ? ` (${selectedVesselIds.length})` : ""}
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedVessels(new Set())}
+              className="rounded-md px-2 py-1 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-white/50 dark:hover:text-white"
+            >
+              Clear
             </button>
           </div>
-        </div>
+        ) : null}
         {/* Bounded scroll area: the table scrolls BOTH axes inside this div.
             That's what makes the sticky header reliable — `sticky top-0`
             pins to this container's top while rows scroll beneath, and the

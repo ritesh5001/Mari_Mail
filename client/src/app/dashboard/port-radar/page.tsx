@@ -96,11 +96,10 @@ export default async function PortRadarPage({
     <div className="space-y-5">
       {needsCountry ? <NoCountryNotice /> : null}
 
-      {/* The filter toolbar used to be its own card sitting above this one,
-          with a near-identical "N vessels match" line repeated just inside
-          the tab card below it, and a THIRD count repeated again on the
-          Table view row further down. It now renders inside PortRadarTabs,
-          merged into the same card as the table it controls. */}
+      {/* The filter toolbar renders inside PortRadarTabs, in the same card as
+          the table it filters. It used to be a separate card here, above a
+          result count that the tab badge and a third "Table view" bar both
+          repeated. `searchParams` is passed through for it. */}
       <PortRadarTabs
         searchParams={searchParams}
         countryLabel={countryLabel}
